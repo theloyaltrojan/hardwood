@@ -371,17 +371,24 @@ const CONFIG = {
   player: {
     radius: 0.42, walkSpeed: 3.7, sprintSpeed: 6.6, accel: 13, decel: 24, turnDecel: 30, turnRate: 14,
     dribbleSpeedMul: 0.93, jumpVel: 4.4, staminaMax: 100, sprintDrain: 11, regen: 9, regenMoving: 5,
-    lowStamina: 25, windedRecover: 18, fatigueSpeed: 0.84, catchRadius: 0.82, pickupRadius: 0.74, inputBuffer: 0.26, moveRecover: 0.62,
+    lowStamina: 25, windedRecover: 18, fatigueSpeed: 0.84, catchRadius: 0.82, pickupRadius: 0.74, inputBuffer: 0.26, moveRecover: 0.62, burstControl: 0.4,
     reachHeightMul: 1.28, historyLen: 60,
   },
+  // `dur` is the animation, `cd` the lockout. `burst` is how long the move's push takes to build — it is
+  // ramped in, never set in one tick — and `recover` is the fraction of the animation after which steering
+  // starts coming back, so no move is a window where the stick is unplugged.
   moves: {
-    sidestep:  { dur: 0.30, cd: 0.55, stamina: 6, impulse: 4.6 },
-    crossover: { dur: 0.34, cd: 0.40, stamina: 5, impulse: 2.2 },
-    stepback:  { dur: 0.40, cd: 0.90, stamina: 8, impulse: 3.8, setWindow: 0.7 },
-    spin:      { dur: 0.52, cd: 1.00, stamina: 9, impulse: 3.2 },
-    hesi:      { dur: 0.28, cd: 0.45, stamina: 3 },
-    pump:      { dur: 0.40, cd: 0.55, stamina: 2 },
+    sidestep:  { dur: 0.26, cd: 0.36, stamina: 6, impulse: 4.9, burst: 0.08, recover: 0.40 },
+    crossover: { dur: 0.26, cd: 0.26, stamina: 5, impulse: 2.5, burst: 0.07, recover: 0.28 },
+    stepback:  { dur: 0.32, cd: 0.58, stamina: 8, impulse: 4.2, burst: 0.17, recover: 0.42, rate: 17, setWindow: 0.7 },
+    spin:      { dur: 0.42, cd: 0.68, stamina: 9, impulse: 3.7, burst: 0.10, recover: 0.46 },
+    hesi:      { dur: 0.22, cd: 0.30, stamina: 3, burst: 0.06, recover: 0.25 },
+    pump:      { dur: 0.32, cd: 0.42, stamina: 2, burst: 0.06, recover: 0.38 },
     comboWindow: 0.35, comboCostMul: 0.6, lowStaminaMul: 1.35, lowStaminaSlow: 1.25,
+    burstRate: 26,  // how fast velocity reaches the move's push
+    decay: 5.5,     // how fast the push bleeds off once the burst is done
+    chainAt: 0.55,  // fraction of a move after which the next action can be queued into it
+    faceRate: 18,   // how fast a move turns the player toward the direction it commits to
   },
   // Ankle-breaker / separation tunables
   separation: {
@@ -970,6 +977,7 @@ const PlayerSys = (() => {
       state: ST.IDLE, stateT: 0, stateDur: 0, hasBall: false, hand: 1, handFrom: 1, dribblePhase: 0, dribbleH: 0.85,
       stamina: PC.staminaMax, winded: false, sprinting: false, comboCount: 0, lastMoveEnd: -9, cd: { move: 0, steal: 0, jump: 0, pump: 0, pass: 0, contest: 0 },
       airborne: false, input: makeInput(), human: false, remote: false, controlled: false, ctl: null, ctlName: '', moveDir: { x: 0, z: 0 }, moveKind: '', stumbleT: 0, bumped: 0,
+      moveVel: { x: 0, z: 0, t: 0, r: 26 }, faceT: null, hold: { lat: 0, fwd: 0, y: 0, amp: 0, set: false },
       shot: { meterT: 0, released: false, dur: 1, timing: 0, quality: 0, green: false, fake: false, setShot: false, moving: 0 },
       dunk: { kind: '', t: 0, dur: 0, slamAt: 0, released: false, tx: 0, tz: 0, contact: false },
       matchup: -1, spot: -1, ai: { t: 0, phase: Math.random() * 100, intent: 0, target: { x: 0, z: 0 }, wantShoot: false, releaseAt: 0.7, cutT: 0, screenT: 0, role: 'spot', holdT: 0, lastDecision: 0, aggression: 0.5, driveT: 0, helping: false, helpUntil: 0, dribbleT: 0, hesiT: 0 },
@@ -986,19 +994,20 @@ const PlayerSys = (() => {
   // control factor: how much input steers velocity in each state
   // Steering authority during an animation. Moves hand control back over their last stretch so a move
   // never feels like a window where the stick is unplugged.
+  const recoverOf = (p) => { const d = CONFIG.moves[p.moveKind]; return d && d.recover != null ? d.recover : PC.moveRecover; };
   function controlFactor(p) {
-    let base;
+    let base, rec = PC.moveRecover;
     switch (p.state) {
       case ST.IDLE: case ST.MOVE: return 1;
-      case ST.LAND: base = 0.5; break;
-      case ST.PUMP: base = 0.35; break;
-      case ST.PASS: base = 0.6; break;
-      case ST.CROSSOVER: base = 0.55; break;
-      case ST.SIDESTEP: case ST.STEPBACK: case ST.SPIN: base = 0.15; break;
-      case ST.HESI: base = 0.3; break;
+      case ST.LAND: base = 0.6; break;
+      case ST.PUMP: base = 0.45; rec = recoverOf(p); break;
+      case ST.PASS: base = 0.7; break;
+      case ST.CROSSOVER: base = 0.72; rec = recoverOf(p); break;
+      case ST.SIDESTEP: case ST.STEPBACK: case ST.SPIN: base = 0.34; rec = recoverOf(p); break;
+      case ST.HESI: base = 0.5; rec = recoverOf(p); break;
       default: return 0;
     }
-    const k = p.stateDur > 0 ? U.clamp((p.stateT / p.stateDur - PC.moveRecover) / (1 - PC.moveRecover), 0, 1) : 0;
+    const k = p.stateDur > 0 ? U.clamp((p.stateT / p.stateDur - rec) / (1 - rec), 0, 1) : 0;
     return base + (1 - base) * k;
   }
   const speedMul = (p) => 0.8 + 0.3 * p.ratings.speed / 99;
@@ -1008,11 +1017,14 @@ const PlayerSys = (() => {
 
   function updateMovement(p, dt) {
     if (p.bumped > 0) p.bumped -= dt;
-    const ctrl = controlFactor(p) * (p.bumped > 0 ? 0.3 : 1);
+    // While a move's push is still building, the move owns the player — that short window is where the
+    // separation comes from. Once it is spent, `controlFactor` hands steering straight back.
+    const ctrl = controlFactor(p) * (p.bumped > 0 ? 0.3 : 1) * (p.moveVel.t > 0 ? PC.burstControl : 1);
+    if (p.moveVel.t > 0) p.moveVel.t -= dt;   // ticked here, not in Moves.update, so an interrupted move still clears it
     let mx = p.input.mx * ctrl, mz = p.input.mz * ctrl;
     const mag = Math.sqrt(mx * mx + mz * mz); if (mag > 1) { mx /= mag; mz /= mag; }
     const moving = mag > 0.05;
-    const wantSprint = p.input.sprint && moving && !p.winded && p.stamina > 0 && ctrl >= 1;
+    const wantSprint = p.input.sprint && moving && !p.winded && p.stamina > 0 && ctrl > 0.85;
     p.sprinting = wantSprint;
     const maxSpd = (wantSprint ? PC.sprintSpeed : PC.walkSpeed) * speedMul(p) * (p.hasBall ? PC.dribbleSpeedMul : 1) * fatigueMul(p);
     const tx = mx * maxSpd, tz = mz * maxSpd;
@@ -1020,7 +1032,7 @@ const PlayerSys = (() => {
       const dvx = tx - p.vx, dvz = tz - p.vz; const dv = Math.sqrt(dvx * dvx + dvz * dvz);
       if (dv > 1e-6) {
         const dot = p.vx * tx + p.vz * tz;
-        const rate = (!moving ? PC.decel : (dot < 0 ? PC.turnDecel : PC.accel)) * accelMul(p) * (ctrl < 1 ? 0.5 : 1);
+        const rate = (!moving ? PC.decel : (dot < 0 ? PC.turnDecel : PC.accel)) * accelMul(p) * (0.5 + 0.5 * ctrl);
         const step = rate * dt;
         if (dv <= step) { p.vx = tx; p.vz = tz; } else { p.vx += dvx / dv * step; p.vz += dvz / dv * step; }
       }
@@ -1220,7 +1232,7 @@ const PlayerSys = (() => {
     const shadow = new THREE.Mesh(GEO.shadow, shadowMat); shadow.position.y = 0.012; scene.add(shadow);
     const ring = new THREE.Mesh(GEO.ring, mats.ring); ring.position.y = 0.02; ring.visible = false; scene.add(ring);
     p.mesh = { group: g, body, armL, armR, legL, legR, foreL: armL.userData.fore, foreR: armR.userData.fore,
-      shinL: legL.userData.shin, shinR: legR.userData.shin, shadow, ring, legPhase: 0, sc, girthS: girth, heightS,
+      shinL: legL.userData.shin, shinR: legR.userData.shin, shadow, ring, legPhase: 0, leanX: 0, leanZ: 0, crouch: 0, sc, girthS: girth, heightS,
       owned: [bodyGeo, armGeo, foreGeo, thighGeo, shinGeo], numMat };
     liveMeshes.push(p.mesh);
     return p.mesh;
@@ -1247,7 +1259,7 @@ const Moves = (() => {
   function canStart(p) {
     if (!p.hasBall || p.airborne || p.cd.move > 0) return false;
     if (p.state === ST.IDLE || p.state === ST.MOVE || p.state === ST.LAND) return true;
-    return MOVE_STATES.has(p.state) && p.stateT >= p.stateDur * 0.65; // chain window
+    return MOVE_STATES.has(p.state) && p.stateT >= p.stateDur * MC.chainAt; // chain window
   }
   function charge(p, base, g) {
     if (g.time - p.lastMoveEnd > MC.comboWindow && !MOVE_STATES.has(p.state)) p.comboCount = 0;
@@ -1255,6 +1267,9 @@ const Moves = (() => {
     if (p.stamina < CONFIG.player.lowStamina) c *= MC.lowStaminaMul;
     p.comboCount++; PlayerSys.costStamina(p, c);
   }
+  // A move commits to a velocity rather than teleporting into one: `push` records the target and
+  // Moves.update ramps toward it over the move's burst, which is the same separation without the pop.
+  function push(p, vx, vz, def) { p.moveVel.x = vx; p.moveVel.z = vz; p.moveVel.t = def.burst || 0.08; p.moveVel.r = def.rate || MC.burstRate; }
   function start(p, kind, g) {
     if (!canStart(p)) return false;
     const def = MC[kind]; if (!def) return false;
@@ -1266,33 +1281,33 @@ const Moves = (() => {
     const prevLat = p.vx * latx + p.vz * latz; // handler lateral velocity before the move (what the defender was mirroring)
     const inp = p.input; const imag = Math.sqrt(inp.mx * inp.mx + inp.mz * inp.mz);
     charge(p, def.stamina, g);
-    p.moveKind = kind; p.cd.move = def.cd * slow; p.shot.fake = false;
+    p.moveKind = kind; p.cd.move = def.cd * slow; p.shot.fake = false; p.faceT = null;
     switch (kind) {
       case 'sidestep': {
         let dx, dz; if (imag > 0.2) { dx = inp.mx / imag; dz = inp.mz / imag; } else { dx = -p.hand * rx; dz = -p.hand * rz; }
-        p.moveDir.x = dx; p.moveDir.z = dz; p.vx = dx * def.impulse; p.vz = dz * def.impulse;
+        p.moveDir.x = dx; p.moveDir.z = dz; push(p, dx * def.impulse, dz * def.impulse, def);
         PlayerSys.setState(p, ST.SIDESTEP, def.dur * slow); break;
       }
       case 'crossover': {
         p.handFrom = p.hand; p.hand = -p.hand; const d = p.hand;
         p.moveDir.x = rx * d; p.moveDir.z = rz * d;
-        p.vx = p.vx * 0.35 + (rx * d * 0.85 + fx * 0.5) * def.impulse; p.vz = p.vz * 0.35 + (rz * d * 0.85 + fz * 0.5) * def.impulse;
+        push(p, p.vx * 0.35 + (rx * d * 0.85 + fx * 0.5) * def.impulse, p.vz * 0.35 + (rz * d * 0.85 + fz * 0.5) * def.impulse, def);
         PlayerSys.setState(p, ST.CROSSOVER, def.dur * slow); break;
       }
       case 'stepback': {
-        p.moveDir.x = -tox; p.moveDir.z = -toz; p.vx = -tox * def.impulse; p.vz = -toz * def.impulse;
-        p.facing = Math.atan2(tox, toz); p.setShotT = g.time + def.dur * slow + def.setWindow;
+        p.moveDir.x = -tox; p.moveDir.z = -toz; push(p, -tox * def.impulse, -toz * def.impulse, def);
+        p.faceT = Math.atan2(tox, toz); p.setShotT = g.time + def.dur * slow + def.setWindow;
         PlayerSys.setState(p, ST.STEPBACK, def.dur * slow); break;
       }
       case 'spin': {
         p.handFrom = p.hand; p.hand = -p.hand;
         let dx = tox, dz = toz; if (imag > 0.2) { dx = inp.mx / imag; dz = inp.mz / imag; }
-        p.moveDir.x = dx; p.moveDir.z = dz; p.vx = dx * def.impulse; p.vz = dz * def.impulse;
-        p.facing = Math.atan2(dx, dz);
+        p.moveDir.x = dx; p.moveDir.z = dz; push(p, dx * def.impulse, dz * def.impulse, def);
+        p.faceT = Math.atan2(dx, dz);
         PlayerSys.setState(p, ST.SPIN, def.dur * slow); break;
       }
-      case 'hesi': { p.moveDir.x = fx; p.moveDir.z = fz; p.vx *= 0.12; p.vz *= 0.12; PlayerSys.setState(p, ST.HESI, def.dur * slow); break; }
-      case 'pump': { p.shot.fake = true; p.vx *= 0.3; p.vz *= 0.3; PlayerSys.setState(p, ST.PUMP, def.dur * slow); break; }
+      case 'hesi': { p.moveDir.x = fx; p.moveDir.z = fz; push(p, p.vx * 0.12, p.vz * 0.12, def); PlayerSys.setState(p, ST.HESI, def.dur * slow); break; }
+      case 'pump': { p.shot.fake = true; push(p, p.vx * 0.3, p.vz * 0.3, def); PlayerSys.setState(p, ST.PUMP, def.dur * slow); break; }
     }
     affectDefenders(p, kind, g, latx, latz, prevLat, tox, toz);
     Game.emit('sound', { name: 'squeak' });
@@ -1332,10 +1347,13 @@ const Moves = (() => {
     }
   }
   function update(p, dt, g) {
-    const s = p.state;
-    if (s === ST.SIDESTEP || s === ST.STEPBACK || s === ST.CROSSOVER) { const k = Math.exp(-dt * 5.5); p.vx *= k; p.vz *= k; }
-    else if (s === ST.SPIN) { const k = 1 - 0.45 * (p.stateT / p.stateDur); p.vx = p.moveDir.x * MC.spin.impulse * k; p.vz = p.moveDir.z * MC.spin.impulse * k; }
-    if (p.stateT >= p.stateDur) { p.lastMoveEnd = g.time; if (s === ST.PUMP) p.shot.fake = false; PlayerSys.setState(p, p.speed > 0.3 ? ST.MOVE : ST.IDLE); }
+    const s = p.state, mv = p.moveVel;
+    if (mv.t > 0) { const a = 1 - Math.exp(-dt * mv.r); p.vx += (mv.x - p.vx) * a; p.vz += (mv.z - p.vz) * a; }
+    else if (s === ST.SPIN) { // a spin keeps carrying you past the burst, bleeding off toward the end
+      const k = 1 - 0.45 * (p.stateT / p.stateDur), d = 1 - Math.exp(-dt * 9);
+      p.vx += (mv.x * k - p.vx) * d; p.vz += (mv.z * k - p.vz) * d;
+    } else if (s === ST.SIDESTEP || s === ST.STEPBACK || s === ST.CROSSOVER) { const k = Math.exp(-dt * MC.decay); p.vx *= k; p.vz *= k; }
+    if (p.stateT >= p.stateDur) { p.lastMoveEnd = g.time; p.faceT = null; mv.t = 0; if (s === ST.PUMP) p.shot.fake = false; PlayerSys.setState(p, p.speed > 0.3 ? ST.MOVE : ST.IDLE); }
   }
   return { start, update, canStart, MOVE_STATES };
 })();
@@ -1354,29 +1372,32 @@ const BallSys = (() => {
   };
   function setHolder(p) {
     ball.holder = p ? p.id : -1; ball.state = p ? BS.HELD : BS.LOOSE;
-    if (p) { p.hasBall = true; ball.lastTouch = p.id; ball.lastTeam = p.team; ball.touchedRim = false; ball.touchedBoard = false; ball.scored = false; ball.vx = ball.vy = ball.vz = 0; ball.passTarget = -1; ball.airT = 0; }
+    if (p) { p.hasBall = true; p.hold.set = false; ball.lastTouch = p.id; ball.lastTeam = p.team; ball.touchedRim = false; ball.touchedBoard = false; ball.scored = false; ball.vx = ball.vy = ball.vz = 0; ball.passTarget = -1; ball.airT = 0; }
   }
   function release(vx, vy, vz, state) { const p = ball.holder >= 0 ? PlayerSys.players[ball.holder] : null; if (p) p.hasBall = false; ball.holder = -1; ball.vx = vx; ball.vy = vy; ball.vz = vz; ball.state = state; ball.releaseT = 0; ball.touchedRim = false; ball.touchedBoard = false; ball.scored = false; ball.bounceCount = 0; ball.airT = 0; }
   function makeLoose() { if (ball.state !== BS.LOOSE) { ball.state = BS.LOOSE; } }
 
-  // Position of the ball while held, from the holder's pose. Deterministic function of player state.
+  // Position of the ball while held, from the holder's pose. Each pose gives a target carry — across the
+  // body, out in front, and a height — plus a bounce amplitude, and the ball is damped toward that target
+  // rather than placed on it. Switching hands, gathering into a shot or changing stance then moves the ball
+  // along a path instead of teleporting it across the body, which is what read as a jerk mid-move.
+  const HOLD_RATE = 20;
   function updateHeld(p, dt) {
     const ST = PlayerSys.ST; const s = p.state;
     const fx = Math.sin(p.facing), fz = Math.cos(p.facing), rx = -Math.cos(p.facing), rz = Math.sin(p.facing);
     const h = p.height / 1.93;
-    let lateral = p.hand * 0.4, fwd = 0.28, y;
+    let lateral = p.hand * 0.25, fwd = 0.3, y = p.y + h * 1.15, amp = 0;
     const dribbling = s === ST.IDLE || s === ST.MOVE || s === ST.SIDESTEP || s === ST.CROSSOVER || s === ST.STEPBACK || s === ST.SPIN || s === ST.LAND || s === ST.STUMBLE;
     if (dribbling && !p.airborne) {
       const spd = p.speed;
       const freq = 1.75 + Math.min(spd, 7) * 0.13 + (s === ST.CROSSOVER ? 1.4 : 0);
       const prevPhase = p.dribblePhase; p.dribblePhase += freq * dt;
       if (Math.floor(p.dribblePhase) !== Math.floor(prevPhase)) { ball.dribbleFloor = true; ball.events.push(-(1 + spd)); }
-      const t = p.dribblePhase - Math.floor(p.dribblePhase);
       const handH = (s === ST.CROSSOVER ? 0.5 : 0.9 - Math.min(spd, 7) * 0.04) * h;
       p.dribbleH = handH;
-      y = R + handH * (1 - (2 * t - 1) * (2 * t - 1));
+      lateral = p.hand * 0.4; fwd = 0.28; y = R; amp = handH;
       if (s === ST.CROSSOVER) { const k = U.clamp(p.stateT / p.stateDur, 0, 1); lateral = U.lerp(p.handFrom * 0.4, p.hand * 0.4, k); fwd = 0.34 + 0.2 * Math.sin(k * Math.PI); }
-      else if (s === ST.SPIN) { const k = U.clamp(p.stateT / p.stateDur, 0, 1); lateral = p.hand * 0.32; fwd = 0.1 * Math.cos(k * Math.PI * 2); }
+      else if (s === ST.SPIN) { const k = U.clamp(p.stateT / p.stateDur, 0, 1); lateral = U.lerp(p.handFrom * 0.34, p.hand * 0.34, U.clamp(k * 2, 0, 1)); fwd = 0.1 * Math.cos(k * Math.PI * 2); }
       else if (s === ST.STEPBACK || s === ST.SIDESTEP) { fwd = 0.2; }
       else if (spd > 0.5) { fwd = 0.34; }
     } else if (s === ST.SHOOT) {
@@ -1390,8 +1411,15 @@ const BallSys = (() => {
     else if (s === ST.LAYUP) { const k = U.clamp(p.stateT / Math.max(0.01, p.dunk.slamAt), 0, 1); lateral = p.hand * 0.2; fwd = 0.3; y = p.y + h * U.lerp(1.30, 1.96, k); }
     else if (s === ST.PASS) { lateral = 0; fwd = 0.35; y = h * 1.3; }
     else if (s === ST.INBOUND) { lateral = 0; fwd = 0.15; y = h * 2.05; }
-    else { lateral = p.hand * 0.25; fwd = 0.3; y = p.y + h * 1.15; }
-    ball.x = p.x + rx * lateral + fx * fwd; ball.z = p.z + rz * lateral + fz * fwd; ball.y = y;
+    // The bounce phase keeps its value when the dribble stops, so the arc holds still while `amp` fades out
+    // and the ball rises into the next pose instead of dropping out from under it.
+    const bt = 2 * (p.dribblePhase - Math.floor(p.dribblePhase)) - 1, bounce = 1 - bt * bt;
+    const hd = p.hold;
+    if (hd.set) {
+      const kd = 1 - Math.exp(-HOLD_RATE * dt);
+      hd.lat += (lateral - hd.lat) * kd; hd.fwd += (fwd - hd.fwd) * kd; hd.y += (y - hd.y) * kd; hd.amp += (amp - hd.amp) * kd;
+    } else { hd.lat = lateral; hd.fwd = fwd; hd.y = y; hd.amp = amp; hd.set = true; }
+    ball.x = p.x + rx * hd.lat + fx * hd.fwd; ball.z = p.z + rz * hd.lat + fz * hd.fwd; ball.y = hd.y + hd.amp * bounce;
     ball.vx = p.vx; ball.vz = p.vz; ball.vy = 0;
   }
 
@@ -2236,7 +2264,7 @@ const Game = (() => {
   // ---------- action layer ----------
   // A move hands control back over its last stretch, so an action asked for slightly early is still valid;
   // anything that cannot start yet is held for a fraction of a second rather than dropped on the floor.
-  function lateInMove(p) { return Moves.MOVE_STATES.has(p.state) && p.stateDur > 0 && p.stateT >= p.stateDur * 0.58; }
+  function lateInMove(p) { return Moves.MOVE_STATES.has(p.state) && p.stateDur > 0 && p.stateT >= p.stateDur * CONFIG.moves.chainAt; }
   function canAct(p) { return p.state === ST.IDLE || p.state === ST.MOVE || p.state === ST.LAND || lateInMove(p); }
   // One button, and the direction you are pushing picks the move: nothing = crossover, at the rim = spin,
   // away = stepback, sideways = sidestep.
@@ -2333,6 +2361,8 @@ const Game = (() => {
   }
   function updateFacing(p, dt) {
     const s = p.state;
+    // A move that commits to a direction turns you there over the animation instead of snapping in one tick.
+    if (Moves.MOVE_STATES.has(s)) { if (p.faceT != null) p.facing = U.angleDamp(p.facing, p.faceT, CONFIG.moves.faceRate, dt); return; }
     if (s === ST.IDLE || s === ST.MOVE || s === ST.LAND) {
       const defending = p.team !== g.possession && !p.hasBall && ball.state !== BS.DEAD;
       if (defending && p.speed < 4.6) PlayerSys.faceToward(p, ball.x, ball.z, dt, 10);
@@ -2839,15 +2869,23 @@ function init(container) {
   // Limb convention: on an arm, negative rotation.x raises the hand forward and up, and a negative elbow
   // bends the forearm toward the chest. On a leg, positive rotation.x swings the foot back and a positive
   // knee bends the heel up behind, which is the only way a knee actually goes.
+  // `_w` eases a move's pose in and out of whatever the body was already doing, so an animation never
+  // starts or ends on a pose the body was not already holding — that discontinuity is what read as a jerk.
+  // Module-level so the blend helper is not a closure allocated per player per frame.
+  let _w = 0;
+  const bl = (a, b) => a + (b - a) * _w;
   function animate(p, m, dt, fac) {
     const s = p.state, st = p.stateT, dur = Math.max(p.stateDur, 0.001), k = U.clamp(st / dur, 0, 1);
     const grp = m.group; const spd = p.speed;
-    m.legPhase += spd * dt * 2.6;
+    const inMove = Moves.MOVE_STATES.has(s);
+    // a move plants the feet: the run cycle nearly stops instead of sprinting through the animation
+    m.legPhase += spd * dt * 2.6 * (inMove ? 0.3 : 1);
     const ph = m.legPhase, amp = U.clamp(spd / 6.6, 0, 1) * 0.85;
     // run cycle: hips alternate, knees fold on the recovery swing
     let lL = Math.sin(ph) * amp, lR = -Math.sin(ph) * amp;
     let kL = 0.12 + amp * 1.45 * U.clamp(Math.sin(ph - 0.55), 0, 1);
     let kR = 0.12 + amp * 1.45 * U.clamp(Math.sin(ph - 0.55 + Math.PI), 0, 1);
+    let lzL = -0.02, lzR = 0.02; // hip abduction: how wide the stance is
     let aL = -Math.sin(ph) * amp * 0.5 - 0.08, aR = Math.sin(ph) * amp * 0.5 - 0.08;
     let eL = -(0.35 + 0.45 * U.clamp(Math.sin(ph), 0, 1)), eR = -(0.35 + 0.45 * U.clamp(-Math.sin(ph), 0, 1));
     let azL = -0.11, azR = 0.11;
@@ -2860,17 +2898,45 @@ function init(container) {
       const a = -0.18 - 0.22 * bh, e = -(1.05 - 0.75 * bh), az = 0.30;
       if (hand > 0) { aR = a; eR = e; azR = az; } else { aL = a; eL = e; azL = -az; }
     }
+    _w = inMove ? Math.sin(k * Math.PI) : 0;
     switch (s) {
       case ST.CROSSOVER: {
-        const w = Math.sin(k * Math.PI);
-        aL = -0.30 - 0.25 * w; aR = -0.30 - 0.25 * w; eL = -(0.9 + 0.5 * w); eR = -(0.9 + 0.5 * w);
-        azL = -0.20 - 0.25 * w; azR = 0.20 + 0.25 * w; leanZ = p.hand * 0.18 * w; break;
+        const d = p.hand; // the ball is going to this hand, so the body sells the other way first
+        aL = bl(aL, -0.34); aR = bl(aR, -0.34); eL = bl(eL, -1.20); eR = bl(eR, -1.20);
+        azL = bl(azL, -0.42); azR = bl(azR, 0.42);
+        lL = bl(lL, -d * 0.24); lR = bl(lR, d * 0.24); kL = bl(kL, 0.58); kR = bl(kR, 0.58);
+        lzL = bl(lzL, -0.18); lzR = bl(lzR, 0.18);
+        leanZ = d * 0.20 * _w; crouch = 0.05 * _w; break;
       }
-      case ST.SIDESTEP: leanZ = -Math.sign(p.moveDir.x * Math.cos(fac) - p.moveDir.z * Math.sin(fac) || 1) * 0.22 * Math.sin(k * Math.PI); kL = kR = 0.35; break;
-      case ST.STEPBACK: leanX = -0.26 * Math.sin(k * Math.PI); kL = kR = 0.30 + 0.25 * Math.sin(k * Math.PI); break;
-      case ST.SPIN: yaw = fac + p.hand * Math.PI * 2 * (k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k)); aL = -0.5; aR = -0.5; eL = eR = -1.3; azL = -0.45; azR = 0.45; break;
-      case ST.HESI: { crouch = 0.09 * Math.sin(k * Math.PI); kL = kR = 0.45 + 0.3 * Math.sin(k * Math.PI); break; }
-      case ST.PUMP: { const r = Math.sin(k * Math.PI); aL = -1.45 * r; aR = -1.55 * r; eL = -1.5 * r; eR = -1.6 * r; azL = -0.12; azR = 0.12; kL = kR = 0.25 + 0.2 * r; break; }
+      case ST.SIDESTEP: {
+        // wide base, weight driven out over the pushing foot
+        const lat = -Math.sign(p.moveDir.x * Math.cos(fac) - p.moveDir.z * Math.sin(fac) || 1);
+        lL = bl(lL, 0.08); lR = bl(lR, 0.08); kL = bl(kL, 0.52); kR = bl(kR, 0.52);
+        lzL = bl(lzL, -0.30); lzR = bl(lzR, 0.30);
+        leanZ = lat * 0.24 * _w; crouch = 0.06 * _w; break;
+      }
+      case ST.STEPBACK: {
+        // lead leg kicks out as the hips travel back behind it
+        lL = bl(lL, -0.52); lR = bl(lR, -0.16); kL = bl(kL, 0.62); kR = bl(kR, 0.28);
+        lzL = bl(lzL, -0.14); lzR = bl(lzR, 0.14); leanX = bl(leanX, -0.30); break;
+      }
+      case ST.SPIN: {
+        yaw = fac + p.hand * Math.PI * 2 * (k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k));
+        aL = bl(aL, -0.62); aR = bl(aR, -0.62); eL = bl(eL, -1.35); eR = bl(eR, -1.35);
+        azL = bl(azL, -0.50); azR = bl(azR, 0.50);
+        const sw = Math.sin(k * Math.PI * 2) * 0.55; // one hip opens and closes across the pivot
+        lL = bl(lL, sw); lR = bl(lR, -sw); kL = bl(kL, 0.34 + 0.5 * Math.abs(sw)); kR = bl(kR, 0.34 + 0.5 * Math.abs(sw));
+        leanX = bl(leanX, 0.09); crouch = 0.05 * _w; break;
+      }
+      case ST.HESI: {
+        lL = bl(lL, -0.16); lR = bl(lR, 0.16); kL = bl(kL, 0.62); kR = bl(kR, 0.62);
+        lzL = bl(lzL, -0.20); lzR = bl(lzR, 0.20); leanX = bl(leanX, -0.12); crouch = 0.11 * _w; break;
+      }
+      case ST.PUMP: {
+        aL = bl(aL, -1.45); aR = bl(aR, -1.55); eL = bl(eL, -1.5); eR = bl(eR, -1.6);
+        azL = bl(azL, -0.12); azR = bl(azR, 0.12); kL = bl(kL, 0.45); kR = bl(kR, 0.45);
+        crouch = 0.05 * _w; break;
+      }
       case ST.SHOOT: {
         // set point: upper arm up, forearm vertical under the ball; release straightens into a follow-through
         const r = U.clamp(st / 0.20, 0, 1), rel = p.shot.released ? U.clamp((st - p.shot.relT) / 0.26, 0, 1) : 0;
@@ -2911,9 +2977,13 @@ function init(container) {
     m.armL.rotation.z += (azL - m.armL.rotation.z) * e; m.armR.rotation.z += (azR - m.armR.rotation.z) * e;
     m.foreL.rotation.x += (eL - m.foreL.rotation.x) * e; m.foreR.rotation.x += (eR - m.foreR.rotation.x) * e;
     m.legL.rotation.x += (lL - m.legL.rotation.x) * e; m.legR.rotation.x += (lR - m.legR.rotation.x) * e;
+    m.legL.rotation.z += (lzL - m.legL.rotation.z) * e; m.legR.rotation.z += (lzR - m.legR.rotation.z) * e;
     m.shinL.rotation.x += (kL - m.shinL.rotation.x) * e; m.shinR.rotation.x += (kR - m.shinR.rotation.x) * e;
-    grp.rotation.set(leanX + bodyX, yaw, leanZ, 'YXZ');
-    const sy = (1 - crouch) * (1 + 0.012 * Math.sin(t * 2.2 + p.id));
+    // the torso damps too: lean and crouch used to be written raw, so every state change snapped it
+    const eb = 1 - Math.exp(-dt * 16);
+    m.leanX += (leanX + bodyX - m.leanX) * eb; m.leanZ += (leanZ - m.leanZ) * eb; m.crouch += (crouch - m.crouch) * eb;
+    grp.rotation.set(m.leanX, yaw, m.leanZ, 'YXZ');
+    const sy = (1 - m.crouch) * (1 + 0.012 * Math.sin(t * 2.2 + p.id));
     grp.scale.set(m.girthS, m.heightS * sy, m.girthS);
   }
   function sync(alpha, dt) {
