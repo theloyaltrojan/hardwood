@@ -405,7 +405,7 @@ const CONFIG = {
     blockWindow: 0.45, blockReach: 1.35, blockChanceBase: 0.62,
     meterRatingSpeed: 0.25, // meter duration shrinks by up to this fraction for low ratings
   },
-  dunk: { range: 3.4, minSpeed: 2.4, layupRange: 3.7, layupMinSpeed: 0.9, standingRange: 1.5, standingRating: 78, flightTime: 0.82, slamAt: 0.42, layupTime: 0.72, layupReleaseAt: 0.30, contactRadius: 1.15, posterTime: 1.3, layupBase: 0.52, layupRating: 0.42 },
+  dunk: { dunkBase: 0.70, dunkRating: 0.23, dunkContestFloor: 0.45, range: 3.4, minSpeed: 2.4, layupRange: 3.7, layupMinSpeed: 0.9, standingRange: 1.5, standingRating: 78, flightTime: 0.82, slamAt: 0.42, layupTime: 0.72, layupReleaseAt: 0.30, contactRadius: 1.15, posterTime: 1.3, layupBase: 0.52, layupRating: 0.42 },
   ai: {
     tickHz: 10,
     difficulty: {
@@ -963,7 +963,7 @@ const PlayerSys = (() => {
       airborne: false, input: makeInput(), human: false, remote: false, controlled: false, ctl: null, ctlName: '', moveDir: { x: 0, z: 0 }, moveKind: '', stumbleT: 0, bumped: 0,
       shot: { meterT: 0, released: false, dur: 1, timing: 0, quality: 0, green: false, fake: false, setShot: false, moving: 0 },
       dunk: { kind: '', t: 0, dur: 0, slamAt: 0, released: false, tx: 0, tz: 0, contact: false },
-      matchup: -1, spot: -1, ai: { t: 0, phase: Math.random() * 100, intent: 0, target: { x: 0, z: 0 }, wantShoot: false, releaseAt: 0.7, cutT: 0, screenT: 0, role: 'spot', holdT: 0, lastDecision: 0, aggression: 0.5, driveT: 0, helping: false, dribbleT: 0, hesiT: 0 },
+      matchup: -1, spot: -1, ai: { t: 0, phase: Math.random() * 100, intent: 0, target: { x: 0, z: 0 }, wantShoot: false, releaseAt: 0.7, cutT: 0, screenT: 0, role: 'spot', holdT: 0, lastDecision: 0, aggression: 0.5, driveT: 0, helping: false, helpUntil: 0, dribbleT: 0, hesiT: 0 },
       hist: new Float32Array(PC.historyLen * 2), histI: 0, histN: 0,
       armsUp: false, jumpT: 0, setShotT: 0, lastPassT: -9, fouls: 0, catchT: -9, contactT: -9, buf: '', bufT: 0, bufPress: 0, bufRelease: -1,
       stats: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, fga: 0, fgm: 0, tpa: 0, tpm: 0, fta: 0, ftm: 0, to: 0, pf: 0 },
@@ -1643,12 +1643,26 @@ const Dunks = (() => {
     s.assist = (Game.g.lastPass && Game.g.lastPass.to === p.id && Game.g.time - Game.g.lastPass.t < 3) ? Game.g.lastPass.from : -1;
   }
   function finishDunk(p, g, h) {
-    stampShot(p, h, 'dunk', p.dunk.name, 1, 0, 1, true);
+    const c = Shooting.contest(p, h, 'close');
+    let pct = (D.dunkBase + D.dunkRating * (p.ratings.dunk / 99)) * (D.dunkContestFloor + (1 - D.dunkContestFloor) * c.factor);
+    if (p.stamina < CONFIG.player.lowStamina) pct *= 0.96;
+    pct = U.clamp(pct, 0.28, 0.985);
+    const make = RNG.chance(pct);
+    stampShot(p, h, 'dunk', p.dunk.name, 1, c.contested, pct, make);
     Rules.onShot(p, g, 2);
     if (resolveContact(p, g, h, true)) return;
-    BallSys.place(h.x, h.y + 0.1, h.z); BallSys.release((RNG.next() - 0.5) * 0.4, -5, (RNG.next() - 0.5) * 0.4, BS.SHOT); ball.spinDir = 1; ball.touchedRim = true;
     p.vx *= 0.3; p.vz *= 0.3; if (p.vy > 0) p.vy *= 0.5;
-    Game.emit('sound', { name: 'dunk' }); Game.emit('shake', { t: 0.35 });
+    if (make) {
+      BallSys.place(h.x, h.y + 0.1, h.z); BallSys.release((RNG.next() - 0.5) * 0.4, -5, (RNG.next() - 0.5) * 0.4, BS.SHOT);
+      Game.emit('sound', { name: 'dunk' }); Game.emit('shake', { t: 0.35 });
+    } else {
+      // rimmed out: put it on the iron off-centre and let the rim throw it back
+      const a = RNG.next() * Math.PI * 2, r = 0.20 + RNG.next() * 0.09;
+      BallSys.place(h.x + Math.cos(a) * r, h.y + 0.13, h.z + Math.sin(a) * r);
+      BallSys.release(Math.cos(a) * 1.5, -3.4, Math.sin(a) * 1.5, BS.SHOT);
+      Game.emit('sound', { name: 'rim' }); Game.emit('shake', { t: 0.2 });
+    }
+    ball.spinDir = 1; ball.touchedRim = true;
   }
   function finishLayup(p, g, h) {
     const base = D.layupBase + D.layupRating * (p.ratings.layup / 99);
@@ -1732,8 +1746,10 @@ const AI = (() => {
   function assignMatchups(g) {
     const A = Game.teamPlayers(0).slice(), B = Game.teamPlayers(1).slice();
     if (!A.length || !B.length) return;
-    for (let i = 0; i < A.length; i++) { A[i].matchup = B[i % B.length].id; B[i % B.length].matchup = A[i].id; }
-    for (let i = A.length; i < B.length; i++) B[i].matchup = A[i % A.length].id;
+    const key = (p) => POSITIONS.indexOf(p.pos) * 10 + (2.2 - p.height);   // guards first, then by size
+    A.sort((x, y) => key(x) - key(y)); B.sort((x, y) => key(x) - key(y));
+    for (let i = 0; i < A.length; i++) A[i].matchup = B[Math.min(i, B.length - 1)].id;
+    for (let i = 0; i < B.length; i++) B[i].matchup = A[Math.min(i, A.length - 1)].id;
   }
   function onPossessionChange(g) { for (const p of P) { p.ai.role = 'spot'; p.ai.helping = false; p.ai.screenT = 0; } }
   const CL = Court.C.length / 2 - 0.45, CW = Court.C.width / 2 - 0.45;
@@ -1765,7 +1781,7 @@ const AI = (() => {
     for (const q of P) { if (q.team === p.team) continue; const hd = U.dist(q.x, q.z, h.x, h.z); if (hd < 2.8) help += 1 - hd / 2.8; }
     if (defBetween && def) help += 0.55;                                // your man recovers and meets you there
     const edge = (p.ratings.speed + p.ratings.handling) / 2 - (def ? def.ratings.perimD : 45);
-    let through = 0.64 + edge / 240 + (defBetween ? -0.14 : 0.14) + U.clamp((defDist - 1.2) * 0.10, -0.12, 0.22) - U.clamp((d - 4.5) * 0.018, 0, 0.14);
+    let through = 0.58 + edge / 240 + (defBetween ? -0.14 : 0.14) + U.clamp((defDist - 1.2) * 0.10, -0.12, 0.22) - U.clamp((d - 4.5) * 0.018, 0, 0.14);
     through = U.clamp(through, 0.15, 0.93);
     return (finish * U.clamp(1 - help * 0.26, 0.40, 1) * through * 2 + through * 0.18) * AC.driveBias;
   }
@@ -1831,7 +1847,11 @@ const AI = (() => {
     if (ctx.kind && (ctx.kind !== 'layup' || defDist > 1.0 || beaten || RNG.chance(0.6))) { shootNow(p, g, p.ratings.layup); return; }
 
     const fresh = p.setShotT > g.time;                                   // just created space off a stepback
-    const evShoot = shotEV(p, p.x, p.z, h, beaten ? Math.max(defDist, 3.2) : defDist) * (p.speed > SC.movingSpeed ? 0.88 : 1) * (fresh ? 1.18 : 1);
+    // a closeout arrives while the meter runs, so value the shot against where the defender will be
+    let closing = 0;
+    if (def) { const dx = p.x - def.x, dz = p.z - def.z, dl = Math.sqrt(dx * dx + dz * dz) || 1; closing = Math.max(0, (def.vx * dx + def.vz * dz) / dl); }
+    const defAtRelease = beaten ? Math.max(defDist, 3.2) : Math.max(0.4, defDist - closing * 0.42);
+    const evShoot = shotEV(p, p.x, p.z, h, defAtRelease) * (p.speed > SC.movingSpeed ? 0.88 : 1) * (fresh ? 1.18 : 1);
     const evDrive = driveEV(p, h, def, defDist, defBetween) * (0.78 + a.aggression * 0.44);
     const pass = bestPass(p, g, h);
     const evPass = pass ? pass.ev * 0.94 : 0;
@@ -1955,7 +1975,7 @@ const AI = (() => {
     const inp = p.input;
     const dp = PlayerSys.delayedPos(m, diff.reaction);
     const dx = h.x - dp.x, dz = h.z - dp.z; const dl = Math.sqrt(dx * dx + dz * dz) || 1;
-    let guard = 1.25; if (m.state === ST.INBOUND) guard = 2.2; else if (Court.isThree(dp.x, dp.z, h)) guard = m.ratings.threePt >= 70 ? 1.05 : 1.7; else if (dl < 3.2) guard = 0.85;
+    let guard = 1.08; if (m.state === ST.INBOUND) guard = 2.2; else if (Court.isThree(dp.x, dp.z, h)) guard = m.ratings.threePt >= 70 ? 0.92 : 1.42; else if (dl < 3.2) guard = 0.76;
     const latx = -dz / dl, latz = dx / dl; const mLat = m.vx * latx + m.vz * latz;
     const shade = U.clamp(mLat * 0.24, -0.75, 0.75);
     const tx = dp.x + dx / dl * guard + latx * shade, tz = dp.z + dz / dl * guard + latz * shade;
@@ -1970,25 +1990,85 @@ const AI = (() => {
     if ((m.state === ST.DUNK || m.state === ST.LAYUP) && !m.dunk.released && dist < 1.9 && RNG.chance(c * (0.35 + 0.6 * p.ratings.block / 99))) { inp.shootPressed = true; p.cd.contest = 0.8; return; }
     if (dist < 1.45 && p.cd.steal <= 0 && (m.state === ST.IDLE || m.state === ST.MOVE || m.state === ST.STUMBLE) && RNG.chance(diff.stealRate * 0.07 * (0.4 + 0.8 * p.ratings.steal / 99) * (m.state === ST.STUMBLE ? 3 : 1))) inp.steal = true;
   }
+  // Off-ball defense is anchored on the MAN, not the ball. The ball only decides which side of him to stand
+  // on: one pass away you deny the catch, further away you sag toward the paint but stay in recovery range.
+  // Standing part-way between your man and the ball, which is what this used to do, guards neither.
   function offBall(p, m, handler, h, g) {
     const inp = p.input; p.armsUp = false;
     if (!m) { stop(p); return; }
-    if (!handler) { moveTo(p, m.x + (h.x - m.x) * 0.3, m.z + (h.z - m.z) * 0.3, false); return; }
-    const mToBall = U.dist(m.x, m.z, handler.x, handler.z);
-    const hd = U.dist(handler.x, handler.z, h.x, h.z);
-    // help: handler driving into the paint and I'm the nearest off-ball defender
-    const driving = hd < 4.2 && (handler.vx * (h.x - handler.x) + handler.vz * (h.z - handler.z)) > 1.5;
-    if (driving && RNG.chance(diff.help)) {
-      let nearest = null, nd = 1e9; for (const q of P) { if (q.team !== p.team) continue; const mm = P[q.matchup]; if (mm && mm.hasBall) continue; const dd = U.dist(q.x, q.z, h.x, h.z); if (dd < nd) { nd = dd; nearest = q; } }
-      if (nearest === p) { const ax = h.x - handler.x, az = h.z - handler.z; const al = Math.sqrt(ax * ax + az * az) || 1; moveTo(p, handler.x + ax / al * 1.4, handler.z + az / al * 1.4, true); p.ai.helping = true; if (hd < 2.6 && U.dist(p.x, p.z, handler.x, handler.z) < 1.8 && !p.airborne && p.cd.contest <= 0 && RNG.chance(diff.contest * 0.5)) { inp.shootPressed = true; p.cd.contest = 0.8; } return; }
-    }
+    if (!handler) { const ax = h.x - m.x, az = h.z - m.z, al = Math.sqrt(ax * ax + az * az) || 1; moveTo(p, m.x + ax / al * 1.1, m.z + az / al * 1.1, false); return; }
+
+    if (helpDuty(p, m, handler, h, g)) return;
     p.ai.helping = false;
-    // ball-you-man: sit on the line between my man and the ball, sag toward the paint when far from the ball
-    const f = mToBall < 6.5 ? 0.3 : 0.5;
-    let tx = U.lerp(m.x, handler.x, f), tz = U.lerp(m.z, handler.z, f);
-    const sag = mToBall < 6.5 ? 0.6 : 1.4; const ax = h.x - tx, az = h.z - tz; const al = Math.sqrt(ax * ax + az * az) || 1;
-    tx += ax / al * sag; tz += az / al * sag;
-    moveTo(p, tx, tz, U.dist(p.x, p.z, tx, tz) > 3);
+
+    // closing out: my man is about to catch it, so get there before the ball does
+    const incoming = ball.state === BS.PASS && ball.passTarget === m.id;
+    const mToBall = U.dist(m.x, m.z, handler.x, handler.z);
+    const mToRim = U.dist(m.x, m.z, h.x, h.z);
+    let ax = h.x - m.x, az = h.z - m.z; const al = Math.sqrt(ax * ax + az * az) || 1; ax /= al; az /= al;      // man -> basket
+    let bx = handler.x - m.x, bz = handler.z - m.z; const bl = Math.sqrt(bx * bx + bz * bz) || 1; bx /= bl; bz /= bl; // man -> ball
+
+    let dirX, dirZ, off;
+    if (incoming) {
+      // beat the pass to the catch point, a stride toward the basket side
+      off = 1.0; dirX = ax * 0.55 + bx * 0.45; dirZ = az * 0.55 + bz * 0.45;
+    } else if (mToBall < 6.4) {
+      // one pass away: sit in the passing lane, tight to the man
+      off = 0.95; dirX = bx * 0.72 + ax * 0.28; dirZ = bz * 0.72 + az * 0.28;
+    } else {
+      // two passes away: help position on the man-basket line, sagging with distance but still recoverable.
+      // Rim protectors sag deeper, which is what puts a big in the paint instead of out on the perimeter.
+      const protect = U.clamp(((p.ratings.block + p.ratings.interiorD) / 2 - 58) / 38, 0, 1);
+      off = U.clamp(1.25 + (mToBall - 6.4) * 0.16 + protect * 0.85, 1.25, 3.1);
+      dirX = ax * (0.66 + protect * 0.14) + bx * (0.34 - protect * 0.14);
+      dirZ = az * (0.66 + protect * 0.14) + bz * (0.34 - protect * 0.14);
+    }
+    // a shooter standing at the arc does not get left alone
+    if (mToRim > CONFIG.court.threeR - 0.4 && m.ratings.threePt >= 72) off = Math.min(off, 1.15);
+    const dl = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1; dirX /= dl; dirZ /= dl;
+    const tx = m.x + dirX * off, tz = m.z + dirZ * off;
+    const away = U.dist(p.x, p.z, tx, tz);
+    moveTo(p, tx, tz, away > 2.2 || incoming);
+    // contest a catch-and-shoot from my own man
+    if (!p.airborne && p.cd.contest <= 0 && m.state === ST.SHOOT && !m.shot.released && U.dist(p.x, p.z, m.x, m.z) < 2.2) {
+      if (RNG.chance(diff.contest * 0.55)) { inp.shootPressed = true; p.cd.contest = 0.8; }
+      else p.armsUp = true;
+    }
+  }
+  // One defender rotates on a drive, and once committed he stays committed long enough to arrive. A coin
+  // flip re-rolled every tick used to make the whole defense twitch toward the ball at once.
+  function helpDuty(p, m, handler, h, g) {
+    const inp = p.input;
+    if (g.time < p.ai.helpUntil) { driveTo(p, handler, h, g); return true; }
+    const hd = U.dist(handler.x, handler.z, h.x, h.z);
+    if (hd > 6.3) return false;
+    const toRim = (handler.vx * (h.x - handler.x) + handler.vz * (h.z - handler.z)) / (hd || 1);
+    if (toRim < 1.1) return false;
+    const hm = P[handler.matchup];
+    const beaten = !hm || hm.team === handler.team || !isBetween(hm, handler, h) || U.dist(hm.x, hm.z, handler.x, handler.z) > 1.7;
+    if (!beaten) return false;
+    // the low man helps: near the drive, guarding someone who is far from the ball and not a live shooter
+    let best = null, bestScore = -1e9;
+    for (const q of P) {
+      if (q.team !== p.team) continue;
+      const qm = P[q.matchup]; if (!qm || qm.team === q.team || qm.hasBall) continue;
+      const cost = U.dist(q.x, q.z, handler.x, handler.z) + U.dist(qm.x, qm.z, handler.x, handler.z) * -0.45
+        + (U.dist(qm.x, qm.z, h.x, h.z) > CONFIG.court.threeR && qm.ratings.threePt >= 74 ? 3.2 : 0);
+      const score = -cost;
+      if (score > bestScore) { bestScore = score; best = q; }
+    }
+    if (best !== p || !RNG.chance(diff.help)) return false;
+    p.ai.helpUntil = g.time + 1.0; p.ai.helping = true;
+    driveTo(p, handler, h, g);
+    return true;
+  }
+  function driveTo(p, handler, h, g) {
+    const inp = p.input;
+    const ax = h.x - handler.x, az = h.z - handler.z, al = Math.sqrt(ax * ax + az * az) || 1;
+    moveTo(p, handler.x + ax / al * 1.3, handler.z + az / al * 1.3, true);
+    p.armsUp = true;
+    const hd = U.dist(handler.x, handler.z, h.x, h.z);
+    if (hd < 2.8 && U.dist(p.x, p.z, handler.x, handler.z) < 1.9 && !p.airborne && p.cd.contest <= 0 && RNG.chance(diff.contest * 0.5)) { inp.shootPressed = true; p.cd.contest = 0.8; }
   }
   // ---------------- loose balls / rebounds ----------------
   function reboundLogic(p, g) {
