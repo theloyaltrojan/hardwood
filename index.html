@@ -1703,7 +1703,7 @@ const Game = (() => {
   function canAutoSwitch(team) { let n = 0; for (const p of P) if (p.ctl && p.team === team) n++; return n <= 1; }
   function setHuman(id, force) {
     if (!force && id >= 0 && P[id] && !canAutoSwitch(P[id].team)) return;
-    for (const p of P) if (p.ctl === 'local' && p.id !== id) { p.ctl = null; p.human = false; p.controlled = false; clearInput(p.input); }
+    for (const p of P) if (p.ctl === 'local' && p.id !== id) { p.ctl = null; p.human = false; p.controlled = false; p.ctlName = ''; clearInput(p.input); }
     if (id >= 0 && P[id]) { const p = P[id]; p.ctl = 'local'; p.human = true; p.remote = false; p.controlled = true; p.ctlName = Net.active ? Net.myName : ''; }
     g.human = id;
   }
