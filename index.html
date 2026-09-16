@@ -858,8 +858,106 @@ const PlayerSys = (() => {
 // ==== END PLAYER ====
 
 // ==== BEGIN MOVES ====
-// Dribble moves (Phase 2).
-const Moves = { start() { return false; }, update() {} };
+// Dribble moves: animation windows, cooldowns, stamina cost, combo pricing, and the
+// ankle-breaker/separation reaction of nearby defenders (tunables in CONFIG.separation).
+const Moves = (() => {
+  const MC = CONFIG.moves, SEP = CONFIG.separation, ST = PlayerSys.ST;
+  const MOVE_STATES = new Set([ST.SIDESTEP, ST.CROSSOVER, ST.STEPBACK, ST.SPIN, ST.HESI, ST.PUMP]);
+  function canStart(p) {
+    if (!p.hasBall || p.airborne || p.cd.move > 0) return false;
+    if (p.state === ST.IDLE || p.state === ST.MOVE || p.state === ST.LAND) return true;
+    return MOVE_STATES.has(p.state) && p.stateT >= p.stateDur * 0.65; // chain window
+  }
+  function charge(p, base, g) {
+    if (g.time - p.lastMoveEnd > MC.comboWindow && !MOVE_STATES.has(p.state)) p.comboCount = 0;
+    let c = base * (1 + p.comboCount * MC.comboCostMul);
+    if (p.stamina < CONFIG.player.lowStamina) c *= MC.lowStaminaMul;
+    p.comboCount++; PlayerSys.costStamina(p, c);
+  }
+  function start(p, kind, g) {
+    if (!canStart(p)) return false;
+    const def = MC[kind]; if (!def) return false;
+    if (MOVE_STATES.has(p.state)) p.lastMoveEnd = g.time; // chained: previous move ends now
+    const slow = p.stamina < CONFIG.player.lowStamina ? MC.lowStaminaSlow : 1;
+    const fx = Math.sin(p.facing), fz = Math.cos(p.facing), rx = -Math.cos(p.facing), rz = Math.sin(p.facing);
+    const h = Game.hoopFor(p.team); let tox = h.x - p.x, toz = h.z - p.z; const hd = Math.sqrt(tox * tox + toz * toz) || 1; tox /= hd; toz /= hd;
+    const latx = -toz, latz = tox; // lateral axis relative to the hoop
+    const prevLat = p.vx * latx + p.vz * latz; // handler lateral velocity before the move (what the defender was mirroring)
+    const inp = p.input; const imag = Math.sqrt(inp.mx * inp.mx + inp.mz * inp.mz);
+    charge(p, def.stamina, g);
+    p.moveKind = kind; p.cd.move = def.cd * slow; p.shot.fake = false;
+    switch (kind) {
+      case 'sidestep': {
+        let dx, dz; if (imag > 0.2) { dx = inp.mx / imag; dz = inp.mz / imag; } else { dx = -p.hand * rx; dz = -p.hand * rz; }
+        p.moveDir.x = dx; p.moveDir.z = dz; p.vx = dx * def.impulse; p.vz = dz * def.impulse;
+        PlayerSys.setState(p, ST.SIDESTEP, def.dur * slow); break;
+      }
+      case 'crossover': {
+        p.handFrom = p.hand; p.hand = -p.hand; const d = p.hand;
+        p.moveDir.x = rx * d; p.moveDir.z = rz * d;
+        p.vx = p.vx * 0.35 + (rx * d * 0.85 + fx * 0.5) * def.impulse; p.vz = p.vz * 0.35 + (rz * d * 0.85 + fz * 0.5) * def.impulse;
+        PlayerSys.setState(p, ST.CROSSOVER, def.dur * slow); break;
+      }
+      case 'stepback': {
+        p.moveDir.x = -tox; p.moveDir.z = -toz; p.vx = -tox * def.impulse; p.vz = -toz * def.impulse;
+        p.facing = Math.atan2(tox, toz); p.setShotT = g.time + def.dur * slow + def.setWindow;
+        PlayerSys.setState(p, ST.STEPBACK, def.dur * slow); break;
+      }
+      case 'spin': {
+        p.handFrom = p.hand; p.hand = -p.hand;
+        let dx = tox, dz = toz; if (imag > 0.2) { dx = inp.mx / imag; dz = inp.mz / imag; }
+        p.moveDir.x = dx; p.moveDir.z = dz; p.vx = dx * def.impulse; p.vz = dz * def.impulse;
+        p.facing = Math.atan2(dx, dz);
+        PlayerSys.setState(p, ST.SPIN, def.dur * slow); break;
+      }
+      case 'hesi': { p.moveDir.x = fx; p.moveDir.z = fz; p.vx *= 0.12; p.vz *= 0.12; PlayerSys.setState(p, ST.HESI, def.dur * slow); break; }
+      case 'pump': { p.shot.fake = true; p.vx *= 0.3; p.vz *= 0.3; PlayerSys.setState(p, ST.PUMP, def.dur * slow); break; }
+    }
+    affectDefenders(p, kind, g, latx, latz, prevLat, tox, toz);
+    Game.emit('sound', { name: 'squeak' });
+    return true;
+  }
+  // The separation system: a defender who committed laterally (mirroring the handler) or was closing hard gets
+  // punished when the handler changes direction inside their reaction window.
+  function affectDefenders(p, kind, g, latx, latz, prevLat, tox, toz) {
+    const P = PlayerSys.players;
+    for (const d of P) {
+      if (d.team === p.team || d.state === ST.STUMBLE || d.state === ST.FALL || d.airborne) continue;
+      const dx = d.x - p.x, dz = d.z - p.z; const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist > SEP.effectRadius) continue;
+      const dLat = d.vx * latx + d.vz * latz; // defender lateral speed
+      const closing = -(d.vx * dx + d.vz * dz) / (dist || 1); // speed toward the handler
+      const inFront = (dx * tox + dz * toz) > 0.2; // between handler and hoop
+      const edge = (p.ratings.handling - d.ratings.perimD) / 99;
+      const distFactor = 1 - 0.45 * (dist / SEP.effectRadius);
+      let stumble = 0, slow = 0;
+      if (kind === 'crossover' || kind === 'sidestep' || kind === 'spin') {
+        const newLat = p.moveDir.x * latx + p.moveDir.z * latz;
+        const mirroring = Math.abs(prevLat) > 0.8 && Math.sign(dLat) === Math.sign(prevLat);
+        const committed = Math.abs(dLat) > SEP.commitThreshold && Math.sign(dLat) !== Math.sign(newLat) && Math.abs(newLat) > 0.3;
+        if (committed && (mirroring || Math.abs(dLat) > SEP.commitThreshold * 1.6)) stumble = U.clamp(SEP.stumbleBase + SEP.stumbleRatingScale * edge, 0.25, SEP.stumbleMax) * distFactor;
+        else if (Math.abs(dLat) > SEP.commitThreshold * 0.6 && Math.sign(dLat) !== Math.sign(newLat)) slow = 0.35;
+        if (kind === 'spin' && dist < SEP.spinBeatRadius && inFront && closing > 1.0) stumble = Math.max(stumble, 0.4 + 0.3 * Math.max(0, edge));
+      } else if (kind === 'hesi') {
+        if (closing > SEP.hesiOvershootSpeed) { slow = 0.45; if (closing > SEP.hesiOvershootSpeed + 1.6) stumble = 0.35 + 0.25 * Math.max(0, edge); }
+      } else if (kind === 'stepback') {
+        if (closing > 2.0 && inFront) slow = 0.35;
+      }
+      if (stumble > 0) {
+        PlayerSys.setState(d, ST.STUMBLE, stumble); d.stumbleT = stumble; d.vx *= 0.25; d.vz *= 0.25; d.cd.steal = Math.max(d.cd.steal, stumble);
+        if (stumble > 0.6) { Game.emit('feedback', { text: 'ANKLES!', color: '#ffd400' }); Game.emit('cheer', { big: 0.8 }); }
+        else Game.emit('feedback', { text: 'SHOOK', color: '#35d0ff' });
+      } else if (slow > 0) d.bumped = Math.max(d.bumped, slow);
+    }
+  }
+  function update(p, dt, g) {
+    const s = p.state;
+    if (s === ST.SIDESTEP || s === ST.STEPBACK || s === ST.CROSSOVER) { const k = Math.exp(-dt * 5.5); p.vx *= k; p.vz *= k; }
+    else if (s === ST.SPIN) { const k = 1 - 0.45 * (p.stateT / p.stateDur); p.vx = p.moveDir.x * MC.spin.impulse * k; p.vz = p.moveDir.z * MC.spin.impulse * k; }
+    if (p.stateT >= p.stateDur) { p.lastMoveEnd = g.time; if (s === ST.PUMP) p.shot.fake = false; PlayerSys.setState(p, p.speed > 0.3 ? ST.MOVE : ST.IDLE); }
+  }
+  return { start, update, canStart, MOVE_STATES };
+})();
 // ==== END MOVES ====
 
 // ==== BEGIN BALL ====
@@ -871,7 +969,7 @@ const BallSys = (() => {
     x: 0, y: R, z: 0, px: 0, py: R, pz: 0, vx: 0, vy: 0, vz: 0, state: BS.DEAD, holder: -1, lastTouch: -1, lastTeam: -1,
     touchedRim: false, touchedBoard: false, releaseT: 0, scored: false, scoredHoop: -1, passTarget: -1, passT: 0,
     shot: { shooter: -1, team: -1, value: 2, make: false, hoop: -1, quality: 0, contested: 0, kind: 'jumper', blockable: true, x: 0, z: 0, fouled: false },
-    rest: 0, bounceCount: 0, spinDir: 1, dribbleFloor: false, events: [], airT: 0,
+    rest: 0, bounceCount: 0, spinDir: 1, dribbleFloor: false, events: [], airT: 0, shotLive: false, rimTick: false, scoredTeam: -1, blockedBy: -1,
   };
   function setHolder(p) {
     ball.holder = p ? p.id : -1; ball.state = p ? BS.HELD : BS.LOOSE;
@@ -931,7 +1029,7 @@ const BallSys = (() => {
         ball.vx += inx * j; ball.vy += iny * j; ball.vz += inz * j;
         ball.vx *= BC.rimTangentDamp; ball.vz *= BC.rimTangentDamp; ball.vy *= 0.97;
         if (!ball.touchedRim) ball.events.push('rim'); else if (Math.abs(vn) > 1.2) ball.events.push('rim');
-        ball.touchedRim = true;
+        ball.touchedRim = true; ball.rimTick = true;
       }
     }
   }
@@ -946,7 +1044,7 @@ const BallSys = (() => {
   }
   function integrate(dt, onScore) {
     ball.vy += G * dt;
-    const dragK = 1 - BC.drag * dt; ball.vx *= dragK; ball.vz *= dragK; ball.vy *= dragK;
+    if (ball.state === BS.LOOSE) { const dragK = 1 - BC.drag * dt; ball.vx *= dragK; ball.vz *= dragK; ball.vy *= dragK; }
     ball.x += ball.vx * dt; ball.y += ball.vy * dt; ball.z += ball.vz * dt;
     ball.airT += dt;
     // floor
@@ -970,6 +1068,8 @@ const BallSys = (() => {
         const dr = U.dist(ball.x, ball.z, h.x, h.z);
         if (dr < CC.rimRadius - R * 0.55) { ball.scored = true; ball.scoredHoop = h.idx; if (onScore) onScore(h); }
       }
+      // net drag: the ball slows while passing through the net
+      if (ball.scored && ball.scoredHoop === h.idx && ball.y < h.y && ball.y > h.y - 0.45 && U.dist(ball.x, ball.z, h.x, h.z) < 0.25) { const kv = Math.exp(-dt * 4.5), kh = Math.exp(-dt * 9); ball.vy *= kv; ball.vx *= kh; ball.vz *= kh; }
       // pole collision (cheap cylinder)
       const pxp = h.s * (CC.length / 2 + 1.3); const ddx = ball.x - pxp, ddz = ball.z; const dd = Math.sqrt(ddx * ddx + ddz * ddz);
       if (dd < 0.09 + R && ball.y < 3.9) { const nx = ddx / dd, nz = ddz / dd; ball.x = pxp + nx * (0.09 + R); ball.z = nz * (0.09 + R); const vn = ball.vx * nx + ball.vz * nz; if (vn < 0) { ball.vx -= 1.5 * vn * nx; ball.vz -= 1.5 * vn * nz; } }
@@ -994,8 +1094,115 @@ const BallSys = (() => {
 // ==== END BALL ====
 
 // ==== BEGIN SHOOTING ====
-// Shot meter + outcome model + ball launch (Phase 3).
-const Shooting = { start() { return false; }, update() {}, release() {}, isShooting() { return false; } };
+// Jump shots: timing meter on hold/release; make% from release timing, rating, distance zone, contest, and
+// movement; then a real projectile solved to hit a target point on/around the rim so misses rattle for real.
+const Shooting = (() => {
+  const SC = CONFIG.shooting, ST = PlayerSys.ST, ball = BallSys.ball, BS = BallSys.BS, G = -CONFIG.physics.gravity, P = PlayerSys.players;
+  function zoneFor(p, h) { if (Court.isThree(p.x, p.z, h)) return 'three'; return U.dist(p.x, p.z, h.x, h.z) > 4.3 ? 'mid' : 'close'; }
+  function ratingFor(p, zone) { const r = p.ratings; return zone === 'three' ? r.threePt : zone === 'mid' ? r.midRange : zone === 'ft' ? (r.midRange + r.threePt) / 2 : r.closeShot; }
+  function meterDuration(p, zone) { let d = SC.meterDur * (1 - SC.meterRatingSpeed * (1 - ratingFor(p, zone) / 99)); if (p.stamina < CONFIG.player.lowStamina) d *= 0.85; return d; }
+  function isShooting(p) { return p.state === ST.SHOOT; }
+  function start(p, g) {
+    if (!p.hasBall || p.airborne) return false;
+    const h = Game.hoopFor(p.team); const sh = p.shot;
+    sh.moving = p.speed; sh.setShot = g.time < p.setShotT; sh.meterT = 0; sh.released = false; sh.green = false; sh.quality = 0; sh.timing = 0; sh.relT = 0; sh.hideMeter = false; sh.fake = false;
+    sh.ft = g.state === Game.S.FREETHROW; sh.zone = sh.ft ? 'ft' : zoneFor(p, h); sh.dur = meterDuration(p, sh.zone);
+    p.facing = Math.atan2(h.x - p.x, h.z - p.z);
+    p.vx *= 0.3; p.vz *= 0.3;
+    PlayerSys.jump(p, 3.1 + 0.7 * p.ratings.vertical / 99);
+    PlayerSys.setState(p, ST.SHOOT, 3);
+    return true;
+  }
+  function update(p, dt, g) {
+    const sh = p.shot; if (sh.released) return;
+    sh.meterT += dt / sh.dur;
+    if (p.input.shootReleased || sh.meterT >= 1) release(p, g);
+  }
+  // Contest: nearest-threat model. Distance, being between shooter and rim, hands up / airborne, defender rating.
+  const _c = { factor: 1, contested: 0, blocker: -1 };
+  function contest(p, h, zone) {
+    let worst = 0, blocker = -1;
+    const tHx = h.x - p.x, tHz = h.z - p.z, hd = Math.sqrt(tHx * tHx + tHz * tHz) || 1;
+    for (const d of P) {
+      if (d.team === p.team) continue;
+      const dx = d.x - p.x, dz = d.z - p.z, dist = Math.sqrt(dx * dx + dz * dz); if (dist > SC.contestFar) continue;
+      let c = 1 - U.clamp((dist - SC.contestNear) / (SC.contestFar - SC.contestNear), 0, 1);
+      const dot = (dx * tHx + dz * tHz) / (hd * (dist || 1)); if (dot < 0.15 && dist > 0.9) c *= 0.4;
+      if (d.airborne && d.armsUp) c += SC.jumpContestBonus * (dist < 1.3 ? 1 : 0.35); else if (d.armsUp) c += 0.12;
+      if (d.state === ST.STUMBLE || d.state === ST.FALL) c *= 0.15;
+      c *= 0.7 + 0.4 * (zone === 'close' ? d.ratings.interiorD : d.ratings.perimD) / 99;
+      c *= 0.85 + 0.15 * (d.height / p.height);
+      if (c > worst) { worst = c; blocker = d.id; }
+    }
+    _c.contested = Math.min(1.25, worst); _c.factor = 1 - SC.contestMaxPenalty * Math.min(1, worst); _c.blocker = blocker; return _c;
+  }
+  const _r = { pct: 0, q: 0, green: false, make: false, contested: 0, value: 2 };
+  function evaluate(p, g, h) {
+    const sh = p.shot, zone = sh.zone, Z = SC.zones[zone];
+    const base = Z.base + Z.rating * (ratingFor(p, zone) / 99);
+    const off = Math.abs(sh.meterT - SC.perfectPoint);
+    const green = off <= SC.perfectWidth;
+    const q = green ? 1 : 1 - U.clamp((off - SC.perfectWidth) / (SC.goodWidth - SC.perfectWidth), 0, 1);
+    let pct = base * (0.3 + 0.7 * q); let contested = 0;
+    if (!sh.ft) {
+      const c = contest(p, h, zone); pct *= c.factor; contested = c.contested;
+      if (sh.moving > SC.movingSpeed && !sh.setShot) pct *= SC.movingPenalty;
+      if (sh.setShot) pct *= SC.stepbackBonus;
+      if (p.stamina < CONFIG.player.lowStamina) pct *= SC.fatiguePenalty;
+      if (!p.human) pct *= CONFIG.ai.difficulty[g.aiDiff].shootBoost;
+    }
+    pct = U.clamp(pct, 0.02, 0.97);
+    _r.pct = pct; _r.q = q; _r.green = green; _r.contested = contested;
+    _r.make = (green && SC.greenAuto) ? true : RNG.chance(pct);
+    _r.value = sh.ft ? 1 : Court.isThree(p.x, p.z, h) ? 3 : 2;
+    return _r;
+  }
+  // Solve a launch velocity that passes through (tx,ty,tz) from (x0,y0,z0) at elevation angle `ang`.
+  const _l = { vx: 0, vy: 0, vz: 0 };
+  function solveLaunch(x0, y0, z0, tx, ty, tz, ang) {
+    const dx = tx - x0, dz = tz - z0, d = Math.sqrt(dx * dx + dz * dz) || 0.01, hgt = ty - y0;
+    const cos = Math.cos(ang), sin = Math.sin(ang), tan = Math.tan(ang);
+    const denom = 2 * cos * cos * (d * tan - hgt);
+    let v = denom > 0.01 ? Math.sqrt(G * d * d / denom) : 6; if (!isFinite(v)) v = 6;
+    // +0.5*g*dt corrects the semi-implicit Euler bias so the sim lands exactly on the analytic target
+    _l.vx = dx / d * v * cos; _l.vz = dz / d * v * cos; _l.vy = v * sin + 0.5 * G / CONFIG.physics.hz; return _l;
+  }
+  // Pick where the ball should go: inside the cylinder for makes, on the rim/board band for misses.
+  const _t = { x: 0, y: 0, z: 0 };
+  function targetFor(h, x0, z0, make, q) {
+    _t.x = h.x; _t.z = h.z; _t.y = h.y + 0.02;
+    const dist = U.dist(x0, z0, h.x, h.z) || 1; const dirx = (x0 - h.x) / dist, dirz = (z0 - h.z) / dist; // hoop -> shooter
+    if (make) { const a = RNG.next() * Math.PI * 2, r = RNG.next() * 0.045; _t.x += Math.cos(a) * r; _t.z += Math.sin(a) * r; return _t; }
+    const kind = RNG.next();
+    const rr = 0.19 + RNG.next() * 0.15; const spread = (RNG.next() - 0.5) * 1.4;
+    const ax = Math.cos(spread), az = Math.sin(spread); // rotate the shooter direction by `spread`
+    let ox = (dirx * ax - dirz * az) * rr, oz = (dirx * az + dirz * ax) * rr;
+    if (kind < 0.42) { /* front rim */ } else if (kind < 0.82) { ox = -ox; oz = -oz; /* back rim, may glance the board */ }
+    else { const s = 0.45 + RNG.next() * 0.5; ox = ((dirx * ax - dirz * az)) * s; oz = ((dirx * az + dirz * ax)) * s; if (RNG.chance(0.5)) { ox = -ox; oz = -oz; } }
+    if (q < 0.25 && RNG.chance(0.4)) { ox *= 2.0; oz *= 2.0; }
+    _t.x += ox; _t.z += oz; return _t;
+  }
+  function release(p, g) {
+    const h = Game.hoopFor(p.team); const sh = p.shot; const res = evaluate(p, g, h);
+    sh.released = true; sh.relT = p.stateT; sh.timing = sh.meterT; sh.quality = res.q; sh.green = res.green;
+    const hh = p.height / 1.93, fx = Math.sin(p.facing), fz = Math.cos(p.facing);
+    const x0 = p.x + fx * 0.28, z0 = p.z + fz * 0.28, y0 = p.y + hh * 2.12;
+    const t = targetFor(h, x0, z0, res.make, res.q);
+    const dist = U.dist(x0, z0, h.x, h.z);
+    const ang = (dist < 3.2 ? SC.closeLaunchAngle : SC.launchAngle) * Math.PI / 180 + (RNG.next() - 0.5) * 0.06;
+    const l = solveLaunch(x0, y0, z0, t.x, t.y, t.z, ang);
+    BallSys.place(x0, y0, z0); BallSys.release(l.vx, l.vy, l.vz, BS.SHOT); ball.spinDir = -1;
+    const s = ball.shot; s.shooter = p.id; s.team = p.team; s.value = res.value; s.make = res.make; s.hoop = h.idx; s.quality = res.q; s.contested = res.contested; s.kind = sh.ft ? 'ft' : 'jumper'; s.blockable = !sh.ft; s.x = p.x; s.z = p.z; s.fouled = false; s.green = res.green; s.pct = res.pct;
+    Rules.onShot(p, g, res.value);
+    if (p.human || Game.settings.meterHelp) {
+      const early = sh.meterT < SC.perfectPoint;
+      const txt = res.green ? 'PERFECT' : res.q > 0.55 ? (early ? 'GOOD · EARLY' : 'GOOD · LATE') : (early ? 'EARLY' : 'LATE');
+      if (p.human) Game.emit('feedback', { text: txt, color: res.green ? '#37e07a' : res.q > 0.55 ? '#ffd400' : '#ff4d5e' });
+    }
+    Game.emit('sound', { name: 'catchBall' });
+  }
+  return { start, update, release, isShooting, evaluate, solveLaunch, zoneFor, ratingFor, contest };
+})();
 // ==== END SHOOTING ====
 
 // ==== BEGIN DUNKS ====
@@ -1161,24 +1368,47 @@ const Game = (() => {
     pickupLoose();
     for (const p of P) if (!p.human) clearInputEdges(p.input);
   }
-  return { S, g, settings, saveSettings, start, stop, step, hoopFor, otherTeam, teamPlayers, setHuman, setupPossession, emit, toast, applyInput };
+  // Mode-flow hooks (Phase 6 fills these in)
+  function onScored(team, p, value) {}
+  function onPossession(p, wasShot) { g.possession = p.team; }
+  return { S, g, settings, saveSettings, start, stop, step, hoopFor, otherTeam, teamPlayers, setHuman, setupPossession, emit, toast, applyInput, onScored, onPossession };
 })();
 
 // Passing / Defense / Rules: Phase 6 fills these in. Phase 1 keeps practice mode alive.
 const Passing = { tryPass() { return false; }, inboundPass() {} };
 const Defense = { trySteal() { return false; } };
 const Rules = {
-  onScore(h) { const g = Game.g; Game.emit('score', { hoop: h.idx }); },
-  onPickup(p, g) { BallSys.setHolder(p); Game.emit('pickup', { id: p.id }); },
+  onShot(p, g, value) { p.stats.fga++; if (value === 3) p.stats.tpa++; g.lastShot = { id: p.id, value, t: g.time }; BallSys.ball.shotLive = true; },
+  onScore(h) {
+    const g = Game.g, ball = BallSys.ball, s = ball.shot;
+    const scorerId = ball.shotLive ? s.shooter : ball.lastTouch; const p = PlayerSys.players[scorerId]; if (!p) return;
+    let team = p.team; if (g.mode !== 'practice' && h.idx !== g.hoopOf[team]) team = 1 - team; // own basket counts for the opponent
+    const value = ball.shotLive ? s.value : 2;
+    const swish = !ball.touchedRim && !ball.touchedBoard;
+    g.score[team] += value; p.stats.pts += value; if (ball.shotLive) { p.stats.fgm++; if (value === 3) p.stats.tpm++; }
+    ball.shotLive = false; ball.scoredTeam = team;
+    Court.netPulse(h.idx);
+    Game.emit('sound', { name: swish ? 'swish' : 'net' });
+    Game.emit('cheer', { big: value === 3 ? 1 : 0.7 });
+    Game.toast((s.kind === 'dunk' ? 'SLAM' : swish ? 'SWISH' : 'BUCKET') + '  +' + value, p.name.toUpperCase() + (s.green ? ' · PERFECT RELEASE' : s.kind === 'dunk' ? ' · ' + s.dunkName : ''));
+    Game.onScored(team, p, value);
+  },
+  onRimTouch(g) { if (BallSys.ball.shotLive) g.shotClock = g.halfCourt ? CONFIG.game.halfShotClock : CONFIG.game.shotClock; },
+  onPickup(p, g) {
+    const ball = BallSys.ball; const wasShot = ball.shotLive; ball.shotLive = false;
+    if (wasShot) { p.stats.reb++; Game.emit('sound', { name: 'catchBall' }); }
+    BallSys.setHolder(p); Game.onPossession(p, wasShot);
+  },
   update(dt, g) {
+    const ball = BallSys.ball;
+    if (ball.rimTick) { ball.rimTick = false; Rules.onRimTouch(g); }
     if (g.mode === 'practice') {
-      const ball = BallSys.ball; const p = PlayerSys.players[0];
-      if (ball.state === BallSys.BS.LOOSE) { if (Math.abs(ball.vx) + Math.abs(ball.vz) + Math.abs(ball.vy) < 0.05) { ball.rest += dt; if (ball.rest > 2.5) { BallSys.setHolder(p); ball.rest = 0; } } else ball.rest = 0; }
+      const p = PlayerSys.players[0];
+      if (ball.state === BallSys.BS.LOOSE) { if (Math.abs(ball.vx) + Math.abs(ball.vz) + Math.abs(ball.vy) < 0.05) { ball.rest += dt; if (ball.rest > 2.5) { ball.shotLive = false; BallSys.setHolder(p); ball.rest = 0; } } else ball.rest = 0; }
       Court.setShotClock(-1);
     }
   },
-};
-// ==== END GAME ====
+};// ==== END GAME ====
 
 // ==== BEGIN CAMERA ====
 // Broadcast-style follow camera with damping; also provides the input basis (screen-relative movement).
@@ -1423,7 +1653,8 @@ const UI = (() => {
   }
   function setText(id, v) { if (last[id] !== v) { last[id] = v; el[id].textContent = v; } }
   function toast(text, sub) { el.toast.innerHTML = text + (sub ? '<small>' + sub + '</small>' : ''); el.toast.classList.remove('show'); void el.toast.offsetWidth; el.toast.classList.add('show'); }
-  function feedback(text, color) { el.feedback.textContent = text; el.feedback.style.color = color; el.feedback.classList.remove('show'); void el.feedback.offsetWidth; el.feedback.classList.add('show'); }
+  const fbPos = { x: 0, y: 0, visible: false };
+  function feedback(text, color) { el.feedback.style.left = fbPos.x + 'px'; el.feedback.style.top = fbPos.y + 'px'; el.feedback.textContent = text; el.feedback.style.color = color; el.feedback.classList.remove('show'); void el.feedback.offsetWidth; el.feedback.classList.add('show'); }
   function toggleDebug() { debugOn = !debugOn; el.debug.classList.toggle('hidden', !debugOn); }
 
   function updateHUD(g) {
@@ -1497,9 +1728,10 @@ const UI = (() => {
     const g = Game.g;
     for (const ev of g.events) handleEvent(ev, g); g.events.length = 0;
     const b = BallSys.ball;
-    for (const e of b.events) { if (typeof e === 'number') { if (e < 0) AudioSys.play('dribble', U.clamp(0.6 + (-e - 1) * 0.07, 0.5, 1.1)); else AudioSys.play('bounce', e); } else if (e === 'rim') { AudioSys.play('rim'); Rules.onRimTouch && Rules.onRimTouch(g); } else if (e === 'board') AudioSys.play('board'); }
+    for (const e of b.events) { if (typeof e === 'number') { if (e < 0) AudioSys.play('dribble', U.clamp(0.6 + (-e - 1) * 0.07, 0.5, 1.1)); else AudioSys.play('bounce', e); } else if (e === 'rim') AudioSys.play('rim'); else if (e === 'board') AudioSys.play('board'); }
     b.events.length = 0;
     if (!hudVisible) return;
+    const hp = PlayerSys.players[g.human]; if (hp) { Render.project(hp.x, hp.y + hp.height * 1.15, hp.z, fbPos); }
     updateHUD(g); updateMeter(g); updateTags(g);
     if (debugOn) updateDebug(dt, stats);
   }
