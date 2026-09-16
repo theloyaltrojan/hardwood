@@ -209,6 +209,32 @@
   .final-board .fscore { font-family: var(--display); font-size: 64px; line-height: 1; }
   .final-board .fmid { font-family: var(--display); font-size: 18px; letter-spacing: 0.2em; color: var(--muted); }
 
+  /* ---------- MyPark ---------- */
+  #park { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
+  #parkTop { position: absolute; top: 16px; left: 50%; transform: translateX(-50%) skewX(var(--skew)); background: rgba(10,12,17,0.82); padding: 7px 22px 5px; display: flex; gap: 14px; align-items: baseline; }
+  #parkTop > * { transform: skewX(var(--unskew)); }
+  #parkTop .t { font-family: var(--display); font-size: 22px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+  #parkTop .s { font-size: 12px; color: var(--muted); letter-spacing: 0.08em; }
+  #parkPrompt { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); text-align: center; }
+  #parkPrompt .rib { display: inline-block; background: var(--accent); color: var(--accent-ink); font-family: var(--display); font-size: 24px; letter-spacing: 0.06em; text-transform: uppercase; padding: 5px 22px 2px; transform: skewX(var(--skew)); }
+  #parkPrompt .sub { display: block; margin-top: 6px; font-size: 12px; color: var(--ink); letter-spacing: 0.1em; text-shadow: 0 2px 6px #000; }
+  #parkPrompt .big { display: inline-block; font-family: var(--display); font-size: 92px; line-height: 1; color: var(--accent); text-shadow: 0 6px 24px rgba(0,0,0,0.7); }
+  #park.inmatch #parkChat { bottom: 124px; }
+  #park.hideprompt #parkPrompt { display: none; }
+  #parkChat { position: absolute; left: 18px; bottom: 18px; width: 340px; display: flex; flex-direction: column; gap: 6px; }
+  #parkLog { display: flex; flex-direction: column; gap: 2px; max-height: 172px; overflow: hidden; justify-content: flex-end; }
+  #parkLog div { font-size: 12.5px; line-height: 1.45; text-shadow: 0 1px 4px #000, 0 0 2px #000; }
+  #parkLog b { color: var(--accent); font-weight: 600; }
+  #parkLog .sys { color: var(--muted); font-style: italic; }
+  #parkLog .me b { color: var(--ok); }
+  #parkInput { pointer-events: auto; display: none; width: 100%; }
+  #parkInput.on { display: block; }
+  #parkTags { position: absolute; inset: 0; }
+  #parkTags .pt { position: absolute; transform: translate(-50%, -100%); text-align: center; white-space: nowrap; }
+  #parkTags .nm { font-family: var(--display); font-size: 12px; letter-spacing: 0.08em; color: #dfe4ea; text-shadow: 0 2px 5px #000; }
+  #parkTags .nm.me { color: var(--accent); }
+  #parkTags .bub { display: block; margin-bottom: 3px; background: rgba(12,14,20,0.92); border-left: 3px solid var(--accent); padding: 3px 9px; font-size: 12px; color: var(--ink); max-width: 210px; white-space: normal; }
+
   /* ---------- MyCareer ---------- */
   .careercard { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 18px; background: var(--panel2); border-left: 6px solid var(--accent); padding: 12px 18px; margin: 4px 0 10px; }
   .careercard .cc-grade, .careercard .cc-xp { text-align: center; line-height: 1; }
@@ -322,6 +348,7 @@
         <button class="mode" data-mode="1v1"><span class="mode-big">1v1</span><span class="mode-body"><b>Streetball</b><span>Half court, first to 21, loser's ball. Break ankles and get to the rim.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M4 26h20M88 26h-20"/><path d="M28 4v44" /><path d="M64 4v44"/><path d="M4 14h12a12 12 0 0 1 0 24H4"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/></svg></button>
         <button class="mode" data-mode="3v3"><span class="mode-big">3v3</span><span class="mode-body"><b>Half court</b><span>Three a side with a 14-second clock. Clear it past the arc after every stop.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M46 4v44"/><path d="M4 14h12a12 12 0 0 1 0 24H4"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><circle cx="46" cy="26" r="7"/></svg></button>
         <button class="mode sel" data-mode="5v5"><span class="mode-big">5v5</span><span class="mode-body"><b>Full court</b><span>Four quarters, 24-second clock, inbounds, fouls and free throws. The whole broadcast.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M46 4v44"/><circle cx="46" cy="26" r="7"/><path d="M4 8h22a18 18 0 0 1 0 36H4"/><path d="M88 8h-22a18 18 0 0 0 0 36h22"/><path d="M4 18h9v16H4M88 18h-9v16h9"/></svg></button>
+         <button class="mode compact" id="btnPark"><span class="mode-big">Park</span><span class="mode-body"><b>MyPark</b><span>Walk the park as your MyCareer player. Stand on a pad, fill a court, run it.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><rect x="10" y="10" width="30" height="14"/><rect x="52" y="28" width="30" height="14"/><circle cx="46" cy="26" r="2.5"/></svg></button>
          <button class="mode compact" data-mode="practice"><span class="mode-big">Gym</span><span class="mode-body"><b>Practice</b><span>Empty court, unlimited shots, no clock.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><circle cx="72" cy="26" r="2.5"/></svg></button>
       </div>
       <div class="matchup">
@@ -349,6 +376,13 @@
       <div id="netBody"></div>
     </div>
   </div>
+</div>
+
+<div id="park" class="hidden">
+  <div id="parkTop"><span class="t">MyPark</span><span class="s" id="parkSub"></span></div>
+  <div id="parkTags"></div>
+  <div id="parkPrompt"></div>
+  <div id="parkChat"><div id="parkLog"></div><input id="parkInput" class="field" maxlength="120" placeholder="say something"></div>
 </div>
 
 <!-- ---------- Pause menu ---------- -->
@@ -495,6 +529,13 @@ const CONFIG = {
     bar: { early: 1.06, mid: 0.94, late: 0.80, last: 0.56 },
   },
   game: { shotClock: 24, halfShotClock: 14, offRebClock: 14, quarterLen: 120, quarters: 4, halfCourtTarget: 21, deadBallDelay: 0.85, inboundDelay: 0.35, ftRoutine: 1.2, foulOutLimit: 6, reachInFoulChance: 0.18, shootingFoulChance: 0.15 },
+  // MyPark: the walkable lobby. `goers` is how many CPU park-goers wander it besides you.
+  park: {
+    walkSpeed: 4.3, runSpeed: 7.2, accel: 17, turnRate: 12, goers: 14,
+    padRadius: 1.25, countdown: 3.2,
+    chatMax: 60, chatShow: 7, bubbleTime: 5.5,
+    camDist: 10.5, camHeight: 6.6, camDamp: 6, camLookY: 1.6,
+  },
   camera: { broadcastHeight: 10.8, broadcastDist: 19.5, followX: 0.86, lookY: 1.1, lookZ: 0.28, damp: 4.5, lookDamp: 6, fov: 42, halfCourtZoom: 0.86 },
   render: { shadows: false, crowd: true, pixelRatioCap: 1.5, exposure: 1.1, vignette: 0.55, fogDensity: 0.016 },
   audio: { volume: 0.8 },
@@ -610,7 +651,17 @@ const Input = (() => {
   }
   function startRemap(action, cb) { remapping = action; remapCb = cb; }
   function reset() { Object.assign(binds, DEFAULT_BINDS); U.saveLS('hw_binds', binds); }
-  return { binds, LABELS, DEFAULT_BINDS, SCHEMES, sample, endTick, isDown, wasPressed, wasReleased, keyLabel, startRemap, reset,
+  // Walking the park uses the same stick as a game; the shoot key doubles as the do-it key on a pad.
+  const _park = { mx: 0, mz: 0, sprint: false, action: false };
+  function parkAxes(basis) {
+    const h = (isDown('right') ? 1 : 0) - (isDown('left') ? 1 : 0);
+    const v = (isDown('up') ? 1 : 0) - (isDown('down') ? 1 : 0);
+    _park.mx = basis.rx * h + basis.fx * v; _park.mz = basis.rz * h + basis.fz * v;
+    _park.sprint = isDown('sprint');
+    _park.action = wasPressed('shoot');
+    return _park;
+  }
+  return { parkAxes, binds, LABELS, DEFAULT_BINDS, SCHEMES, sample, endTick, isDown, wasPressed, wasReleased, keyLabel, startRemap, reset,
     get remapping() { return remapping; }, onAny(f) { listeners.any.push(f); }, get down() { return down; } };
 })();
 // ==== END INPUT ====
@@ -1289,7 +1340,9 @@ const PlayerSys = (() => {
     const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t;
   }
 
-  function buildMesh(p, team, scene) {
+  // `standalone` keeps the mesh out of the match's teardown list: the park owns its avatars and
+  // disposes them itself, so starting or ending a game never reaches into the lobby.
+  function buildMesh(p, team, scene, standalone) {
     if (!GEO.torso) initGeo();
     const skin = SKINS[p.skin], hairCol = HAIRS[(p.hair == null ? p.skin : p.hair) % HAIRS.length];
     const jersey = team.primary, trim = team.secondary;
@@ -1358,19 +1411,25 @@ const PlayerSys = (() => {
     p.mesh = { group: g, body, armL, armR, legL, legR, foreL: armL.userData.fore, foreR: armR.userData.fore,
       shinL: legL.userData.shin, shinR: legR.userData.shin, shadow, ring, legPhase: 0, leanX: 0, leanZ: 0, crouch: 0, sc, girthS: girth, heightS,
       owned: [bodyGeo, armGeo, foreGeo, thighGeo, shinGeo], numMat };
-    liveMeshes.push(p.mesh);
+    if (!standalone) liveMeshes.push(p.mesh);
     return p.mesh;
   }
-  function destroyMeshes(scene) {
+  function disposeMesh(m, parent) {
+    if (!m) return;
+    parent.remove(m.group); parent.remove(m.shadow); parent.remove(m.ring);
+    for (const geo of m.owned) geo.dispose();
+    if (m.numMat) { if (m.numMat.map) m.numMat.map.dispose(); m.numMat.dispose(); }
+  }
+  function destroyMeshes() {
     for (const m of liveMeshes) {
-      scene.remove(m.group); scene.remove(m.shadow); scene.remove(m.ring);
+      for (const o of [m.group, m.shadow, m.ring]) if (o.parent) o.parent.remove(o);
       for (const geo of m.owned) geo.dispose();          // per-player merged geometry
       if (m.numMat) { if (m.numMat.map) m.numMat.map.dispose(); m.numMat.dispose(); }
     }
     liveMeshes.length = 0;
     for (const p of players) p.mesh = null;
   }
-  return { ST, STATE_NAMES, SKINS, players, genRoster, overall, create, clear, setState, teleport, controlFactor, updateMovement, updateVertical, jump, pushHistory, delayedPos, faceToward, faceVelocity, costStamina, reachHeight, speedMul, fatigueMul, buildMesh, destroyMeshes, matsFor };
+  return { ST, STATE_NAMES, SKINS, players, genRoster, overall, create, clear, setState, teleport, controlFactor, updateMovement, updateVertical, jump, pushHistory, delayedPos, faceToward, faceVelocity, costStamina, reachHeight, speedMul, fatigueMul, buildMesh, disposeMesh, destroyMeshes, matsFor };
 })();
 // ==== END PLAYER ====
 
@@ -2569,15 +2628,16 @@ const Game = (() => {
     const o = opts || {};
     g.career = !!o.career; g.careerPid = -1; g.lockHuman = false;
     g.mode = mode; g.teamIdx = [teamA, teamB]; g.teams = kitsFor(teamA, teamB);
-    g.halfCourt = mode !== '5v5'; g.playersPerTeam = mode === '5v5' ? 5 : mode === '3v3' ? 3 : 1;
+    g.halfCourt = mode !== '5v5'; g.playersPerTeam = mode === '5v5' ? 5 : mode === '3v3' ? 3 : mode === '2v2' ? 2 : 1;
     g.score = [0, 0]; g.quarter = 1; g.fouls = [0, 0]; g.teamFouls = [0, 0]; g.time = 0; g.events.length = 0; g.lastShot = null; g.mustClear = false; g.winner = -1;
     g.clock = mode === '5v5' ? settings.quarterLen : 0; g.aiDiff = settings.difficulty; g.possArrow = 1; g.inbound = null; g.pendingFoul = null; g.lastPass = null;
     g.hoopOf = g.halfCourt ? [1, 1] : [1, 0];
     PlayerSys.clear();
     g.rosters = [PlayerSys.genRoster(teamA), PlayerSys.genRoster(teamB)];
     if (g.career) Career.applyRoster(g.rosters, g.teamIdx);   // your created player takes their slot
+    if (o.roster) o.roster(g.rosters, g.teamIdx);             // MyPark seats the people who stood on the pads
     if (mode === 'practice') PlayerSys.create(g.rosters[0][0], 0, 0);   // empty gym: one player, no defense
-    else for (let t = 0; t < 2; t++) for (const si of pickSlots(g.rosters[t], g.playersPerTeam)) PlayerSys.create(g.rosters[t][si], t, si);
+    else for (let t = 0; t < 2; t++) for (const si of (o.slots || pickSlots(g.rosters[t], g.playersPerTeam))) PlayerSys.create(g.rosters[t][si], t, si);
     RNG.seed((Date.now() & 0xffff) + teamA * 31 + teamB * 17);
     if (g.career) { for (const p of P) if (p.career) { g.careerPid = p.id; break; } g.lockHuman = g.careerPid >= 0; }
     g.humanTeam = g.careerPid >= 0 ? P[g.careerPid].team : 0;
@@ -2594,6 +2654,7 @@ const Game = (() => {
   function pickSlots(roster, n) {
     if (n === 5) return [0, 1, 2, 3, 4];
     if (n === 3) return [0, 2, 4];
+    if (n === 2) return [0, 4];               // a guard and a big
     let best = 0, bs = -1; for (let i = 0; i < 3; i++) { const r = roster[i].ratings; const sc = r.handling + r.threePt + r.layup + r.dunk + r.speed + r.perimD; if (sc > bs) { bs = sc; best = i; } }
     return [best];
   }
@@ -3211,6 +3272,475 @@ const Rules = {
   },
 };// ==== END GAME ====
 
+// ==== BEGIN PARK ====
+// MyPark: an outdoor lobby you walk around as your MyCareer player. Six half courts, each with team pads;
+// fill every pad on a court and that court tips off where it stands, with everyone else free to walk over
+// and watch from the sidelines.
+//
+// The match itself still runs in the engine's own half-court space at the origin — nothing about the
+// simulation changes. The park draws it inside a group parked at the court's position and rotation, so a
+// live game appears on the right court without the sim ever knowing where it is.
+const Park = (() => {
+  const PK = CONFIG.park, C = CONFIG.court;
+  const MID = C.length / 4;                       // engine x of the half court's centre
+  const HALF_W = C.width / 2, HALF_D = C.length / 4;
+  const ST = PlayerSys.ST;
+
+  // court id, mode, players per side, park position; the row decides which way the hoop faces
+  const DEFS = [
+    ['1v1', 1, -27, -13], ['2v2', 2, 0, -13], ['3v3', 3, 27, -13],
+    ['1v1', 1, -27, 13], ['2v2', 2, 0, 13], ['3v3', 3, 27, 13],
+  ];
+  const courts = [];
+  let group = null, built = false, goers = [], player = null, live = null, activeCourt = null;
+  let chat = [], chatSeq = 0, joined = false, t = 0, countdown = 0, pendingCourt = null;
+  const _p = { x: 0, z: 0 };
+  const NO_INPUT = { mx: 0, mz: 0, sprint: false, action: false };
+
+  function toPark(ct, ex, ez, out) {            // engine half-court space -> park space
+    const lx = ex - MID, lz = ez;
+    out.x = ct.x + lx * ct.cos + lz * ct.sin;
+    out.z = ct.z - lx * ct.sin + lz * ct.cos;
+    return out;
+  }
+  function initCourts() {
+    courts.length = 0;
+    DEFS.forEach((d, i) => {
+      const [mode, per, x, z] = d;
+      const rot = z < 0 ? Math.PI / 2 : -Math.PI / 2;   // hoop points away from the plaza
+      const ct = { id: i, mode, per, x, z, rot, cos: Math.cos(rot), sin: Math.sin(rot),
+        label: mode.toUpperCase().replace('V', ' v '), pads: [], state: 'open', lockT: 0,
+        kits: [(i * 7) % TEAMS.length, (i * 7 + 11) % TEAMS.length] };
+      if (ct.kits[0] === ct.kits[1]) ct.kits[1] = (ct.kits[1] + 1) % TEAMS.length;
+      // pads sit behind the midcourt line, one cluster per team
+      for (let team = 0; team < 2; team++) for (let s = 0; s < per; s++) {
+        const spread = (s - (per - 1) / 2) * 1.6;
+        const ez = (team === 0 ? -3.6 : 3.6) + spread;
+        const pad = { team, slot: s, ex: -1.9, ez, by: -1, t: 0 };
+        toPark(ct, pad.ex, pad.ez, _p); pad.px = _p.x; pad.pz = _p.z;
+        ct.pads.push(pad);
+      }
+      courts.push(ct);
+    });
+  }
+
+  // ---------- park-goers ----------
+  const FLAVOUR = ['run it back', 'who got next', 'ball is life', 'i’m open', 'my bad', 'all day',
+    'lets run', 'good look', 'cash', 'put me in'];
+  function makeGoer(def, isPlayer) {
+    return { id: goers.length, name: def.name, def, isPlayer: !!isPlayer, remote: null,
+      num: def.num, pos: def.pos, height: def.height, ratings: def.ratings, skin: def.skin, hair: def.hair,
+      x: 0, z: 0, y: 0, px: 0, pz: 0, vx: 0, vz: 0, facing: 0, pfacing: 0, speed: 0,
+      state: ST.IDLE, stateT: 0, stateDur: 0, hand: 1, hasBall: false, airborne: false, armsUp: false,
+      moveDir: { x: 0, z: 0 }, moveKind: '', dribbleH: 0.85, dribblePhase: 0,
+      shot: { released: false, meterT: 0, fake: false }, dunk: { kind: '' },
+      pad: null, padT: 0, mesh: null, kit: 0,
+      say: '', sayT: 0,
+      ai: { tx: 0, tz: 0, idle: 0, wantCourt: -1, think: 0 } };
+  }
+  function randomDef(i) {
+    const pos = POSITIONS[(RNG.next() * 5) | 0], t = POS_TEMPLATE[pos], r = {};
+    for (const k of ['speed','accel','handling','threePt','midRange','closeShot','layup','dunk','vertical','block','steal','perimD','interiorD','rebound','strength','pass']) {
+      r[k] = U.clamp(Math.round(t[k] + RNG.gauss() * 7), 35, 99);
+    }
+    return { name: RNG.pick(FIRST_NAMES) + ' ' + RNG.pick(LAST_NAMES), num: 1 + ((RNG.next() * 60) | 0),
+      pos, height: +(t.height + RNG.gauss() * 0.04).toFixed(2), ratings: r,
+      skin: (RNG.next() * 5) | 0, hair: (RNG.next() * 5) | 0, star: false };
+  }
+  function spawnGoers() {
+    goers = [];
+    RNG.seed((Date.now() & 0xffff) ^ 0x51ed);
+    const me = Career.exists() ? Career.playerDef() : { name: 'You', num: 0, pos: 'SG', height: 1.95,
+      ratings: PlayerSys.genRoster(0)[1].ratings, skin: 1, hair: 0, star: false };
+    player = makeGoer(me, true);
+    player.kit = 0; player.x = 0; player.z = 0; player.facing = 0;
+    goers.push(player);
+    for (let i = 0; i < PK.goers; i++) {
+      const g = makeGoer(randomDef(i), false);
+      g.kit = 1 + (i % (TEAMS.length - 1));
+      const a = RNG.next() * Math.PI * 2, r = 6 + RNG.next() * 18;
+      g.x = Math.cos(a) * r * 1.6; g.z = Math.sin(a) * r * 0.5;
+      g.ai.idle = RNG.range(0.5, 4);
+      goers.push(g);
+      pickTarget(g);
+    }
+  }
+
+  // ---------- geometry ----------
+  function courtTexture(tint) {
+    const W = 512, H = 512, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const g = cv.getContext('2d');
+    const sx = W / C.width, sz = H / (C.length / 2);            // local: across = width, down = depth
+    const X = (z) => (z + C.width / 2) * sx;                    // engine z -> texture x
+    const Z = (x) => H - (x) * sz;                              // engine x (0..half) -> texture y, hoop at bottom
+    g.fillStyle = '#2b2f38'; g.fillRect(0, 0, W, H);
+    // speckled asphalt
+    let s = 99; const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+    for (let i = 0; i < 9000; i++) {
+      const v = 0.5 + rnd() * 0.5;
+      g.fillStyle = 'rgba(' + ((70 * v) | 0) + ',' + ((76 * v) | 0) + ',' + ((88 * v) | 0) + ',0.5)';
+      g.fillRect(rnd() * W, rnd() * H, 2, 2);
+    }
+    // painted key
+    g.fillStyle = tint; g.globalAlpha = 0.30;
+    g.fillRect(X(-C.paintW / 2), 0, C.paintW * sx, C.keyDepth * sz);
+    g.globalAlpha = 1;
+    g.strokeStyle = '#e9edf2'; g.lineWidth = 4; g.lineJoin = 'round';
+    const bx = C.length / 2;
+    g.strokeRect(X(-C.width / 2) + 3, Z(bx) + 3, C.width * sx - 6, (C.length / 2) * sz - 6);   // sidelines + baseline
+    g.strokeRect(X(-C.paintW / 2), Z(bx), C.paintW * sx, C.keyDepth * sz);                      // key
+    g.beginPath(); g.arc(X(0), Z(bx - C.keyDepth), C.ftCircleR * sx, 0, Math.PI * 2); g.stroke();
+    // three point arc + corners
+    const hx = bx - C.rimFromBaseline;
+    g.beginPath();
+    g.moveTo(X(-C.threeCorner), Z(bx));
+    g.lineTo(X(-C.threeCorner), Z(bx - 2.0));
+    g.arc(X(0), Z(hx), C.threeR * sx, Math.PI * 0.87, Math.PI * 0.13, true);
+    g.lineTo(X(C.threeCorner), Z(bx));
+    g.stroke();
+    const tex = new THREE.CanvasTexture(cv); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 4;
+    return tex;
+  }
+  function parkHoop() {
+    const g = new THREE.Group();
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x353b46, roughness: 0.6, metalness: 0.4 });
+    const bx = C.length / 2 - C.boardFromBaseline;
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(C.boardW * 0.86, C.boardH * 0.86),
+      new THREE.MeshStandardMaterial({ color: 0xdfe4ea, roughness: 0.7, side: THREE.DoubleSide }));
+    board.position.set(bx, C.boardBottom + C.boardH * 0.43, 0); board.rotation.y = -Math.PI / 2; g.add(board);
+    const sq = new THREE.Mesh(new THREE.PlaneGeometry(0.59, 0.45),
+      new THREE.MeshBasicMaterial({ color: 0xd1202a, transparent: true, opacity: 0.85, side: THREE.DoubleSide }));
+    sq.position.set(bx - 0.012, C.rimHeight + 0.30, 0); sq.rotation.y = -Math.PI / 2; g.add(sq);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(C.rimRadius, C.rimTube * 1.3, 8, 24),
+      new THREE.MeshStandardMaterial({ color: 0xe06a1a, roughness: 0.4, metalness: 0.6 }));
+    rim.position.set(C.length / 2 - C.rimFromBaseline, C.rimHeight, 0); rim.rotation.x = Math.PI / 2; g.add(rim);
+    const net = new THREE.Mesh(new THREE.CylinderGeometry(C.rimRadius, 0.15, 0.40, 10, 3, true),
+      new THREE.MeshStandardMaterial({ color: 0xb9c0cb, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, roughness: 0.9, metalness: 0.5 }));
+    net.position.set(rim.position.x, C.rimHeight - 0.2, 0); g.add(net);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.10, 4.0, 10), poleMat);
+    pole.position.set(C.length / 2 + 0.7, 2.0, 0); g.add(pole);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(Math.abs(pole.position.x - bx), 0.09, 0.09), poleMat);
+    arm.position.set((pole.position.x + bx) / 2, 3.9, 0); g.add(arm);
+    return g;
+  }
+  function build(scene) {
+    if (group) { scene.remove(group); disposeTree(group); }
+    group = new THREE.Group(); scene.add(group);
+    initCourts();
+    // ground
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(220, 180),
+      new THREE.MeshLambertMaterial({ color: 0x24341f }));
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.05; group.add(ground);
+    const plaza = new THREE.Mesh(new THREE.PlaneGeometry(96, 62),
+      new THREE.MeshLambertMaterial({ color: 0x2e323a }));
+    plaza.rotation.x = -Math.PI / 2; plaza.position.y = -0.02; group.add(plaza);
+    // courts
+    const tints = { '1v1': '#f2c318', '2v2': '#35d0ff', '3v3': '#18e37a' };
+    const texCache = {};
+    for (const ct of courts) {
+      const cg = new THREE.Group(); cg.position.set(ct.x, 0, ct.z); cg.rotation.y = ct.rot; group.add(cg);
+      const inner = new THREE.Group(); inner.position.x = -MID; cg.add(inner); ct.render = inner;
+      if (!texCache[ct.mode]) texCache[ct.mode] = courtTexture(tints[ct.mode]);
+      const slab = new THREE.Mesh(new THREE.PlaneGeometry(C.length / 2, C.width),
+        new THREE.MeshLambertMaterial({ map: texCache[ct.mode] }));
+      slab.rotation.x = -Math.PI / 2; slab.rotation.z = -Math.PI / 2;
+      slab.position.set(MID, 0.005, 0); inner.add(slab);
+      inner.add(parkHoop());
+      // pads
+      ct.padMeshes = [];
+      for (const pad of ct.pads) {
+        const m = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.62, 20),
+          new THREE.MeshBasicMaterial({ color: pad.team === 0 ? 0xf2c318 : 0x35d0ff, transparent: true, opacity: 0.55, side: THREE.DoubleSide }));
+        m.rotation.x = -Math.PI / 2; m.position.set(pad.ex, 0.02, pad.ez); inner.add(m);
+        ct.padMeshes.push(m);
+      }
+      // court sign
+      ct.signTex = document.createElement('canvas'); ct.signTex.width = 256; ct.signTex.height = 64;
+      const stex = new THREE.CanvasTexture(ct.signTex); stex.encoding = THREE.sRGBEncoding; ct.signTexture = stex;
+      // two faces back to back, so the board reads the right way round from either side, mounted high at
+      // the court's entrance where you walk in rather than out in the middle of the walkway
+      const signMat = new THREE.MeshBasicMaterial({ map: stex, transparent: true, toneMapped: false });
+      // off the entrance corner, clear of the walkway down the middle of the park
+      const SX = -0.6, SZ = -8.4;
+      for (const face of [-1, 1]) {
+        const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.55), signMat);
+        sign.position.set(SX, 2.6, SZ); sign.rotation.y = face * Math.PI / 2; inner.add(sign);
+      }
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 2.6, 6),
+        new THREE.MeshStandardMaterial({ color: 0x2c313b, roughness: 0.7 }));
+      post.position.set(SX, 1.3, SZ); inner.add(post);
+      drawSign(ct);
+    }
+    // fence
+    const fenceMat = new THREE.MeshLambertMaterial({ color: 0x5a616d, wireframe: true, transparent: true, opacity: 0.45 });
+    for (const [w, d, ax] of [[96, 0, 0], [0, 62, 0]]) {
+      for (const s of [-1, 1]) {
+        const geo = w ? new THREE.PlaneGeometry(w, 3.2, 48, 2) : new THREE.PlaneGeometry(d, 3.2, 32, 2);
+        const m = new THREE.Mesh(geo, fenceMat);
+        if (w) { m.position.set(0, 1.6, s * 31); } else { m.position.set(s * 48, 1.6, 0); m.rotation.y = Math.PI / 2; }
+        group.add(m);
+      }
+    }
+    // lamp posts + benches around the plaza
+    const lampMat = new THREE.MeshStandardMaterial({ color: 0x2c313b, roughness: 0.7 });
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0xffe9b0 });
+    for (const lx of [-40, -13.5, 13.5, 40]) for (const lz of [-29, 29]) {
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 6, 8), lampMat);
+      p.position.set(lx, 3, lz); group.add(p);
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), glowMat);
+      b.position.set(lx, 6.1, lz); group.add(b);
+      const l = new THREE.PointLight(0xffdca8, 0.5, 26); l.position.set(lx, 5.6, lz); group.add(l);
+    }
+    const benchMat = new THREE.MeshLambertMaterial({ color: 0x6b4e32 });
+    for (const bx of [-13.5, 13.5]) for (const bz of [-3.2, 3.2]) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.14, 0.5), benchMat);
+      b.position.set(bx, 0.45, bz); group.add(b);
+      for (const o of [-1.3, 1.3]) { const lgm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.45, 0.45), benchMat); lgm.position.set(bx + o, 0.22, bz); group.add(lgm); }
+    }
+    group.add(new THREE.HemisphereLight(0x9fc0ff, 0x2d3326, 0.9));
+    const sun = new THREE.DirectionalLight(0xffd9a8, 0.8); sun.position.set(28, 26, 16); group.add(sun);
+    const back = new THREE.DirectionalLight(0x6e8cff, 0.32); back.position.set(-20, 14, -18); group.add(back);
+    built = true;
+  }
+  function drawSign(ct) {
+    const cv = ct.signTex, g = cv.getContext('2d');
+    g.clearRect(0, 0, 256, 64);
+    const filled = ct.pads.filter((p) => p.by >= 0).length;
+    g.fillStyle = 'rgba(8,10,14,0.85)'; g.fillRect(0, 0, 256, 64);
+    g.fillStyle = ct.state === 'live' ? '#ff4d5e' : filled ? '#f2c318' : '#8b909a';
+    g.fillRect(0, 0, 6, 64);
+    g.font = '900 30px Inter, Helvetica, Arial, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillStyle = '#f3f0e7'; g.fillText(ct.label, 18, 24);
+    g.font = '600 17px Inter, Helvetica, Arial, sans-serif'; g.fillStyle = '#8b909a';
+    g.fillText(ct.state === 'live' ? 'RUNNING' : filled + '/' + ct.pads.length + ' ready', 18, 48);
+    ct.signTexture.needsUpdate = true;
+  }
+  function disposeTree(root) {
+    root.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      for (const m of ms) { if (m.map) m.map.dispose(); m.dispose(); }
+    });
+  }
+
+  // ---------- avatars ----------
+  function buildAvatars(scene) {
+    for (const g of goers) {
+      if (g.mesh) continue;
+      g.mesh = PlayerSys.buildMesh(g, TEAMS[g.kit % TEAMS.length], group, true);
+    }
+  }
+  function clearAvatars() {
+    for (const g of goers) { if (g.mesh) { PlayerSys.disposeMesh(g.mesh, group); g.mesh = null; } }
+  }
+
+  // ---------- movement ----------
+  const BOUND_X = 46, BOUND_Z = 29;
+  function moveGoer(g, dt, mx, mz, run) {
+    const max = (run ? PK.runSpeed : PK.walkSpeed);
+    const mag = Math.hypot(mx, mz);
+    if (mag > 1) { mx /= mag; mz /= mag; }
+    const tx = mx * max, tz = mz * max;
+    const dvx = tx - g.vx, dvz = tz - g.vz, dv = Math.hypot(dvx, dvz);
+    const step = PK.accel * dt;
+    if (dv <= step) { g.vx = tx; g.vz = tz; } else { g.vx += dvx / dv * step; g.vz += dvz / dv * step; }
+    g.x += g.vx * dt; g.z += g.vz * dt;
+    g.x = U.clamp(g.x, -BOUND_X, BOUND_X); g.z = U.clamp(g.z, -BOUND_Z, BOUND_Z);
+    g.speed = Math.hypot(g.vx, g.vz);
+    if (g.speed > 0.5) g.facing = U.angleDamp(g.facing, Math.atan2(g.vx, g.vz), PK.turnRate, dt);
+    g.stateT += dt;
+    const want = g.speed > 0.35 ? ST.MOVE : ST.IDLE;
+    if (g.state !== want) { g.state = want; g.stateT = 0; }
+  }
+  function pickTarget(g) {
+    const r = RNG.next();
+    if (r < 0.34) {                                  // head for a court pad and wait for a run
+      const open = [];
+      for (const ct of courts) { if (ct.state !== 'open') continue; for (const p of ct.pads) if (p.by < 0) open.push({ ct, p }); }
+      if (open.length) { const c = open[(RNG.next() * open.length) | 0]; g.ai.tx = c.p.px; g.ai.tz = c.p.pz; g.ai.wantCourt = c.ct.id; g.ai.idle = RNG.range(4, 14); return; }
+    }
+    if (r < 0.6 && live) {                           // go watch whatever is running
+      const ct = live.court; toPark(ct, -4.5, RNG.range(-10, 10), _p);
+      g.ai.tx = _p.x; g.ai.tz = _p.z; g.ai.wantCourt = -1; g.ai.idle = RNG.range(6, 16); return;
+    }
+    g.ai.tx = RNG.range(-40, 40); g.ai.tz = RNG.range(-26, 26); g.ai.wantCourt = -1; g.ai.idle = RNG.range(1.5, 6);
+  }
+  function stepGoer(g, dt) {
+    if (g.pad) { moveGoer(g, dt, 0, 0, false); return; }        // locked in, waiting for the tip
+    const dx = g.ai.tx - g.x, dz = g.ai.tz - g.z, d = Math.hypot(dx, dz);
+    if (d < 0.5) {
+      g.ai.idle -= dt;
+      moveGoer(g, dt, 0, 0, false);
+      if (g.ai.idle <= 0) pickTarget(g);
+      if (RNG.next() < dt * 0.06) say(g, RNG.pick(FLAVOUR));
+      return;
+    }
+    const k = d < 1.4 ? d / 1.4 : 1;
+    moveGoer(g, dt, dx / d * k, dz / d * k, d > 9);
+  }
+
+  // ---------- pads ----------
+  function padUnder(g) {
+    for (const ct of courts) {
+      if (ct.state !== 'open') continue;
+      for (const p of ct.pads) {
+        if (p.by >= 0 && p.by !== g.id) continue;
+        if (Math.hypot(g.x - p.px, g.z - p.pz) < PK.padRadius) return { ct, p };
+      }
+    }
+    return null;
+  }
+  function leavePad(g) {
+    if (!g.pad) return;
+    const { ct, p } = g.pad; p.by = -1; p.t = 0; g.pad = null; ct.lockT = 0;
+    if (ct.state === 'ready') { ct.state = 'open'; if (pendingCourt === ct) { countdown = 0; pendingCourt = null; } }
+    drawSign(ct);
+  }
+  function takePad(g, ct, p) {
+    if (g.pad) leavePad(g);
+    p.by = g.id; g.pad = { ct, p }; g.padT = 0;
+    toPark(ct, p.ex, p.ez, _p); g.x = _p.x; g.z = _p.z; g.vx = g.vz = 0;
+    // face the court
+    toPark(ct, MID + 2, 0, _p); g.facing = Math.atan2(_p.x - g.x, _p.z - g.z);
+    drawSign(ct);
+    if (g.isPlayer) UI.parkToast('ON THE PAD', ct.label + ' · waiting for ' + (ct.pads.length - ct.pads.filter((q) => q.by >= 0).length) + ' more');
+  }
+  function checkCourts(dt) {
+    for (const ct of courts) {
+      if (ct.state !== 'open' && ct.state !== 'ready') continue;
+      const full = ct.pads.every((p) => p.by >= 0);
+      if (full && ct.state === 'open' && !live && !pendingCourt) {
+        ct.state = 'ready'; pendingCourt = ct; countdown = PK.countdown; drawSign(ct);
+        UI.parkToast('RUN ON', ct.label + ' tipping off');
+        say(null, ct.label + ' is running');
+      } else if (!full && ct.state === 'ready') { ct.state = 'open'; countdown = 0; pendingCourt = null; drawSign(ct); }
+    }
+    if (pendingCourt) {
+      countdown -= dt;
+      if (countdown <= 0) { const ct = pendingCourt; pendingCourt = null; countdown = 0; tipOff(ct); }
+    }
+  }
+
+  // ---------- starting a match on a court ----------
+  function tipOff(ct) {
+    const teams = [[], []];
+    for (const p of ct.pads) { const g = goers[p.by]; if (g) teams[p.team].push(g); }
+    if (teams[0].length < ct.per || teams[1].length < ct.per) { ct.state = 'open'; drawSign(ct); return; }
+    live = { court: ct, members: teams[0].concat(teams[1]), mine: teams[0].concat(teams[1]).some((g) => g.isPlayer) };
+    ct.state = 'live'; drawSign(ct);
+    for (const g of live.members) {
+      if (!g.mesh) continue;
+      g.mesh.group.visible = false; g.mesh.shadow.visible = false; g.mesh.ring.visible = false;
+    }
+    const kits = ct.kits;
+    Main.startPark(ct, teams, kits);
+  }
+  // Called by Main once the engine has the match running, so the park can frame it.
+  function frameFor(ct) { return { x: ct.x, z: ct.z, rot: ct.rot, mid: MID }; }
+  function endMatch() {
+    if (!live) return;
+    const ct = live.court;
+    for (const g of live.members) {
+      if (g.mesh) { g.mesh.group.visible = true; g.mesh.shadow.visible = true; }
+      leavePad(g);
+      // step off the court so the pads do not instantly refill
+      toPark(ct, -4.0, RNG.range(-7, 7), _p); g.x = _p.x; g.z = _p.z;
+      g.ai.idle = RNG.range(2, 8); pickTarget(g);
+    }
+    ct.state = 'open'; ct.lockT = 0; drawSign(ct);
+    live = null;
+  }
+
+  // ---------- chat ----------
+  function say(g, text) {
+    text = String(text || '').slice(0, 120).trim();
+    if (!text) return;
+    const name = g ? g.name : 'PARK';
+    chat.push({ id: ++chatSeq, name, text, t: t, system: !g, me: !!(g && g.isPlayer) });
+    if (chat.length > PK.chatMax) chat.shift();
+    if (g) { g.say = text; g.sayT = PK.bubbleTime; }
+    UI.parkChatDirty();
+  }
+  function sendChat(text) {
+    if (!player) return;
+    say(player, text);
+    if (Net.active) Net.sendPark({ t: 'chat', name: player.name, text: String(text).slice(0, 120) });
+  }
+  function remoteChat(name, text) {
+    const g = goers.find((q) => q.name === name);
+    if (g) say(g, text);
+    else { chat.push({ id: ++chatSeq, name: String(name).slice(0, 18), text: String(text).slice(0, 120), t: t }); if (chat.length > PK.chatMax) chat.shift(); UI.parkChatDirty(); }
+  }
+
+  // ---------- frame ----------
+  function step(dt) {
+    t += dt;
+    for (const g of goers) { g.px = g.x; g.pz = g.z; g.pfacing = g.facing; if (g.sayT > 0) g.sayT -= dt; }
+    // the local player; typing in chat must not also walk you across the park
+    const typing = UI.chatOpen;
+    if (player && !live) {
+      const inp = typing ? NO_INPUT : Input.parkAxes(CameraSys.basis);
+      moveGoer(player, dt, inp.mx, inp.mz, inp.sprint);
+      const under = padUnder(player);
+      if (player.pad && (!under || under.p !== player.pad.p)) {
+        const pp = player.pad.p;
+        if (Math.hypot(player.x - pp.px, player.z - pp.pz) > PK.padRadius * 1.6) leavePad(player);
+      }
+      if (!player.pad && under && inp.action) takePad(player, under.ct, under.p);
+      player.nearPad = under;
+    } else if (player && live && !live.mine) {
+      const inp = typing ? NO_INPUT : Input.parkAxes(CameraSys.basis);
+      moveGoer(player, dt, inp.mx, inp.mz, inp.sprint);
+      player.nearPad = null;
+    }
+    for (const g of goers) {
+      if (g.isPlayer) continue;
+      if (live && live.members.indexOf(g) >= 0) continue;
+      stepGoer(g, dt);
+      if (!g.pad && g.ai.wantCourt >= 0) {
+        const ct = courts[g.ai.wantCourt];
+        if (ct && ct.state === 'open') { const free = ct.pads.find((p) => p.by < 0 && Math.hypot(g.x - p.px, g.z - p.pz) < PK.padRadius); if (free) takePad(g, ct, free); }
+      }
+    }
+    checkCourts(dt);
+  }
+  function sync(alpha, dt) {
+    for (const g of goers) {
+      const m = g.mesh; if (!m || !m.group.visible) continue;
+      const x = U.lerp(g.px, g.x, alpha), z = U.lerp(g.pz, g.z, alpha), fac = U.angleLerp(g.pfacing, g.facing, alpha);
+      m.group.position.set(x, 0, z);
+      Render.poseAvatar(g, m, dt, fac);
+      m.shadow.position.set(x, 0.014, z);
+      m.ring.visible = g.isPlayer; if (g.isPlayer) { m.ring.position.set(x, 0.03, z); m.ring.rotation.y = t * 1.5; }
+    }
+    for (const ct of courts) {
+      for (let i = 0; i < ct.pads.length; i++) {
+        const mesh = ct.padMeshes[i], taken = ct.pads[i].by >= 0;
+        mesh.material.opacity = taken ? 0.95 : 0.35 + 0.2 * Math.sin(t * 2.4 + i);
+        mesh.scale.setScalar(taken ? 1.15 : 1);
+      }
+    }
+  }
+  function reset() { live = null; pendingCourt = null; countdown = 0; chat = []; joined = false; }
+  function enter(scene) {
+    if (!built) build(scene); else if (group) group.visible = true;
+    Render.setSky(0x1d2733, 0.0055);          // open air: lighter haze, and it reaches further than the arena's
+    spawnGoers(); buildAvatars(scene); reset(); joined = true;
+    say(null, 'Welcome to the park. Walk onto a pad to get in a run.');
+  }
+  function leave(scene) {
+    clearAvatars(); goers = []; player = null; reset();
+    Render.setSky(null);
+    if (group) group.visible = false;
+  }
+  return { enter, leave, step, sync, build, courts, frameFor, endMatch, tipOff,
+    say, sendChat, remoteChat, drawSign, toPark,
+    get group() { return group; }, get chat() { return chat; }, get player() { return player; },
+    get live() { return live; }, get countdown() { return countdown; }, get goers() { return goers; },
+    get joined() { return joined; } };
+})();
+// ==== END PARK ====
+
 // ==== BEGIN CAMERA ====
 // Broadcast-style follow camera with damping; also provides the input basis (screen-relative movement).
 const CameraSys = (() => {
@@ -3240,11 +3770,50 @@ const CameraSys = (() => {
     pos.x = U.damp(pos.x, tx, CC.damp, dt); pos.y = U.damp(pos.y, ty, CC.damp, dt); pos.z = U.damp(pos.z, tz, CC.damp, dt);
     look.x = U.damp(look.x, lx, CC.lookDamp, dt); look.y = U.damp(look.y, ly, CC.lookDamp, dt); look.z = U.damp(look.z, lz, CC.lookDamp, dt);
     if (shake > 0) { shake -= dt; pos.y += Math.sin(g.time * 90) * 0.08 * shake; }
+    if (frame) {
+      _cp.x = pos.x; _cp.z = pos.z; applyFrame(_cp);
+      _cl.x = look.x; _cl.z = look.z; applyFrame(_cl);
+      cam.position.set(_cp.x, pos.y, _cp.z); cam.lookAt(_cl.x, look.y, _cl.z);
+      const c = Math.cos(frame.rot), sn = Math.sin(frame.rot);
+      const bfx = basis.fx * c + basis.fz * sn, bfz = -basis.fx * sn + basis.fz * c;
+      const brx = basis.rx * c + basis.rz * sn, brz = -basis.rx * sn + basis.rz * c;
+      basis.fx = bfx; basis.fz = bfz; basis.rx = brx; basis.rz = brz;
+      return;
+    }
     cam.position.set(pos.x, pos.y, pos.z); cam.lookAt(look.x, look.y, look.z);
+  }
+  // A park match simulates at the engine origin but is drawn on its court, so the camera the sim asks
+  // for has to be carried through the same transform, and so does the movement basis.
+  let frame = null, pyaw = 0;
+  function setFrame(f) { frame = f || null; }
+  const _cp = { x: 0, z: 0 }, _cl = { x: 0, z: 0 };
+  function applyFrame(o) {
+    const lx = o.x - frame.mid, lz = o.z;
+    const x = frame.x + lx * Math.cos(frame.rot) + lz * Math.sin(frame.rot);
+    const z = frame.z - lx * Math.sin(frame.rot) + lz * Math.cos(frame.rot);
+    o.x = x; o.z = z; return o;
+  }
+  function parkUpdate(dt, px, pz, facing) {
+    const K = CONFIG.park;
+    pyaw = U.angleDamp(pyaw, facing, 2.4, dt);
+    pos.x = U.damp(pos.x, px - Math.sin(pyaw) * K.camDist, K.camDamp, dt);
+    pos.z = U.damp(pos.z, pz - Math.cos(pyaw) * K.camDist, K.camDamp, dt);
+    pos.y = U.damp(pos.y, K.camHeight, K.camDamp, dt);
+    look.x = U.damp(look.x, px, K.camDamp * 1.4, dt); look.z = U.damp(look.z, pz, K.camDamp * 1.4, dt);
+    look.y = U.damp(look.y, K.camLookY, K.camDamp, dt);
+    cam.position.set(pos.x, pos.y, pos.z); cam.lookAt(look.x, look.y, look.z);
+    const fx = px - pos.x, fz = pz - pos.z, fl = Math.hypot(fx, fz) || 1;
+    basis.fx = fx / fl; basis.fz = fz / fl; basis.rx = -basis.fz; basis.rz = basis.fx;
+  }
+  function parkSnap(px, pz, facing) {
+    const K = CONFIG.park; pyaw = facing;
+    pos.x = px - Math.sin(facing) * K.camDist; pos.z = pz - Math.cos(facing) * K.camDist; pos.y = K.camHeight;
+    look.x = px; look.z = pz; look.y = K.camLookY;
   }
   function snap(x, z) { pos.x = x * CC.followX; look.x = pos.x; look.z = z * CC.lookZ; }
   function addShake(t) { shake = t; }
-  return { init, update, setMode, basis, snap, addShake, get cam() { return cam; }, get mode() { return mode; } };
+  return { init, update, setMode, basis, snap, addShake, setFrame, parkUpdate, parkSnap,
+    get cam() { return cam; }, get mode() { return mode; } };
 })();
 // ==== END CAMERA ====
 
@@ -3303,8 +3872,9 @@ function init(container) {
     Court.build(scene, teamA, teamB);
     Court.initParticles(scene);
   }
-  function buildPlayers(teams) { PlayerSys.destroyMeshes(scene); for (const p of PlayerSys.players) PlayerSys.buildMesh(p, teams[p.team], scene); }
+  function buildPlayers(teams) { const host = matchHost(); PlayerSys.destroyMeshes(); for (const p of PlayerSys.players) PlayerSys.buildMesh(p, teams[p.team], host); }
   function setShadows(on) {
+    if (!renderer) return;
     renderer.shadowMap.enabled = on; Court.setShadows(on); ballMesh.castShadow = on;
     for (const p of PlayerSys.players) if (p.mesh) { p.mesh.group.traverse((o) => { if (o.isMesh) o.castShadow = on; }); p.mesh.shadow.visible = !on; }
     ballShadow.visible = !on; if (Court.group) Court.group.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
@@ -3430,6 +4000,28 @@ function init(container) {
     const sy = (1 - m.crouch) * (1 + 0.012 * Math.sin(t * 2.2 + p.id));
     grp.scale.set(m.girthS, m.heightS * sy, m.girthS);
   }
+  // The park draws its own walkers with the same limb rig the match uses.
+  function poseAvatar(p, m, dt, fac) { animate(p, m, dt, fac); }
+  // The park is outdoors, so it swaps the arena's near-black haze for open air and puts it back on the way out.
+  const SKY0 = 0x080a10;
+  function setSky(colour, density) {
+    if (!scene) return;
+    const c = colour == null ? SKY0 : colour;
+    scene.background.setHex(c); scene.fog.color.setHex(c);
+    scene.fog.density = colour == null ? CONFIG.render.fogDensity : density;
+  }
+  // A park match still simulates at the engine origin; this parks the drawing of it on the right court.
+  let matchRoot = null, matchInner = null, matchFrame = null;
+  function setMatchFrame(f) {
+    if (!matchRoot) { matchRoot = new THREE.Group(); matchInner = new THREE.Group(); matchRoot.add(matchInner); scene.add(matchRoot); }
+    matchFrame = f || null;
+    if (f) { matchRoot.position.set(f.x, 0, f.z); matchRoot.rotation.y = f.rot; matchInner.position.x = -f.mid; }
+    const host = f ? matchInner : scene;
+    host.add(ballMesh); host.add(ballShadow);
+    if (Court.group) host.add(Court.group);
+    matchRoot.visible = !!f;
+  }
+  const matchHost = () => (matchFrame ? matchInner : scene);
   function sync(alpha, dt) {
     t += dt;
     for (const p of PlayerSys.players) {
@@ -3442,6 +4034,9 @@ function init(container) {
       m.ring.visible = p.controlled; if (p.controlled) { m.ring.position.set(x, 0.02, z); m.ring.scale.set(bs, 1, bs); m.ring.rotation.y = t * 1.5; }
       if (!p.airborne && p.speed > 4.2 && (t * 60 | 0) % 6 === 0) Court.spawnDust(x, z, 1);
     }
+    // no ball lying around the lobby when nothing is being played
+    const showBall = !(Main.inPark && !Game.g.running);
+    ballMesh.visible = showBall; ballShadow.visible = showBall && !CONFIG.render.shadows;
     const b = BallSys.ball; const bx = U.lerp(b.px, b.x, alpha), by = U.lerp(b.py, b.y, alpha), bz = U.lerp(b.pz, b.z, alpha);
     ballMesh.position.set(bx, by, bz); ballShadow.position.set(bx, 0.011, bz); const bs = U.clamp(1.2 - by * 0.25, 0.4, 1.2); ballShadow.scale.set(bs, bs, 1); ballShadow.material.opacity = 0.35 * U.clamp(1 - by * 0.15, 0.2, 1);
     const dx = bx - lastBx, dz = bz - lastBz; const d = Math.sqrt(dx * dx + dz * dz);
@@ -3453,7 +4048,8 @@ function init(container) {
   }
   function draw() { renderer.render(scene, cam); }
   function project(x, y, z, out) { _v.set(x, y, z).project(cam); out.x = (_v.x * 0.5 + 0.5) * window.innerWidth; out.y = (-_v.y * 0.5 + 0.5) * window.innerHeight; out.visible = _v.z < 1; return out; }
-  return { init, buildArena, buildPlayers, setShadows, sync, draw, project, get renderer() { return renderer; }, get scene() { return scene; } };
+  return { init, buildArena, buildPlayers, setShadows, sync, draw, project, setMatchFrame, poseAvatar, setSky,
+    get renderer() { return renderer; }, get scene() { return scene; } };
 })();
 // ==== END RENDER ====
 
@@ -3462,7 +4058,7 @@ function init(container) {
 const UI = (() => {
   const $ = (id) => document.getElementById(id);
   const el = {};
-  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'menuCareer', 'careerBody', 'teamGrid', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'jerseyA', 'jerseyB', 'pnum', 'tipnote', 'pauseScore', 'wipe', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
+  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'menuCareer', 'careerBody', 'teamGrid', 'park', 'parkSub', 'parkPrompt', 'parkLog', 'parkInput', 'parkTags', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'jerseyA', 'jerseyB', 'pnum', 'tipnote', 'pauseScore', 'wipe', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
   let debugOn = false, pick = U.loadLS('hw_pick', [0, 1]), last = {}, tagEls = [], meterVisible = false, hudVisible = false, mode = U.loadLS('hw_mode', '5v5');
   if (!Array.isArray(pick) || pick.length !== 2 || pick[0] === pick[1]) pick = [0, 1];
   const _pt = { x: 0, y: 0, visible: false };
@@ -3476,6 +4072,11 @@ const UI = (() => {
     document.querySelectorAll('[data-cycle]').forEach((b) => b.addEventListener('click', () => { const [side, dir] = b.dataset.cycle.split(',').map(Number); cycleTeam(side, dir); AudioSys.play('ui'); }));
     $('btnTipoff').onclick = () => { AudioSys.init(); AudioSys.play('ui'); hooks.startGame(mode, pick[0], pick[1]); };
     for (const [side, id] of [[0, 'jerseyA'], [1, 'jerseyB']]) $(id).onclick = () => { AudioSys.play('ui'); toggleTeamGrid(side); };
+    $('btnPark').onclick = () => {
+      AudioSys.init(); AudioSys.play('ui');
+      // the park is walked as your created player, so it needs a career first
+      if (Career.exists()) Main.enterPark(); else { show('menuCareer'); toast('MAKE A PLAYER FIRST', 'MYPARK USES YOUR MYCAREER BUILD'); }
+    };
     $('btnResetBinds').onclick = () => { Input.reset(); renderBinds(el.bindList, true); updateHint(); };
     $('btnResetBinds2').onclick = () => { Input.reset(); renderBinds(el.bindList2, true); updateHint(); };
     $('btnResume').onclick = () => hooks.resume();
@@ -3486,6 +4087,13 @@ const UI = (() => {
     $('btnFirstOk').onclick = () => { el.firstrun.classList.add('hidden'); U.saveLS('hw_seen', true); hooks.resume(); };
     $('btnRematch').onclick = () => hooks.rematch();
     $('btnFinalMenu').onclick = () => hooks.quit();
+    // Chat takes the keyboard while it is open, so typing never reaches the game.
+    el.parkInput.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { const v = el.parkInput.value.trim(); if (v) Park.sendChat(v); el.parkInput.value = ''; closeChat(); }
+      else if (e.key === 'Escape') { el.parkInput.value = ''; closeChat(); }
+    };
+    el.parkInput.onblur = () => closeChat();
     selectMode(mode); renderMatchup();
     for (let i = 0; i < 10; i++) { const d = document.createElement('div'); d.className = 'tag hidden'; el.tags.appendChild(d); tagEls.push(d); }
     updateHint();
@@ -3524,7 +4132,7 @@ const UI = (() => {
     el.wipe.classList.remove('go'); void el.wipe.offsetWidth; el.wipe.classList.add('go');
     setTimeout(cb, 360); setTimeout(() => el.wipe.classList.remove('go'), 900);
   }
-   const MODE_NOTES = { '1v1': 'Half court to 21', '3v3': 'Half court to 21, 14-second clock', '5v5': 'Four quarters', practice: 'No clock, no defense' };
+   const MODE_NOTES = { '1v1': 'Half court to 21', '2v2': 'Half court to 21, 14-second clock', '3v3': 'Half court to 21, 14-second clock', '5v5': 'Four quarters', practice: 'No clock, no defense' };
   function selectMode(m) { mode = m; U.saveLS('hw_mode', m); document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('sel', b.dataset.mode === m)); renderMatchup(); }
   // Clicking a jersey opens the whole league; the arrows still step one at a time.
   let gridSide = -1;
@@ -3750,6 +4358,7 @@ const UI = (() => {
     const netBlocked = Net.active;
     h += '<div class="cr-actions"><button class="btn primary" id="crPlay"' + (netBlocked ? ' disabled' : '') + '><span class="t">' + (up ? 'Play the game' : 'Start the season') + '</span></button>'
       + '<button class="btn small ghost" id="crSim"' + (netBlocked ? ' disabled' : '') + '><span class="t">Sim this one</span></button>'
+      + '<button class="btn small" id="crPark"><span class="t">Go to MyPark</span></button>'
       + (netBlocked ? '<span class="note" style="margin:0">Leave the lobby first \u2014 MyCareer is single player.</span>' : '') + '</div>';
 
     h += '<h2 class="sec">Upgrades</h2>';
@@ -3792,6 +4401,8 @@ const UI = (() => {
     if (play) play.onclick = () => { AudioSys.play('ui'); startCareerGame(false); };
     const sim = cont.querySelector('#crSim');
     if (sim) sim.onclick = () => { AudioSys.play('ui'); startCareerGame(true); };
+    const park = cont.querySelector('#crPark');
+    if (park) park.onclick = () => { AudioSys.init(); AudioSys.play('ui'); Main.enterPark(); };
     cont.querySelector('#crWipe').onclick = (e) => {
       const btn = e.currentTarget;
       if (btn.dataset.armed !== '1') { btn.dataset.armed = '1'; btn.querySelector('.t').textContent = 'Really delete? Click again'; return; }
@@ -3892,8 +4503,74 @@ const UI = (() => {
       case 'buzzer': AudioSys.play('buzzer'); break;
       case 'shake': CameraSys.addShake(d.t || 0.3); break;
       case 'netpulse': Court.netPulse(d.hoop); break;
-      case 'final': showFinal(String(d.title), Net.isGuest ? Game.boxScore() : d.html); break;
+      case 'final':
+        if (Main.inPark) { const sc = Game.g.score; toast(String(d.title), sc[0] + ' \u2013 ' + sc[1]); break; }
+        showFinal(String(d.title), Net.isGuest ? Game.boxScore() : d.html); break;
     }
+  }
+  // ---------- MyPark HUD ----------
+  let chatOpen = false, chatDirty = true, parkTagEls = [];
+  const _pt2 = { x: 0, y: 0, visible: false };
+  function showPark(on) {
+    el.park.classList.toggle('hidden', !on);
+    if (!on) { closeChat(); el.parkLog.innerHTML = ''; el.parkPrompt.innerHTML = ''; }
+    else chatDirty = true;
+  }
+  function openPark() { showMenu(); show('menuCareer'); }
+  function parkToast(text, sub) { toast(text, sub); }
+  function parkChatDirty() { chatDirty = true; }
+  function openChat() {
+    if (chatOpen) return;
+    chatOpen = true; el.parkInput.classList.add('on'); el.parkInput.value = '';
+    // focus a frame later, or the keypress that opened chat lands in the box as a stray character
+    requestAnimationFrame(() => { el.parkInput.value = ''; el.parkInput.focus(); });
+  }
+  function closeChat() { chatOpen = false; el.parkInput.classList.remove('on'); el.parkInput.blur(); }
+  function renderChatLog() {
+    const rows = Park.chat.slice(-CONFIG.park.chatShow);
+    let h = '';
+    for (const c of rows) {
+      if (c.system) h += '<div class="sys">' + esc(c.text) + '</div>';
+      else h += '<div' + (c.me ? ' class="me"' : '') + '><b>' + esc(c.name) + '</b> ' + esc(c.text) + '</div>';
+    }
+    el.parkLog.innerHTML = h;
+  }
+  function parkPrompt() {
+    const p = Park.player, live = Park.live, cd = Park.countdown;
+    let h = '';
+    if (cd > 0) h = '<span class="big">' + Math.ceil(cd) + '</span>';
+    else if (p && p.pad) {
+      const ct = p.pad.ct, need = ct.pads.filter((q) => q.by < 0).length;
+      h = '<span class="rib">' + esc(ct.label) + '</span><span class="sub">' + (need ? 'waiting for ' + need + ' more' : 'tipping off') + ' \u00b7 move off the pad to leave</span>';
+    } else if (p && p.nearPad) {
+      h = '<span class="rib">' + esc(p.nearPad.ct.label) + '</span><span class="sub">' + esc(Input.keyLabel(Input.binds.shoot)) + ' to take the pad</span>';
+    } else if (live) {
+      h = '<span class="sub">' + esc(live.court.label) + ' is running \u00b7 walk over and watch</span>';
+    }
+    if (el.parkPrompt.innerHTML !== h) el.parkPrompt.innerHTML = h;
+  }
+  function parkTags() {
+    const goers = Park.goers;
+    while (parkTagEls.length < goers.length) { const d = document.createElement('div'); d.className = 'pt'; el.parkTags.appendChild(d); parkTagEls.push(d); }
+    for (let i = 0; i < parkTagEls.length; i++) {
+      const d = parkTagEls[i], g = goers[i];
+      if (!g || !g.mesh || !g.mesh.group.visible) { d.style.display = 'none'; continue; }
+      Render.project(g.x, 2.15, g.z, _pt2);
+      if (!_pt2.visible) { d.style.display = 'none'; continue; }
+      d.style.display = 'block'; d.style.left = _pt2.x + 'px'; d.style.top = _pt2.y + 'px';
+      const bubble = g.sayT > 0 ? '<span class="bub">' + esc(g.say) + '</span>' : '';
+      const html = bubble + '<span class="nm' + (g.isPlayer ? ' me' : '') + '">' + esc(g.name) + '</span>';
+      if (d.dataset.h !== html) { d.innerHTML = html; d.dataset.h = html; }
+    }
+  }
+  function updatePark() {
+    if (chatDirty) { renderChatLog(); chatDirty = false; }
+    const live = Park.live;
+    el.park.classList.toggle('inmatch', Game.g.running);
+    el.park.classList.toggle('hideprompt', !!(live && live.mine));
+    const waiting = Park.courts.reduce((n, c) => n + c.pads.filter((q) => q.by >= 0).length, 0);
+    el.parkSub.textContent = Park.goers.length + ' here \u00b7 ' + waiting + ' on pads' + (live ? ' \u00b7 ' + live.court.label + ' running' : '');
+    parkPrompt(); parkTags();
   }
   function update(dt, stats) {
     const g = Game.g;
@@ -3902,12 +4579,15 @@ const UI = (() => {
     if (Net.isHost) for (const e of b.events) Net.forwardEvent('bsfx', e);
     for (const e of b.events) { if (typeof e === 'number') { if (e < 0) AudioSys.play('dribble', U.clamp(0.6 + (-e - 1) * 0.07, 0.5, 1.1)); else AudioSys.play('bounce', e); } else if (e === 'rim') AudioSys.play('rim'); else if (e === 'board') AudioSys.play('board'); }
     b.events.length = 0;
+    if (Main.inPark) updatePark();
     if (!hudVisible) return;
     const hp = PlayerSys.players[g.human]; if (hp) { Render.project(hp.x, hp.y + hp.height * 1.15, hp.z, fbPos); }
     updateHUD(g); updateMeter(g); updateTags(g);
     if (debugOn) updateDebug(dt, stats);
   }
-  return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, openNet, openCareer, renderCareer, wipe, update, toast, feedback, toggleDebug, clearToast, get pick() { return pick; }, get mode() { return mode; }, get debugOn() { return debugOn; } };
+  return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, openNet, openCareer, renderCareer,
+    showPark, openPark, parkToast, parkChatDirty, openChat, closeChat, get chatOpen() { return chatOpen; },
+    wipe, update, toast, feedback, toggleDebug, clearToast, get pick() { return pick; }, get mode() { return mode; }, get debugOn() { return debugOn; } };
 })();
 // ==== END UI ====
 
@@ -4010,6 +4690,11 @@ const Net = (() => {
       if (m.t === 'join') { gst.name = cleanName(m.name); if (gst.team < 0 && !gst.named) gst.team = autoTeam(); gst.named = true; broadcastLobby(); }
       else if (m.t === 'team') setTeam(pid, m.team === 0 || m.team === 1 ? m.team : -1);
       else if (m.t === 'leave') { gst.conn.close(); removeGuest(pid); }
+      else if (m.t === 'park') {
+        // a guest said something in the park: show it here and pass it on to everyone else
+        const d = m.d || {}; const name = cleanName(d.name || gst.name), text = String(d.text || '').slice(0, 120);
+        if (d.t === 'chat' && text) { Park.remoteChat(name, text); broadcast(JSON.stringify({ t: 'park', d: { t: 'chat', name, text } })); }
+      }
       return;
     }
     toBuffer(data, (buf) => decodeInput(buf, gst.remote));
@@ -4132,6 +4817,7 @@ const Net = (() => {
       }
       case 'ctl': { const pid = parseInt(m.playerId, 10); if (!Number.isFinite(pid) || !PlayerSys.players[pid]) break; myPlayerId = pid; } Game.setHuman(myPlayerId, true); { const me = PlayerSys.players[myPlayerId]; if (me) { me.authX = me.x; me.authZ = me.z; } } break;
       case 'ev': if (m.name === 'bsfx') { if (typeof m.data === 'number' || m.data === 'rim' || m.data === 'board') BallSys.ball.events.push(m.data); } else Game.g.events.push({ name: String(m.name), data: m.data }); break;
+      case 'park': { const d = m.d || {}; if (d.t === 'chat') Park.remoteChat(cleanName(d.name), String(d.text || '').slice(0, 120)); break; }
       case 'tolobby': if (Game.g.running) Main.quit(); break;
       case 'closed': leaveLobby('the host closed the lobby'); break;
     }
@@ -4290,7 +4976,12 @@ const Net = (() => {
   }
   window.addEventListener('pagehide', () => { try { if (role === 'host') broadcast(JSON.stringify({ t: 'closed' })); else if (role === 'guest') send(hostConn, JSON.stringify({ t: 'leave' })); if (peer) peer.destroy(); } catch (e) { /* unloading */ } });
   function statusText() { return role + '/' + status + (role === 'guest' ? ' snaps ' + recvSnaps + ' buf ' + snaps.length : role === 'host' ? ' guests ' + guests.size + ' seq ' + seq : ''); }
-  return { renderPanel, status: statusText, update, guestStep, hostApplyInputs, hostStart, enterGuest, forwardEvent, onQuit, reassign, hostCreateLobby, joinLobby, setTeam, setMode, closeLobby, directHost, directAccept, directJoin,
+  // MyPark traffic rides the lobby connection. The host is the relay, exactly like everything else.
+  function sendPark(obj) {
+    if (role === 'host') broadcast(JSON.stringify({ t: 'park', d: obj }));
+    else if (hostConn) send(hostConn, JSON.stringify({ t: 'park', d: obj }));
+  }
+  return { sendPark, renderPanel, status: statusText, update, guestStep, hostApplyInputs, hostStart, enterGuest, forwardEvent, onQuit, reassign, hostCreateLobby, joinLobby, setTeam, setMode, closeLobby, directHost, directAccept, directJoin,
     get myName() { return myName; }, get active() { return role !== 'none'; }, get isHost() { return role === 'host'; }, get isGuest() { return role === 'guest' && !!hostConn; }, get lobby() { return lobby; }, get guestCount() { return guests.size; }, get directOffer() { return directOffer; }, get directAnswer() { return directAnswer; } };
 })();
 // ==== END NET ====
@@ -4299,6 +4990,7 @@ const Net = (() => {
 // Fixed-timestep loop with interpolation; pauses on hidden tab; wires menus to the game.
 const Main = (() => {
   const DT = 1 / CONFIG.physics.hz; let last = 0, acc = 0, visible = true, paused = false, lastMode = '1v1';
+  let inPark = false, parkAcc = 0;
   const stats = { fps: 60, frameMs: 0, steps: 0, simMs: 0 };
   function init() {
     Render.init(document.getElementById('app'));
@@ -4310,7 +5002,8 @@ const Main = (() => {
     Input.onAny((code) => {
       if (Input.remapping) return;
       if (code === Input.binds.debug) UI.toggleDebug();
-      if (code === Input.binds.pause && Game.g.running) { if (paused) resume(); else pause(); }
+      if (inPark && !UI.chatOpen && code === 'KeyT') { UI.openChat(); return; }
+      if (code === Input.binds.pause && (Game.g.running || inPark)) { if (paused) resume(); else pause(); }
     });
     document.addEventListener('visibilitychange', () => { visible = !document.hidden; if (visible) { last = performance.now(); acc = 0; } });
     UI.showMenu();
@@ -4334,9 +5027,49 @@ function startGame(mode, a, b, opts) {
       if (!U.loadLS('hw_seen', false)) { pause(true); UI.showFirstRun(); }
     });
   }
+  // MyPark. The park is its own little world: the arena is hidden, the lobby is built once, and matches
+  // that start on a court are handed to the same engine every other mode uses.
+  function enterPark() {
+    UI.wipe(() => {
+      inPark = true; parkAcc = 0; paused = false;
+      Game.stop();
+      Render.setMatchFrame(null);
+      if (Court.group) Court.group.visible = false;
+      Park.enter(Render.scene);
+      CameraSys.parkSnap(Park.player.x, Park.player.z, Park.player.facing);
+      UI.hideMenu(); UI.showPark(true); UI.clearToast();
+      document.getElementById('final').classList.add('hidden');
+    });
+  }
+  function leavePark() {
+    Game.stop(); Park.leave(Render.scene); Render.setMatchFrame(null);
+    if (Court.group) Court.group.visible = true;
+    inPark = false; UI.showPark(false); UI.hideHUD(); UI.showMenu(); UI.openPark();
+  }
+  // A court filled up: build its two sides out of the people on the pads and tip off right there.
+  function startPark(ct, teams, kits) {
+    const defs = [teams[0].map((g) => g.def), teams[1].map((g) => g.def)];
+    const slots = []; for (let i = 0; i < ct.per; i++) slots.push(i);
+    const mine = teams[0].concat(teams[1]).findIndex((g) => g.isPlayer);
+    const kit = kitsFor(kits[0], kits[1]);
+    Render.setMatchFrame(Park.frameFor(ct));
+    Game.start(ct.mode, kits[0], kits[1], {
+      park: true, slots,
+      roster(rosters) {
+        for (let t = 0; t < 2; t++) for (let i = 0; i < defs[t].length; i++) rosters[t][i] = defs[t][i];
+      },
+    });
+    Render.buildPlayers(Game.g.teams);
+    CameraSys.setFrame(Park.frameFor(ct));
+    // you play if you were on a pad, otherwise the run goes on without you and you can watch
+    if (mine >= 0) { const side = mine < ct.per ? 0 : 1; Game.g.humanTeam = side; }
+    else Game.setSpectate(true);
+    UI.showHUD(); acc = 0;
+  }
   function pause(silent) { paused = true; if (!silent) UI.showPause(true); }
   function resume() { paused = false; UI.showPause(false); last = performance.now(); acc = 0; }
   function quit() {
+    if (inPark) { leavePark(); return; }
     const wasCareer = Game.g.career;
     Game.stop(); paused = false; UI.showPause(false); UI.showMenu();
     if (wasCareer) UI.openCareer();
@@ -4350,6 +5083,35 @@ function startGame(mode, a, b, opts) {
     let elapsed = (now - last) / 1000; last = now; if (elapsed > 0.25) elapsed = 0.25; if (elapsed < 0) elapsed = 0;
     if (elapsed > 0) stats.fps = U.damp(stats.fps, 1 / elapsed, 2, elapsed);
     const g = Game.g; let steps = 0, simMs = 0;
+    if (inPark) {
+      const s0 = performance.now();
+      if (!paused) {
+        parkAcc += elapsed;
+        while (parkAcc >= DT && steps < CONFIG.physics.maxSteps) { Park.step(DT); parkAcc -= DT; steps++; }
+        if (steps === CONFIG.physics.maxSteps) parkAcc = 0;
+        if (g.running) {
+          acc += elapsed; let gs = 0;
+          while (acc >= DT && gs < CONFIG.physics.maxSteps) {
+            const human = PlayerSys.players[g.human]; if (human) Input.sample(human.input, CameraSys.basis);
+            Game.step(DT); acc -= DT; gs++;
+          }
+          if (gs === CONFIG.physics.maxSteps) acc = 0;
+          if (g.state === Game.S.OVER) { Game.stop(); Render.setMatchFrame(null); CameraSys.setFrame(null); Park.endMatch(); UI.hideHUD(); }
+        }
+      }
+      Input.endTick();
+      simMs = performance.now() - s0;
+      if (Net.active) Net.update(elapsed);
+      const alpha = paused ? 1 : parkAcc / DT;
+      Park.sync(alpha, elapsed);
+      Render.sync(g.running ? acc / DT : 1, elapsed);
+      const me = Park.player;
+      if (g.running) { const b = BallSys.ball; CameraSys.update(elapsed, b.x, b.z, g); }
+      else if (me) CameraSys.parkUpdate(elapsed, me.x, me.z, me.facing);
+      Render.draw(); UI.update(elapsed, stats); AudioSys.update(elapsed);
+      stats.steps = steps; stats.simMs = simMs; stats.frameMs = performance.now() - t0;
+      return;
+    }
     if (g.running && !paused) {
       acc += elapsed; const s0 = performance.now();
       while (acc >= DT && steps < CONFIG.physics.maxSteps) {
@@ -4369,7 +5131,8 @@ if (Net.active) Net.update(elapsed);
      AudioSys.update(elapsed);
      stats.steps = steps; stats.simMs = simMs; stats.frameMs = performance.now() - t0;
    }
-  return { init, startGame, pause, resume, quit, stats, get paused() { return paused; } };
+  return { init, startGame, enterPark, leavePark, startPark, pause, resume, quit, stats,
+    get paused() { return paused; }, get inPark() { return inPark; } };
 })();
 window.addEventListener('DOMContentLoaded', () => Main.init());
 // ==== END MAIN ====

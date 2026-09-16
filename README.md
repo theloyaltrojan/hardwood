@@ -11,9 +11,30 @@ No build step. Open the file in a browser and play.
 - 24 invented clubs across two conferences, with change strips so two similar colourways never share a court.
 
 ## Modes
-MyCareer · 1v1 streetball · 3v3 half court · 5v5 full court · practice gym · peer-to-peer multiplayer (WebRTC).
+MyPark · MyCareer · 1v1 streetball · 2v2 · 3v3 half court · 5v5 full court · practice gym · peer-to-peer multiplayer (WebRTC).
 
 On the Play screen, click either jersey to pick from all 24 teams at once instead of stepping through with the arrows.
+
+## MyPark
+Main menu → **Park** (or **Go to MyPark** from the career hub). It uses your MyCareer build, so make a
+player first.
+
+You walk the park as your own character in third person — WASD to move, Shift to run. Six half courts ring
+a plaza, two each of **1v1**, **2v2** and **3v3**, colour-coded by the paint in the key. Every court has team
+pads behind the midcourt line, one cluster per side. Walk onto a free pad, press **Space** to claim it, and
+when every pad on that court is taken it tips off *on that court* after a short countdown, using the same
+engine and the same controls as every other mode. Step off the pad to drop out before the tip.
+
+Fourteen CPU park-goers walk the place with you, queue for runs of their own and talk. If a court fills
+without you, you are free to walk over and watch it from the sidelines — the game plays out where it stands
+in the lobby, not on a separate screen. When it ends, everyone spills back into the park and the court
+reopens.
+
+**Press T to chat.** Messages appear in the log bottom-left and as a bubble over the speaker's head. In a
+multiplayer lobby chat goes to everyone over the same peer connection the games use.
+
+One run happens at a time: a court that fills while another is live waits its turn. Escape opens the pause
+menu, and quitting from there walks you back out to the menu.
 
 ## MyCareer
 Main menu → **MyCareer**. Build a player — name, position, height, number, look, and an archetype that sets how
