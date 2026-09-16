@@ -733,7 +733,7 @@ const PlayerSys = (() => {
       x: 0, y: 0, z: 0, px: 0, py: 0, pz: 0, vx: 0, vy: 0, vz: 0, facing: 0, pfacing: 0, speed: 0,
       state: ST.IDLE, stateT: 0, stateDur: 0, hasBall: false, hand: 1, handFrom: 1, dribblePhase: 0, dribbleH: 0.85,
       stamina: PC.staminaMax, winded: false, sprinting: false, comboCount: 0, lastMoveEnd: -9, cd: { move: 0, steal: 0, jump: 0, pump: 0, pass: 0 },
-      airborne: false, input: makeInput(), human: false, controlled: false, moveDir: { x: 0, z: 0 }, moveKind: '', stumbleT: 0, bumped: 0,
+      airborne: false, input: makeInput(), human: false, remote: false, controlled: false, moveDir: { x: 0, z: 0 }, moveKind: '', stumbleT: 0, bumped: 0,
       shot: { meterT: 0, released: false, dur: 1, timing: 0, quality: 0, green: false, fake: false, setShot: false, moving: 0 },
       dunk: { kind: '', t: 0, dur: 0, slamAt: 0, released: false, tx: 0, tz: 0, contact: false },
       matchup: -1, spot: -1, ai: { t: 0, phase: Math.random() * 100, intent: 0, target: { x: 0, z: 0 }, wantShoot: false, releaseAt: 0.7, cutT: 0, screenT: 0, role: 'spot', holdT: 0, lastDecision: 0, aggression: 0.5, driveT: 0, helping: false, dribbleT: 0, hesiT: 0 },
@@ -1095,7 +1095,7 @@ const BallSys = (() => {
     const a = 0.5 * G, b = vy, c = y - targetY; const disc = b * b - 4 * a * c; if (disc < 0) return 0; return Math.max(0, (-b - Math.sqrt(disc)) / (2 * a));
   }
   function place(x, y, z) { ball.x = ball.px = x; ball.y = ball.py = y; ball.z = ball.pz = z; ball.vx = ball.vy = ball.vz = 0; }
-  return { BS, ball, setHolder, release, makeLoose, update, place, sim, landingTime, R };
+  return { BS, ball, setHolder, release, makeLoose, update, updateHeld, place, sim, landingTime, R };
 })();
 // ==== END BALL ====
 
@@ -1544,7 +1544,7 @@ const Game = (() => {
     score: [0, 0], quarter: 1, clock: 0, shotClock: 24, possession: 0, hoopOf: [1, 0], human: -1, humanTeam: 0,
     mustClear: false, fouls: [0, 0], halfCourt: true, playersPerTeam: 1, lastShot: null, events: [], running: false,
     nextPossession: 0, deadDelay: 1.5, deadReason: '', inbounder: -1, inboundSpots: null, winner: -1, aiDiff: 'pro',
-    ftShooter: -1, ftLeft: 0, ftTotal: 0, ftAndOne: false, lastEvent: '', lastEventT: -9, teamFouls: [0, 0], possArrow: 0, inbound: null, pendingFoul: null, lastPass: null, ftLive: false, ftResolved: false,
+    ftShooter: -1, ftLeft: 0, ftTotal: 0, ftAndOne: false, lastEvent: '', lastEventT: -9, teamFouls: [0, 0], possArrow: 0, inbound: null, pendingFoul: null, lastPass: null, ftLive: false, ftResolved: false, remoteTeam: -1, remoteHuman: -1,
   };
   const settings = Object.assign({ difficulty: 'pro', quarterLen: 120, shadows: false, camera: 'broadcast', volume: 0.8, sfx: true, greenAuto: true, meterHelp: true, crowd: true, makeItTakeIt: false }, U.loadLS('hw_settings', {}));
   function saveSettings() { U.saveLS('hw_settings', settings); }
@@ -1552,7 +1552,7 @@ const Game = (() => {
   const otherTeam = (t) => 1 - t;
   const _tp = [[], []];
   function teamPlayers(t) { const arr = _tp[t]; arr.length = 0; for (const p of P) if (p.team === t) arr.push(p); return arr; }
-  function emit(name, data) { g.events.push({ name, data }); }
+  function emit(name, data) { g.events.push({ name, data }); if (Net.isHost) Net.forwardEvent(name, data); }
   function toast(text, sub) { emit('toast', { text, sub }); }
 
   // ---------- setup ----------
@@ -1582,6 +1582,7 @@ const Game = (() => {
   }
   function stop() { g.running = false; g.state = S.MENU; }
   function setHuman(id) { for (const p of P) { const was = p.human; p.controlled = p.id === id; p.human = p.id === id; if (was && !p.human) clearInput(p.input); } g.human = id; }
+  function setRemoteHuman(id) { for (const p of P) { const was = p.remote; p.remote = p.id === id; if (was && !p.remote) clearInput(p.input); } g.remoteHuman = id; }
   function setSpectate(on) { g.humanTeam = on ? -1 : 0; if (on) setHuman(-1); else { const tp = teamPlayers(0); const holder = P[ball.holder]; setHuman(holder && holder.team === 0 ? holder.id : tp[0].id); } }
   // Spacing spots relative to a hoop: [top, right wing, left wing, right corner, left corner]
   const _spots = [{ x: 0, z: 0 }, { x: 0, z: 0 }, { x: 0, z: 0 }, { x: 0, z: 0 }, { x: 0, z: 0 }];
@@ -1598,6 +1599,7 @@ const Game = (() => {
     ball.shotLive = false; ball.scored = false; BallSys.setHolder(off[0]); ball.state = BS.HELD;
     AI.assignMatchups(g); AI.onPossessionChange(g);
     if (g.humanTeam >= 0) setHuman(team === g.humanTeam ? off[0].id : def[0].id);
+    if (g.remoteTeam >= 0) setRemoteHuman(team === g.remoteTeam ? off[0].id : def[0].id);
     g.shotClock = g.halfCourt ? GC.halfShotClock : GC.shotClock; g.state = S.PLAY; g.stateT = 0;
     for (const p of P) { p.stamina = Math.min(PC.staminaMax, p.stamina + 12); clearInput(p.input); p.armsUp = false; p.bumped = 0; }
   }
@@ -1619,6 +1621,7 @@ const Game = (() => {
       AI.onPossessionChange(g);
     } else if (wasShot) g.shotClock = Math.max(g.shotClock, GC.offRebClock);
     if (p.team === g.humanTeam && g.humanTeam >= 0) setHuman(p.id);
+    else if (p.team === g.remoteTeam && g.remoteTeam >= 0) setRemoteHuman(p.id);
   }
   function gameOver(winner) {
     g.state = S.OVER; g.winner = winner; emit('buzzer'); emit('cheer', { big: 1.5 });
@@ -1649,14 +1652,14 @@ const Game = (() => {
     } else {
       if (inp.shootPressed && !p.airborne && (p.state === ST.IDLE || p.state === ST.MOVE)) { PlayerSys.jump(p, PC.jumpVel * (0.85 + 0.35 * p.ratings.vertical / 99)); PlayerSys.setState(p, ST.JUMP); p.armsUp = true; }
       if (inp.steal && p.team !== g.possession) Defense.trySteal(p, g);
-      if (inp.switch && p.human) switchPlayer(p);
+      if (inp.switch && (p.human || p.remote)) switchPlayer(p);
     }
   }
   function switchPlayer(p) {
     const mates = teamPlayers(p.team); if (mates.length < 2) return;
     let best = null, bd = 1e9;
     for (const m of mates) { if (m.id === p.id) continue; const d = U.dist(m.x, m.z, ball.x, ball.z); if (d < bd) { bd = d; best = m; } }
-    if (best) setHuman(best.id);
+    if (best) { if (p.human) setHuman(best.id); else setRemoteHuman(best.id); }
   }
   function onLand(p) {
     p.armsUp = false;
@@ -1721,7 +1724,8 @@ const Game = (() => {
   function step(dt) {
     g.time += dt; g.stateT += dt;
     for (const p of P) { p.px = p.x; p.py = p.y; p.pz = p.z; p.pfacing = p.facing; }
-    for (const p of P) if (!p.human) AI.think(p, dt, g);
+    for (const p of P) if (!p.human && !p.remote) AI.think(p, dt, g);
+    if (Net.isHost) Net.hostApplyInputs();
     const live = g.state === S.PLAY || g.state === S.INBOUND || g.state === S.FREETHROW;
     for (const p of P) if (live) applyInput(p, dt);
     for (const p of P) { p.stateT += dt; for (const k in p.cd) if (p.cd[k] > 0) p.cd[k] -= dt; PlayerSys.updateVertical(p, dt, onLand); updateTimedStates(p, dt); PlayerSys.updateMovement(p, dt); updateFacing(p, dt); PlayerSys.pushHistory(p); }
@@ -1730,9 +1734,9 @@ const Game = (() => {
     if (live) { Passing.update(dt, g); Dunks.blocks(g); }
     Rules.update(dt, g);
     if (live) pickupLoose();
-    for (const p of P) if (!p.human) clearInputEdges(p.input);
+    for (const p of P) if (!p.human && !p.remote) clearInputEdges(p.input);
   }
-  return { S, g, settings, saveSettings, start, stop, step, hoopFor, otherTeam, teamPlayers, setHuman, setSpectate, setupPossession, setupInbound, deadBall, emit, toast, applyInput, onScored, onPossession, gameOver, formationSpots, boxScore };
+  return { S, g, settings, saveSettings, start, stop, step, hoopFor, otherTeam, teamPlayers, setHuman, setRemoteHuman, setSpectate, setupPossession, setupInbound, deadBall, emit, toast, applyInput, onScored, onPossession, gameOver, formationSpots, boxScore };
 })();
 
 // ---------- Passing: chest/bounce passes with lead, catches, interceptions, inbounds ----------
@@ -1768,7 +1772,7 @@ const Passing = (() => {
     ball.passTarget = m.id; ball.passer = p.id; ball.passT = 0; ball.spinDir = 1; ball.lastTouch = p.id; ball.lastTeam = p.team;
     p.facing = Math.atan2(dx, dz); if (p.state !== ST.INBOUND) PlayerSys.setState(p, ST.PASS, 0.28); p.lastPassT = g.time; p.cd.pass = 0.4;
     g.lastPass = { from: p.id, to: m.id, t: g.time, bounce };
-    if (p.human) Game.setHuman(m.id);
+    if (p.human) Game.setHuman(m.id); else if (p.remote) Game.setRemoteHuman(m.id);
     Game.emit('sound', { name: 'catchBall' });
   }
   function update(dt, g) {
@@ -1873,7 +1877,7 @@ const Rules = {
     if (ball.shotLive) { if (s.kind === 'ft') p.stats.ftm++; else { p.stats.fgm++; if (value === 3) p.stats.tpm++; } }
     if (ball.shotLive && s.assist >= 0 && s.kind !== 'ft') { const a = PlayerSys.players[s.assist]; if (a) a.stats.ast++; }
     ball.shotLive = false; ball.scoredTeam = team;
-    Court.netPulse(h.idx);
+    Game.emit('netpulse', { hoop: h.idx });
     Game.emit('sound', { name: swish ? 'swish' : 'net' });
     Game.emit('cheer', { big: s.kind === 'ft' ? 0.3 : value === 3 ? 1 : 0.7 });
     if (s.kind !== 'ft') Game.toast((s.kind === 'dunk' ? 'SLAM' : swish ? 'SWISH' : 'BUCKET') + '  +' + value, p.name.toUpperCase() + (s.green ? ' · PERFECT RELEASE' : s.kind === 'dunk' ? ' · ' + s.dunkName : s.assist >= 0 ? ' · ASSIST ' + PlayerSys.players[s.assist].name.split(' ')[1].toUpperCase() : ''));
@@ -1981,6 +1985,7 @@ const Rules = {
     ball.shotLive = false; ball.scored = false; BallSys.setHolder(inb);
     AI.assignMatchups(g); AI.onPossessionChange(g);
     if (ib.team === g.humanTeam) Game.setHuman(inb.id); else if (g.humanTeam >= 0) { const hp = P[g.human]; if (!hp || hp.team !== g.humanTeam) Game.setHuman(Game.teamPlayers(g.humanTeam)[0].id); }
+    if (g.remoteTeam >= 0) { if (ib.team === g.remoteTeam) Game.setRemoteHuman(inb.id); else { const rp = P[g.remoteHuman]; if (!rp || rp.team !== g.remoteTeam) Game.setRemoteHuman(Game.teamPlayers(g.remoteTeam)[0].id); } }
     for (const p of P) { clearInput(p.input); p.armsUp = false; if (p !== inb && p.state === ST.INBOUND) PlayerSys.setState(p, ST.IDLE); p.stamina = Math.min(CONFIG.player.staminaMax, p.stamina + 6); }
     g.shotClock = CONFIG.game.shotClock; g.state = Game.S.INBOUND; g.stateT = 0;
   },
@@ -2017,6 +2022,7 @@ const Rules = {
     off.forEach((p, i) => { const side = i % 2 ? 1 : -1; if (i < 2) PlayerSys.teleport(p, laneX[1], side * 2.9, Math.atan2(s, 0)); else PlayerSys.teleport(p, h.x - s * 8.5, side * 3.5, Math.atan2(s, 0)); PlayerSys.setState(p, ST.IDLE); });
     for (const p of P) { clearInput(p.input); p.armsUp = false; }
     if (sh.team === g.humanTeam) Game.setHuman(sh.id);
+    if (sh.team === g.remoteTeam) Game.setRemoteHuman(sh.id);
     g.stateT = 0; g.ftResolved = false; g.ftLive = false; g.ftNextT = 0;
   },
   ftResult(g, made) {
@@ -2379,6 +2385,7 @@ const UI = (() => {
       case 'whistle': AudioSys.play('whistle'); break;
       case 'buzzer': AudioSys.play('buzzer'); break;
       case 'shake': CameraSys.addShake(d.t || 0.3); break;
+      case 'netpulse': Court.netPulse(d.hoop); break;
       case 'final': showFinal(d.title, d.html); break;
     }
   }
@@ -2386,6 +2393,7 @@ const UI = (() => {
     const g = Game.g;
     for (const ev of g.events) handleEvent(ev, g); g.events.length = 0;
     const b = BallSys.ball;
+    if (Net.isHost) for (const e of b.events) Net.forwardEvent('bsfx', e);
     for (const e of b.events) { if (typeof e === 'number') { if (e < 0) AudioSys.play('dribble', U.clamp(0.6 + (-e - 1) * 0.07, 0.5, 1.1)); else AudioSys.play('bounce', e); } else if (e === 'rim') AudioSys.play('rim'); else if (e === 'board') AudioSys.play('board'); }
     b.events.length = 0;
     if (!hudVisible) return;
@@ -2398,8 +2406,162 @@ const UI = (() => {
 // ==== END UI ====
 
 // ==== BEGIN NET ====
-// WebRTC peer-to-peer (Phase 8).
-const Net = { status() { return 'offline'; }, renderPanel(cont) { cont.innerHTML = '<div class="note">Multiplayer arrives in Phase 8.</div>'; }, get active() { return false; }, get isClient() { return false; } };
+// Peer-to-peer multiplayer over WebRTC DataChannels with manual copy/paste signaling (no server).
+// Host-authoritative: the host runs Sim.step for both humans, the client sends Input records, the host streams
+// snapshots at SNAP_HZ. The client predicts its own player's movement and interpolates everything else.
+const Net = (() => {
+  const ICE = [{ urls: 'stun:stun.l.google.com:19302' }];
+  const SNAP_HZ = 20, INPUT_HZ = 30, INTERP_DELAY = 0.1;
+  const BITS = ['sprint', 'shoot', 'shootPressed', 'shootReleased', 'sidestep', 'crossover', 'stepback', 'spin', 'hesi', 'pump', 'pass', 'steal', 'switch'];
+  const HELD_MASK = 0b11, EDGE_MASK = ~HELD_MASK;
+  let pc = null, chFast = null, chRel = null, role = 'none', connected = false, status = 'offline', panel = null, err = '';
+  let seq = 0, sendAcc = 0, snapAcc = 0, edgeBits = 0, recvSnaps = 0;
+  const localInput = makeInput();
+  const remote = { input: makeInput(), bits: 0, held: 0, seq: -1 };
+  const snaps = [];
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  function packBits(inp) { let b = 0; for (let i = 0; i < BITS.length; i++) if (inp[BITS[i]]) b |= 1 << i; return b; }
+  function unpackBits(b, inp) { for (let i = 0; i < BITS.length; i++) inp[BITS[i]] = !!(b & (1 << i)); }
+  function setStatus(sv) { status = sv; if (panel) renderPanel(panel); }
+  const enc = (o) => btoa(unescape(encodeURIComponent(JSON.stringify(o))));
+  const dec = (str) => JSON.parse(decodeURIComponent(escape(atob(str.trim()))));
+
+  // ---------- signaling ----------
+  function createPeer(isHost) {
+    pc = new RTCPeerConnection({ iceServers: ICE });
+    pc.onconnectionstatechange = () => { setStatus(pc.connectionState); if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') onDisconnect(); };
+    if (isHost) { chRel = pc.createDataChannel('rel', { ordered: true }); chFast = pc.createDataChannel('fast', { ordered: false, maxRetransmits: 0 }); wire(chRel); wire(chFast); }
+    else pc.ondatachannel = (e) => { if (e.channel.label === 'rel') chRel = e.channel; else chFast = e.channel; wire(e.channel); };
+  }
+  function wire(ch) {
+    ch.onopen = () => { if (chRel && chRel.readyState === 'open' && chFast && chFast.readyState === 'open') onConnected(); };
+    ch.onmessage = (e) => onMessage(e.data); ch.onclose = () => onDisconnect();
+  }
+  function waitIce() { return new Promise((res) => { if (pc.iceGatheringState === 'complete') return res(); const t = setTimeout(res, 4000); pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } }; }); }
+  async function hostCreateOffer() { role = 'host'; createPeer(true); const offer = await pc.createOffer(); await pc.setLocalDescription(offer); await waitIce(); return enc(pc.localDescription); }
+  async function hostAcceptAnswer(str) { await pc.setRemoteDescription(dec(str)); }
+  async function clientCreateAnswer(offerStr) { role = 'client'; createPeer(false); await pc.setRemoteDescription(dec(offerStr)); const ans = await pc.createAnswer(); await pc.setLocalDescription(ans); await waitIce(); return enc(pc.localDescription); }
+
+  // ---------- session ----------
+  function onConnected() { connected = true; setStatus('connected'); AudioSys.play('ui'); }
+  function onDisconnect() {
+    if (!connected) { if (role !== 'none') setStatus('disconnected'); return; }
+    connected = false; setStatus('disconnected');
+    if (role === 'host') { Game.setRemoteHuman(-1); Game.g.remoteTeam = -1; Game.toast('OPPONENT DISCONNECTED', 'CPU TAKES OVER'); }
+    else if (role === 'client') { Game.g.events.push({ name: 'toast', data: { text: 'CONNECTION LOST' } }); setTimeout(() => Main.quit(), 1500); }
+    role = 'none';
+  }
+  function close() { try { if (chRel) chRel.close(); if (chFast) chFast.close(); if (pc) pc.close(); } catch (e) { /* ignore */ } pc = chRel = chFast = null; connected = false; role = 'none'; snaps.length = 0; setStatus('offline'); }
+  function onQuit() { if (role === 'host') send(chRel, { t: 'quit' }); close(); }
+  function send(ch, obj) { if (ch && ch.readyState === 'open') { try { ch.send(JSON.stringify(obj)); } catch (e) { /* channel closing */ } } }
+  function hostStart(mode, a, b) { const g = Game.g; g.remoteTeam = 1; const tp = Game.teamPlayers(1); Game.setRemoteHuman(tp.length ? tp[0].id : -1); const inb = g.inbound ? g.inbound.inbounder : -1; const P = PlayerSys.players; if (inb >= 0 && P[inb].team === 1) Game.setRemoteHuman(inb); send(chRel, { t: 'start', mode, a, b, quarterLen: Game.settings.quarterLen, makeItTakeIt: Game.settings.makeItTakeIt, difficulty: Game.settings.difficulty }); }
+  function enterClient() { const g = Game.g; g.humanTeam = 1; const tp = Game.teamPlayers(1); Game.setHuman(tp.length ? tp[0].id : -1); snaps.length = 0; }
+  function forwardEvent(name, data) { if (role !== 'host' || !connected) return; if (name === 'start') return; send(chRel, { t: 'ev', name, data }); }
+  function onMessage(data) {
+    let m; try { m = JSON.parse(data); } catch (e) { return; }
+    if (role === 'host') { if (m.t === 'in' && m.seq > remote.seq) { remote.seq = m.seq; remote.input.mx = m.mx; remote.input.mz = m.mz; remote.held = m.h; remote.bits |= m.b; } else if (m.t === 'quit') onDisconnect(); return; }
+    if (m.t === 'start') { Game.settings.quarterLen = m.quarterLen; Game.settings.makeItTakeIt = m.makeItTakeIt; Game.settings.difficulty = m.difficulty; Main.startGame(m.mode, m.a, m.b); }
+    else if (m.t === 'snap') { m.rt = performance.now() / 1000; snaps.push(m); recvSnaps++; if (snaps.length > 6) snaps.shift(); }
+    else if (m.t === 'ev') { if (m.name === 'bsfx') BallSys.ball.events.push(m.data); else Game.g.events.push({ name: m.name, data: m.data }); }
+    else if (m.t === 'quit') { onDisconnect(); }
+  }
+
+  // ---------- host: apply the client's inputs each tick ----------
+  function hostApplyInputs() {
+    const g = Game.g; const p = PlayerSys.players[g.remoteHuman]; if (!p) return;
+    const inp = p.input; clearInputEdges(inp);
+    inp.mx = remote.input.mx; inp.mz = remote.input.mz; inp.sprint = !!(remote.held & 1); inp.shoot = !!(remote.held & 2);
+    if (remote.bits) { unpackBits(remote.bits & EDGE_MASK, inp); inp.sprint = !!(remote.held & 1); inp.shoot = !!(remote.held & 2); remote.bits = 0; }
+  }
+  function buildSnap() {
+    const P = PlayerSys.players, b = BallSys.ball, g = Game.g;
+    const pl = new Array(P.length);
+    for (let i = 0; i < P.length; i++) { const p = P[i]; pl[i] = [r3(p.x), r3(p.y), r3(p.z), r3(p.vx), r3(p.vy), r3(p.vz), r3(p.facing), p.state, r3(p.stateT), p.hasBall ? 1 : 0, p.hand, r3(p.stamina), p.armsUp ? 1 : 0, p.airborne ? 1 : 0, r3(p.shot.meterT), p.shot.released ? 1 : 0, p.dunk.kind, p.dunk.released ? 1 : 0, r3(p.dunk.slamAt), r3(p.stateDur), r3(p.dribblePhase), r3(p.shot.timing), p.shot.green ? 1 : 0, r3(p.shot.quality), r3(p.dribbleH), r3(p.shot.relT), r3(p.shot.dur), p.winded ? 1 : 0]; }
+    return { t: 'snap', seq: ++seq, pl, b: [r3(b.x), r3(b.y), r3(b.z), r3(b.vx), r3(b.vy), r3(b.vz), b.state, b.holder], g: { st: g.state, sc: g.score, q: g.quarter, ck: r3(g.clock), shc: r3(g.shotClock), pos: g.possession, mc: g.mustClear ? 1 : 0, tf: g.teamFouls, hoop: g.hoopOf, ctrl: g.remoteHuman } };
+  }
+  function update(dt) { if (role !== 'host' || !connected || !Game.g.running) return; snapAcc += dt; if (snapAcc >= 1 / SNAP_HZ) { snapAcc = 0; send(chFast, buildSnap()); } }
+
+  // ---------- client: send inputs, interpolate snapshots, predict own movement ----------
+  function clientStep(dt) {
+    const g = Game.g; const ST = PlayerSys.ST;
+    Input.sample(localInput, CameraSys.basis);
+    edgeBits |= packBits(localInput) & EDGE_MASK;
+    sendAcc += dt;
+    if (sendAcc >= 1 / INPUT_HZ) { sendAcc = 0; send(chFast, { t: 'in', seq: ++seq, mx: r3(localInput.mx), mz: r3(localInput.mz), h: packBits(localInput) & HELD_MASK, b: edgeBits }); edgeBits = 0; }
+    g.time += dt;
+    if (!snaps.length) return;
+    let A = snaps[0], B = snaps[0];
+    if (snaps.length > 1) { const now = performance.now() / 1000 - INTERP_DELAY; for (let i = 0; i < snaps.length - 1; i++) { if (snaps[i].rt <= now) { A = snaps[i]; B = snaps[i + 1]; } } if (now > snaps[snaps.length - 1].rt) { A = B = snaps[snaps.length - 1]; } }
+    const f = B.rt > A.rt ? U.clamp((performance.now() / 1000 - INTERP_DELAY - A.rt) / (B.rt - A.rt), 0, 1) : 1;
+    applySnap(A, B, f);
+    const me = PlayerSys.players[g.human];
+    if (me && (me.state === ST.IDLE || me.state === ST.MOVE) && !me.airborne) {
+      me.input.mx = localInput.mx; me.input.mz = localInput.mz; me.input.sprint = localInput.sprint;
+      PlayerSys.updateMovement(me, dt);
+      const ex = me.authX - me.x, ez = me.authZ - me.z; const d = Math.sqrt(ex * ex + ez * ez);
+      if (d > 0.9) { me.x = me.authX; me.z = me.authZ; } else { me.x += ex * (1 - Math.exp(-dt * 6)); me.z += ez * (1 - Math.exp(-dt * 6)); }
+      if (me.speed > 0.6) PlayerSys.faceVelocity(me, dt);
+      if (me.hasBall && BallSys.ball.holder === me.id) BallSys.updateHeld(me, dt);
+    }
+    Court.setShotClock(g.mode === 'practice' ? -1 : g.shotClock);
+  }
+  function applySnap(A, B, f) {
+    const P = PlayerSys.players, g = Game.g, ball = BallSys.ball;
+    for (let i = 0; i < P.length; i++) {
+      const a = A.pl[i], b = B.pl[i], p = P[i]; if (!a || !b) continue;
+      p.px = p.x; p.py = p.y; p.pz = p.z; p.pfacing = p.facing;
+      const x = U.lerp(a[0], b[0], f), y = U.lerp(a[1], b[1], f), z = U.lerp(a[2], b[2], f);
+      const predicted = p.id === g.human && (b[7] === PlayerSys.ST.IDLE || b[7] === PlayerSys.ST.MOVE) && !b[13];
+      if (predicted) { p.authX = x; p.authZ = z; p.y = y; if (p.authX === undefined) { p.x = x; p.z = z; } }
+      else { p.x = x; p.y = y; p.z = z; p.facing = U.angleLerp(a[6], b[6], f); }
+      p.vx = b[3]; p.vy = b[4]; p.vz = b[5]; p.state = b[7]; p.stateT = b[8]; p.hasBall = !!b[9]; p.hand = b[10]; p.stamina = b[11]; p.armsUp = !!b[12]; p.airborne = !!b[13];
+      p.shot.meterT = b[14]; p.shot.released = !!b[15]; p.dunk.kind = b[16]; p.dunk.released = !!b[17]; p.dunk.slamAt = b[18]; p.stateDur = b[19]; p.dribblePhase = b[20]; p.shot.timing = b[21]; p.shot.green = !!b[22]; p.shot.quality = b[23]; p.dribbleH = b[24]; p.shot.relT = b[25]; p.shot.dur = b[26]; p.winded = !!b[27];
+      if (!predicted) p.speed = Math.sqrt(p.vx * p.vx + p.vz * p.vz);
+    }
+    const ba = A.b, bb = B.b;
+    ball.px = ball.x; ball.py = ball.y; ball.pz = ball.z;
+    ball.x = U.lerp(ba[0], bb[0], f); ball.y = U.lerp(ba[1], bb[1], f); ball.z = U.lerp(ba[2], bb[2], f); ball.vx = bb[3]; ball.vy = bb[4]; ball.vz = bb[5]; ball.state = bb[6]; ball.holder = bb[7];
+    const G = B.g; g.state = G.st; g.score[0] = G.sc[0]; g.score[1] = G.sc[1]; g.quarter = G.q; g.clock = G.ck; g.shotClock = G.shc; g.possession = G.pos; g.mustClear = !!G.mc; g.teamFouls[0] = G.tf[0]; g.teamFouls[1] = G.tf[1]; g.hoopOf[0] = G.hoop[0]; g.hoopOf[1] = G.hoop[1];
+    if (G.ctrl !== g.human) { Game.setHuman(G.ctrl); const me = P[G.ctrl]; if (me) { me.authX = me.x; me.authZ = me.z; } }
+  }
+
+  // ---------- UI panel ----------
+  let mode = 'pick', offerText = '', answerText = '';
+  function renderPanel(cont) {
+    panel = cont; const busy = status === 'working';
+    let html = '<div class="note">Play a friend with no server: one of you hosts, the other joins. Exchange the two codes over any chat app. The host picks the mode and teams from the main menu once connected (host = home team, guest = away team).</div>';
+    html += '<div class="status">status: ' + status + (err ? ' · ' + err : '') + '</div>';
+    if (connected) {
+      html += '<div class="note" style="color:var(--ok)">Connected. ' + (role === 'host' ? 'Pick a mode above to start the game for both players.' : 'Waiting for the host to start the game…') + '</div>';
+      html += '<div class="row"><button class="btn" id="netClose">Disconnect</button></div>';
+    } else if (mode === 'pick') {
+      html += '<div class="row"><button class="btn primary" id="netHost">Host a game</button><button class="btn" id="netJoin">Join a game</button></div>';
+    } else if (mode === 'host') {
+      html += '<h2 class="sec">1. Your offer code (send it to your friend)</h2><textarea class="sig" id="netOffer" readonly>' + offerText + '</textarea>';
+      html += '<div class="row"><button class="btn small" id="netCopyOffer">Copy</button></div>';
+      html += '<h2 class="sec">2. Paste their answer code</h2><textarea class="sig" id="netAnswerIn" placeholder="paste answer here"></textarea>';
+      html += '<div class="row"><button class="btn primary" id="netConnect">Connect</button><button class="btn" id="netCancel">Cancel</button></div>';
+    } else if (mode === 'join') {
+      html += '<h2 class="sec">1. Paste the host\'s offer code</h2><textarea class="sig" id="netOfferIn" placeholder="paste offer here"></textarea>';
+      html += '<div class="row"><button class="btn primary" id="netMakeAnswer"' + (busy ? ' disabled' : '') + '>Create answer</button><button class="btn" id="netCancel">Cancel</button></div>';
+      if (answerText) { html += '<h2 class="sec">2. Send this answer code back to the host</h2><textarea class="sig" id="netAnswer" readonly>' + answerText + '</textarea><div class="row"><button class="btn small" id="netCopyAnswer">Copy</button></div><div class="note">Waiting for the host to connect…</div>'; }
+    }
+    cont.innerHTML = html;
+    const $ = (id) => cont.querySelector('#' + id);
+    const copy = (id) => { const ta = $(id); ta.select(); try { navigator.clipboard.writeText(ta.value); } catch (e) { document.execCommand('copy'); } AudioSys.play('ui'); };
+    if ($('netHost')) $('netHost').onclick = async () => { mode = 'host'; err = ''; setStatus('working'); try { offerText = await hostCreateOffer(); setStatus('offer ready'); } catch (e) { err = e.message; setStatus('error'); } };
+    if ($('netJoin')) $('netJoin').onclick = () => { mode = 'join'; answerText = ''; renderPanel(cont); };
+    if ($('netCopyOffer')) $('netCopyOffer').onclick = () => copy('netOffer');
+    if ($('netCopyAnswer')) $('netCopyAnswer').onclick = () => copy('netAnswer');
+    if ($('netConnect')) $('netConnect').onclick = async () => { const v = $('netAnswerIn').value; if (!v.trim()) return; err = ''; setStatus('connecting'); try { await hostAcceptAnswer(v); } catch (e) { err = e.message; setStatus('error'); } };
+    if ($('netMakeAnswer')) $('netMakeAnswer').onclick = async () => { const v = $('netOfferIn').value; if (!v.trim()) return; err = ''; setStatus('working'); try { answerText = await clientCreateAnswer(v); setStatus('answer ready'); } catch (e) { err = e.message; setStatus('error'); } };
+    if ($('netCancel')) $('netCancel').onclick = () => { close(); mode = 'pick'; offerText = ''; answerText = ''; renderPanel(cont); };
+    if ($('netClose')) $('netClose').onclick = () => { onQuit(); mode = 'pick'; offerText = ''; answerText = ''; renderPanel(cont); };
+  }
+  function statusText() { return role + '/' + status + (role === 'client' ? ' snaps ' + recvSnaps + ' buf ' + snaps.length : role === 'host' ? ' seq ' + seq : ''); }
+  return { renderPanel, status: statusText, update, clientStep, hostApplyInputs, hostStart, enterClient, forwardEvent, onQuit, hostCreateOffer, hostAcceptAnswer, clientCreateAnswer,
+    get active() { return connected && role !== 'none'; }, get isHost() { return role === 'host' && connected; }, get isClient() { return role === 'client' && connected; } };
+})();
 // ==== END NET ====
 
 // ==== BEGIN MAIN ====
@@ -2430,13 +2592,14 @@ const Main = (() => {
   }
   function startGame(mode, a, b) {
     lastMode = mode; Render.buildArena(TEAMS[a], TEAMS[b]); Game.start(mode, a, b); Render.buildPlayers(Game.g.teams); Render.setShadows(Game.settings.shadows);
+    if (Net.isHost) Net.hostStart(mode, a, b); else if (Net.isClient) Net.enterClient();
     UI.hideMenu(); UI.showHUD(); UI.clearToast(); const ball = BallSys.ball; CameraSys.snap(ball.x, ball.z); acc = 0; paused = false;
     const sb = document.getElementById('btnSpectate'); if (sb) sb.textContent = 'CPU plays for me: off';
     if (!U.loadLS('hw_seen', false)) { pause(true); UI.showFirstRun(); }
   }
   function pause(silent) { paused = true; if (!silent) UI.showPause(true); }
   function resume() { paused = false; UI.showPause(false); last = performance.now(); acc = 0; }
-  function quit() { Game.stop(); paused = false; UI.showPause(false); UI.showMenu(); }
+  function quit() { Game.stop(); paused = false; UI.showPause(false); UI.showMenu(); if (Net.active) Net.onQuit(); }
   function rematch() { const g = Game.g; startGame(lastMode, g.teamIdx[0], g.teamIdx[1]); document.getElementById('final').classList.add('hidden'); }
   function frame(now) {
     requestAnimationFrame(frame);
