@@ -923,6 +923,7 @@ const PlayerSys = (() => {
   const STATE_NAMES = Object.keys(ST);
   const RATING_KEYS = ['speed', 'accel', 'handling', 'threePt', 'midRange', 'closeShot', 'layup', 'dunk', 'vertical', 'block', 'steal', 'perimD', 'interiorD', 'rebound', 'strength', 'pass'];
   const players = []; // all sim players
+  const liveMeshes = []; // every mesh built this session, so teardown never depends on `players`
 
   function genRoster(teamIdx) {
     RNG.seed(1000 + teamIdx * 7919);
@@ -935,7 +936,7 @@ const PlayerSys = (() => {
       let num; do { num = 1 + ((RNG.next() * 49) | 0); } while (usedNums.has(num)); usedNums.add(num);
       const height = +(t.height + RNG.gauss() * 0.03).toFixed(2);
       const name = RNG.pick(FIRST_NAMES) + ' ' + RNG.pick(LAST_NAMES);
-      roster.push({ name, num, pos, height, ratings: r, skin: (RNG.next() * 5) | 0, star: i === starSlot });
+      roster.push({ name, num, pos, height, ratings: r, skin: (RNG.next() * 5) | 0, hair: (RNG.next() * 5) | 0, star: i === starSlot });
     }
     return roster;
   }
@@ -943,7 +944,7 @@ const PlayerSys = (() => {
 
   function create(def, team, slot) {
     const p = {
-      id: players.length, team, slot, name: def.name, num: def.num, pos: def.pos, height: def.height, ratings: def.ratings, skin: def.skin, ovr: overall(def.ratings),
+      id: players.length, team, slot, name: def.name, num: def.num, pos: def.pos, height: def.height, ratings: def.ratings, skin: def.skin, hair: def.hair, ovr: overall(def.ratings),
       x: 0, y: 0, z: 0, px: 0, py: 0, pz: 0, vx: 0, vy: 0, vz: 0, facing: 0, pfacing: 0, speed: 0,
       state: ST.IDLE, stateT: 0, stateDur: 0, hasBall: false, hand: 1, handFrom: 1, dribblePhase: 0, dribbleH: 0.85,
       stamina: PC.staminaMax, winded: false, sprinting: false, comboCount: 0, lastMoveEnd: -9, cd: { move: 0, steal: 0, jump: 0, pump: 0, pass: 0, contest: 0 },
@@ -1022,108 +1023,187 @@ const PlayerSys = (() => {
   function faceVelocity(p, dt) { if (p.speed > 0.5) p.facing = U.angleDamp(p.facing, Math.atan2(p.vx, p.vz), PC.turnRate, dt); }
   function costStamina(p, amt) { p.stamina = Math.max(0, p.stamina - amt); if (p.stamina <= 0) p.winded = true; }
 
-  // ---- procedural meshes (shared geometry, per-team materials) ----
-  const GEO = {}; const teamMats = {}; const skinMats = []; const hairMats = [];
-  const SF = 0.96; // one build-scale knob, baked into every player geometry
-  const POS_BODY = { PG: { s: 1.0, h: 0.96, w: 0.9 }, SG: { s: 1.03, h: 0.98, w: 0.93 }, SF: { s: 1.06, h: 1.0, w: 0.97 }, PF: { s: 1.12, h: 0.98, w: 1.06 }, C: { s: 1.18, h: 0.94, w: 1.14 } };
+  // ---- procedural player models ----
+  // A body is a set of lathe/primitive parts merged into ONE vertex-coloured mesh, so a player costs 10 draw
+  // calls instead of 26 while carrying more shape. Limbs stay separate because they articulate: the arm has a
+  // shoulder and an elbow, the leg a hip and a knee, which is what makes the run cycle and shot form read.
+  const SF = 0.98;                     // one build-scale knob for the whole figure
+  const POS_BODY = { PG: { h: 0.97, w: 0.90 }, SG: { h: 0.99, w: 0.94 }, SF: { h: 1.00, w: 0.99 }, PF: { h: 0.99, w: 1.07 }, C: { h: 0.96, w: 1.15 } };
+  const SKINS = [0xf1c9a5, 0xd9a06f, 0xb5764a, 0x8d5a34, 0x5c3a21];
+  const HAIRS = [0x1a1210, 0x241a14, 0x120e0c, 0x2e2119, 0x0e0b0a];
+  const GEO = {}; const teamMats = {};
+  let bodyMat = null, shadowMat = null;
+
+  // Merge parts into one geometry, baking each part's colour into vertex colours.
+  function mergeParts(parts) {
+    let total = 0; const prepped = [];
+    for (const pt of parts) {
+      if (!pt.geo) continue;
+      const g = pt.geo.index ? pt.geo.toNonIndexed() : pt.geo.clone();
+      if (pt.matrix) g.applyMatrix4(pt.matrix);
+      total += g.attributes.position.count; prepped.push({ g, c: new THREE.Color(pt.color) });
+    }
+    const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3);
+    let o = 0;
+    for (const { g, c } of prepped) {
+      const n = g.attributes.position.count;
+      pos.set(g.attributes.position.array, o * 3);
+      if (g.attributes.normal) nor.set(g.attributes.normal.array, o * 3);
+      for (let i = 0; i < n; i++) { const b = (o + i) * 3; col[b] = c.r; col[b + 1] = c.g; col[b + 2] = c.b; }
+      o += n; g.dispose();
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return out;
+  }
+  const V2 = (x, y) => new THREE.Vector2(x * SF, y * SF);
+  const at = (x, y, z) => new THREE.Matrix4().makeTranslation(x * SF, y * SF, (z || 0) * SF);
+  function scaled(x, y, z, sx, sy, sz) { const m = new THREE.Matrix4().makeScale(sx, sy, sz == null ? sx : sz); return m.premultiply(at(x, y, z)); }
+
   function initGeo() {
-    const sf = SF;
-    GEO.torso = new THREE.CylinderGeometry(0.21 * sf, 0.17 * sf, 0.56 * sf, 14); GEO.torso.translate(0, 1.23 * sf, 0);
-    GEO.shorts = new THREE.CylinderGeometry(0.19 * sf, 0.21 * sf, 0.3 * sf, 14); GEO.shorts.translate(0, 0.86 * sf, 0);
-    GEO.head = new THREE.SphereGeometry(0.125 * sf, 14, 10); GEO.head.translate(0, 1.66 * sf, 0);
-    GEO.jaw = new THREE.SphereGeometry(0.09 * sf, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.5); GEO.jaw.translate(0, 1.6 * sf, 0.04);
-    GEO.hair = new THREE.SphereGeometry(0.135 * sf, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.5); GEO.hair.translate(0, 1.67 * sf, 0);
-    GEO.hairTop = new THREE.SphereGeometry(0.14 * sf, 12, 8, 0, Math.PI * 2, -0.15, Math.PI * 0.55); GEO.hairTop.translate(0, 1.72 * sf, 0);
-    GEO.arm = new THREE.CylinderGeometry(0.055 * sf, 0.045 * sf, 0.58 * sf, 8); GEO.arm.translate(0, -0.29 * sf, 0);
-    GEO.armUpper = new THREE.CylinderGeometry(0.05 * sf, 0.055 * sf, 0.24 * sf, 8); GEO.armUpper.translate(0, -0.42 * sf, 0);
-    GEO.sleeve = new THREE.CylinderGeometry(0.07 * sf, 0.06 * sf, 0.16 * sf, 8); GEO.sleeve.translate(0, -0.06 * sf, 0);
-    GEO.hand = new THREE.SphereGeometry(0.045 * sf, 8, 6); GEO.hand.translate(0, -0.62 * sf, 0);
-    GEO.leg = new THREE.CylinderGeometry(0.09 * sf, 0.065 * sf, 0.78 * sf, 8); GEO.leg.translate(0, -0.39 * sf, 0);
-    GEO.shoe = new THREE.BoxGeometry(0.14 * sf, 0.1 * sf, 0.3 * sf); GEO.shoe.translate(0, -0.8 * sf, 0.04);
-    GEO.sole = new THREE.BoxGeometry(0.15 * sf, 0.04 * sf, 0.32 * sf); GEO.sole.translate(0, -0.86 * sf, 0.04);
-    GEO.numPlane = new THREE.PlaneGeometry(0.26 * sf, 0.26 * sf);
-    GEO.shadow = new THREE.CircleGeometry(0.48 * sf, 16); GEO.shadow.rotateX(-Math.PI / 2);
-    GEO.ring = new THREE.RingGeometry(0.5 * sf, 0.62 * sf, 24); GEO.ring.rotateX(-Math.PI / 2);
-    GEO.collar = new THREE.TorusGeometry(0.22 * sf, 0.022 * sf, 6, 14); GEO.collar.translate(0, 1.51 * sf, 0);
-    GEO.hem = new THREE.TorusGeometry(0.19 * sf, 0.018 * sf, 6, 14); GEO.hem.translate(0, 0.71 * sf, 0);
-    const skins = [0xf1c9a5, 0xd9a06f, 0xb5764a, 0x8d5a34, 0x5c3a21];
-    for (const c of skins) skinMats.push(new THREE.MeshStandardMaterial({ color: c, roughness: 0.75, metalness: 0.0, envMapIntensity: 0.3 }));
-    for (const c of [0x1a1210, 0x241a14, 0x120e0c, 0x2e2119, 0x0e0b0a]) hairMats.push(new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, metalness: 0.0 }));
-    GEO.shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false });
+    // torso: waist -> chest -> shoulders -> neck opening
+    GEO.torso = new THREE.LatheGeometry([V2(0.150, 0.94), V2(0.178, 1.03), V2(0.200, 1.14), V2(0.212, 1.26), V2(0.206, 1.36), V2(0.172, 1.44), V2(0.098, 1.49)], 16);
+    GEO.shorts = new THREE.LatheGeometry([V2(0.150, 0.70), V2(0.196, 0.745), V2(0.214, 0.83), V2(0.206, 0.92), V2(0.168, 0.99)], 16);
+    // the gusset closes the gap between the short legs
+    GEO.gusset = new THREE.SphereGeometry(0.135 * SF, 10, 8); GEO.gusset.scale(1, 0.75, 0.9);
+    GEO.neck = new THREE.CylinderGeometry(0.058 * SF, 0.068 * SF, 0.12 * SF, 10); GEO.neck.translate(0, 1.52 * SF, 0);
+    GEO.deltoid = new THREE.SphereGeometry(0.072 * SF, 10, 8);
+    GEO.head = new THREE.SphereGeometry(0.112 * SF, 14, 11);
+    GEO.jaw = new THREE.SphereGeometry(0.092 * SF, 10, 7, 0, Math.PI * 2, Math.PI * 0.42, Math.PI * 0.58);
+    GEO.ear = new THREE.SphereGeometry(0.030 * SF, 6, 5);
+    GEO.nose = new THREE.ConeGeometry(0.017 * SF, 0.042 * SF, 6); GEO.nose.rotateX(Math.PI / 2);
+    GEO.eye = new THREE.SphereGeometry(0.014 * SF, 6, 5);
+    GEO.brow = new THREE.BoxGeometry(0.036 * SF, 0.010 * SF, 0.012 * SF);
+    // hair variants
+    // phi = PI/2 faces +Z, so sweeping around from there leaves an opening over the face
+    GEO.hairFade = new THREE.SphereGeometry(0.120 * SF, 14, 9, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    GEO.hairAfro = new THREE.SphereGeometry(0.150 * SF, 16, 11, Math.PI / 2 + 0.88, Math.PI * 2 - 1.76, 0, Math.PI * 0.80);
+    GEO.hairTop = new THREE.SphereGeometry(0.123 * SF, 14, 9, 0, Math.PI * 2, 0, Math.PI * 0.42);
+    GEO.band = new THREE.TorusGeometry(0.114 * SF, 0.019 * SF, 6, 18); GEO.band.rotateX(Math.PI / 2);
+    // arm: upper (shoulder -> elbow), fore (elbow -> hand). Both hang down -Y from their pivot.
+    GEO.upperArm = new THREE.CylinderGeometry(0.052 * SF, 0.044 * SF, 0.29 * SF, 8); GEO.upperArm.translate(0, -0.145 * SF, 0);
+    GEO.sleeve = new THREE.CylinderGeometry(0.066 * SF, 0.058 * SF, 0.13 * SF, 8); GEO.sleeve.translate(0, -0.055 * SF, 0);
+    GEO.elbow = new THREE.SphereGeometry(0.044 * SF, 8, 6);
+    GEO.foreArm = new THREE.CylinderGeometry(0.044 * SF, 0.036 * SF, 0.27 * SF, 8); GEO.foreArm.translate(0, -0.135 * SF, 0);
+    GEO.wristband = new THREE.TorusGeometry(0.040 * SF, 0.012 * SF, 5, 10); GEO.wristband.rotateX(Math.PI / 2);
+    GEO.hand = new THREE.SphereGeometry(0.048 * SF, 8, 6);
+    // leg: thigh (hip -> knee), shin (knee -> foot)
+    GEO.thigh = new THREE.CylinderGeometry(0.088 * SF, 0.072 * SF, 0.40 * SF, 8); GEO.thigh.translate(0, -0.20 * SF, 0);
+    GEO.knee = new THREE.SphereGeometry(0.068 * SF, 8, 6);
+    GEO.shin = new THREE.CylinderGeometry(0.066 * SF, 0.050 * SF, 0.36 * SF, 8); GEO.shin.translate(0, -0.18 * SF, 0);
+    GEO.sock = new THREE.CylinderGeometry(0.058 * SF, 0.052 * SF, 0.09 * SF, 8); GEO.sock.translate(0, -0.325 * SF, 0);
+    GEO.shoe = new THREE.BoxGeometry(0.128 * SF, 0.078 * SF, 0.255 * SF); GEO.shoe.translate(0, -0.405 * SF, 0.042 * SF);
+    GEO.sole = new THREE.BoxGeometry(0.134 * SF, 0.022 * SF, 0.262 * SF); GEO.sole.translate(0, -0.437 * SF, 0.044 * SF);
+    // jersey number ring: thetaStart puts u=0.25 on +Z (chest) and u=0.75 on -Z (back)
+    GEO.numRing = new THREE.CylinderGeometry(0.218 * SF, 0.212 * SF, 0.20 * SF, 24, 1, true, -Math.PI / 2, Math.PI * 2);
+    GEO.numRing.translate(0, 1.26 * SF, 0);
+    GEO.shadow = new THREE.CircleGeometry(0.46 * SF, 16); GEO.shadow.rotateX(-Math.PI / 2);
+    GEO.ring = new THREE.RingGeometry(0.50 * SF, 0.62 * SF, 24); GEO.ring.rotateX(-Math.PI / 2);
+    bodyMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.74, metalness: 0.03, envMapIntensity: 0.35 });
+    shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false });
   }
   function matsFor(team) {
     if (teamMats[team.id]) return teamMats[team.id];
-    const m = {
-      jersey: new THREE.MeshStandardMaterial({ color: team.primary, roughness: 0.78, metalness: 0.02, envMapIntensity: 0.4 }),
-      shorts: new THREE.MeshStandardMaterial({ color: team.secondary, roughness: 0.82, metalness: 0.02, envMapIntensity: 0.4 }),
-      shoe: new THREE.MeshStandardMaterial({ color: team.primary, roughness: 0.5, metalness: 0.15, envMapIntensity: 0.3 }),
-      sole: new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9, metalness: 0.0 }),
-      stripe: new THREE.MeshStandardMaterial({ color: team.secondary, roughness: 0.75, metalness: 0.02 }),
-      ring: new THREE.MeshBasicMaterial({ color: team.primary, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }),
-      collar: new THREE.MeshStandardMaterial({ color: team.secondary, roughness: 0.8, metalness: 0.02 }),
-    };
-    teamMats[team.id] = m; return m;
+    teamMats[team.id] = { ring: new THREE.MeshBasicMaterial({ color: team.primary, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }) };
+    return teamMats[team.id];
   }
+  // One texture carrying the number twice, so it wraps the chest and the back of the ring.
   function numberTexture(num, team) {
-    const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128; const g = cv.getContext('2d');
-    g.fillStyle = team.dark ? '#ffffff' : '#111111'; g.font = '900 90px Inter, Helvetica, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(String(num), 64, 68);
-    // subtle outline
-    g.strokeStyle = team.dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)'; g.lineWidth = 2;
-    g.strokeText(String(num), 64, 68);
-    const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; return t;
+    const W = 512, H = 256; const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const g = cv.getContext('2d');
+    g.clearRect(0, 0, W, H);
+    const ink = team.dark ? '#f6f3ec' : '#15130a', edge = team.dark ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)';
+    g.font = '900 150px Inter, Helvetica, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const cx of [W * 0.25, W * 0.75]) {
+      g.lineWidth = 10; g.strokeStyle = edge; g.strokeText(String(num), cx, H * 0.5);
+      g.fillStyle = ink; g.fillText(String(num), cx, H * 0.5);
+    }
+    const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t;
   }
+
   function buildMesh(p, team, scene) {
     if (!GEO.torso) initGeo();
-    const mats = matsFor(team); const skin = skinMats[p.skin];
-    const hair = hairMats[p.skin % hairMats.length];
+    const skin = SKINS[p.skin], hairCol = HAIRS[(p.hair == null ? p.skin : p.hair) % HAIRS.length];
+    const jersey = team.primary, trim = team.secondary;
     const pb = POS_BODY[p.pos] || POS_BODY.PG;
+    const style = (p.hair == null ? p.skin : p.hair) % 5;
     const g = new THREE.Group();
-    // Every geometry is baked at its own offset (body-local, or arm/leg-local inside those groups), so meshes
-    // are added untouched and the whole figure is scaled once on the group. Setting per-mesh position AND
-    // scale on top of a baked offset applies the offset twice, which is what floated the heads.
-    const add = (geo, mat) => { const m = new THREE.Mesh(geo, mat); g.add(m); return m; };
-    const torso = add(GEO.torso, mats.jersey);
-    add(GEO.collar, mats.collar);
-    add(GEO.shorts, mats.shorts);
-    add(GEO.hem, mats.stripe);
-    const head = add(GEO.head, skin);
-    add(GEO.jaw, skin);
-    add(GEO.hair, hair);
-    add(GEO.hairTop, hair);
-    const numMat = new THREE.MeshBasicMaterial({ map: numberTexture(p.num, team), transparent: true, depthWrite: false });
-    const numF = new THREE.Mesh(GEO.numPlane, numMat); numF.position.set(0, 1.27 * SF, 0.2 * SF); g.add(numF);
-    const numB = new THREE.Mesh(GEO.numPlane, numMat); numB.position.set(0, 1.3 * SF, -0.2 * SF); numB.rotation.y = Math.PI; g.add(numB);
+
+    // --- body: one merged, vertex-coloured mesh ---
+    const parts = [
+      { geo: GEO.torso, color: jersey }, { geo: GEO.shorts, color: trim }, { geo: GEO.gusset, color: trim, matrix: at(0, 0.80) },
+      { geo: GEO.neck, color: skin },
+      { geo: GEO.deltoid, color: jersey, matrix: at(-0.196, 1.40) }, { geo: GEO.deltoid, color: jersey, matrix: at(0.196, 1.40) },
+      { geo: GEO.head, color: skin, matrix: scaled(0, 1.655, 0, 1, 1.1, 0.98) },
+      { geo: GEO.jaw, color: skin, matrix: scaled(0, 1.655, 0.008, 0.94, 1.0, 1.0) },
+      { geo: GEO.ear, color: skin, matrix: scaled(-0.100, 1.652, 0, 0.7, 1.1, 0.55) },
+      { geo: GEO.ear, color: skin, matrix: scaled(0.100, 1.652, 0, 0.7, 1.1, 0.55) },
+      { geo: GEO.nose, color: skin, matrix: at(0, 1.645, 0.100) },
+      { geo: GEO.eye, color: 0x241b14, matrix: scaled(-0.044, 1.666, 0.097, 1.05, 0.8, 0.55) },
+      { geo: GEO.eye, color: 0x241b14, matrix: scaled(0.044, 1.666, 0.097, 1.05, 0.8, 0.55) },
+      { geo: GEO.brow, color: hairCol, matrix: at(-0.044, 1.694, 0.099) },
+      { geo: GEO.brow, color: hairCol, matrix: at(0.044, 1.694, 0.099) },
+    ];
+    if (style === 0) parts.push({ geo: GEO.hairFade, color: hairCol, matrix: scaled(0, 1.668, -0.024, 1.0, 0.95, 1.0) });
+    else if (style === 1) parts.push({ geo: GEO.hairAfro, color: hairCol, matrix: scaled(0, 1.688, -0.012, 1.0, 0.95, 1.0) });
+    else if (style === 2) { parts.push({ geo: GEO.hairFade, color: hairCol, matrix: scaled(0, 1.672, -0.024, 1.0, 0.90, 1.0) }); parts.push({ geo: GEO.band, color: trim, matrix: at(0, 1.712) }); }
+    else if (style === 3) parts.push({ geo: GEO.hairTop, color: hairCol, matrix: scaled(0, 1.676, -0.018, 1.02, 0.80, 1.02) });
+    // style 4 is bald: head only
+    const bodyGeo = mergeParts(parts);
+    const body = new THREE.Mesh(bodyGeo, bodyMat); g.add(body);
+
+    // --- jersey number ring ---
+    const numMat = new THREE.MeshBasicMaterial({ map: numberTexture(p.num, team), transparent: true, alphaTest: 0.45, side: THREE.DoubleSide });
+    const numMesh = new THREE.Mesh(GEO.numRing, numMat); g.add(numMesh);
+
+    // --- articulated limbs ---
+    const armGeo = mergeParts([{ geo: GEO.upperArm, color: skin }, { geo: GEO.sleeve, color: jersey }, { geo: GEO.elbow, color: skin, matrix: at(0, -0.29) }]);
+    const foreGeo = mergeParts([{ geo: GEO.foreArm, color: skin }, { geo: GEO.wristband, color: trim, matrix: at(0, -0.245) }, { geo: GEO.hand, color: skin, matrix: scaled(0, -0.295, 0.01, 1, 0.85, 0.8) }]);
+    const thighGeo = mergeParts([{ geo: GEO.thigh, color: skin }, { geo: GEO.knee, color: skin, matrix: at(0, -0.40) }]);
+    const shinGeo = mergeParts([{ geo: GEO.shin, color: skin }, { geo: GEO.sock, color: 0xf2f2ee }, { geo: GEO.shoe, color: jersey }, { geo: GEO.sole, color: 0x1b1d24 }]);
     const mkArm = (side) => {
-      const a = new THREE.Group(); a.position.set(side * 0.255 * SF, 1.47 * SF, 0);
-      a.add(new THREE.Mesh(GEO.armUpper, skin));
-      a.add(new THREE.Mesh(GEO.arm, skin));
-      a.add(new THREE.Mesh(GEO.sleeve, mats.jersey));
-      a.add(new THREE.Mesh(GEO.hand, skin));
-      a.rotation.z = -side * 0.12; return a;
+      const a = new THREE.Group(); a.position.set(side * 0.215 * SF, 1.415 * SF, 0);
+      a.add(new THREE.Mesh(armGeo, bodyMat));
+      const fore = new THREE.Group(); fore.position.set(0, -0.29 * SF, 0);
+      fore.add(new THREE.Mesh(foreGeo, bodyMat)); a.add(fore);
+      a.rotation.z = -side * 0.11; a.userData.fore = fore; return a;
     };
     const mkLeg = (side) => {
-      const l = new THREE.Group(); l.position.set(side * 0.105 * SF, 0.79 * SF, 0);
-      l.add(new THREE.Mesh(GEO.leg, skin));
-      l.add(new THREE.Mesh(GEO.shoe, mats.shoe));
-      l.add(new THREE.Mesh(GEO.sole, mats.sole));
-      return l;
+      const l = new THREE.Group(); l.position.set(side * 0.098 * SF, 0.84 * SF, 0);
+      l.add(new THREE.Mesh(thighGeo, bodyMat));
+      const shin = new THREE.Group(); shin.position.set(0, -0.40 * SF, 0);
+      shin.add(new THREE.Mesh(shinGeo, bodyMat)); l.add(shin);
+      l.userData.shin = shin; return l;
     };
     const armL = mkArm(-1), armR = mkArm(1), legL = mkLeg(-1), legR = mkLeg(1);
     g.add(armL, armR, legL, legR);
-    // one uniform scale for the whole figure: height, build, and position archetype
+
     const sc = p.height / 1.93;
-    const girth = sc * (0.92 + 0.16 * p.ratings.strength / 99) * pb.w;
+    const girth = sc * (0.93 + 0.14 * p.ratings.strength / 99) * pb.w;
     const heightS = sc * pb.h;
     g.scale.set(girth, heightS, girth);
     if (CONFIG.render.shadows) g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
-    const shadow = new THREE.Mesh(GEO.shadow, GEO.shadowMat); shadow.position.y = 0.012; scene.add(shadow);
+    const mats = matsFor(team);
+    const shadow = new THREE.Mesh(GEO.shadow, shadowMat); shadow.position.y = 0.012; scene.add(shadow);
     const ring = new THREE.Mesh(GEO.ring, mats.ring); ring.position.y = 0.02; ring.visible = false; scene.add(ring);
-    p.mesh = { group: g, torso, head, armL, armR, legL, legR, shadow, ring, legPhase: 0, armSwing: 0, sc, bodySc: girth, girthS: girth, heightS };
+    p.mesh = { group: g, body, armL, armR, legL, legR, foreL: armL.userData.fore, foreR: armR.userData.fore,
+      shinL: legL.userData.shin, shinR: legR.userData.shin, shadow, ring, legPhase: 0, sc, girthS: girth, heightS,
+      owned: [bodyGeo, armGeo, foreGeo, thighGeo, shinGeo], numMat };
+    liveMeshes.push(p.mesh);
     return p.mesh;
   }
-  function destroyMeshes(scene) { for (const p of players) { if (!p.mesh) continue; p.mesh.group.traverse((o) => { if (o.material && o.material.map && o.geometry === GEO.numPlane) { o.material.map.dispose(); o.material.dispose(); } }); scene.remove(p.mesh.group); scene.remove(p.mesh.shadow); scene.remove(p.mesh.ring); p.mesh = null; } }
+  function destroyMeshes(scene) {
+    for (const m of liveMeshes) {
+      scene.remove(m.group); scene.remove(m.shadow); scene.remove(m.ring);
+      for (const geo of m.owned) geo.dispose();          // per-player merged geometry
+      if (m.numMat) { if (m.numMat.map) m.numMat.map.dispose(); m.numMat.dispose(); }
+    }
+    liveMeshes.length = 0;
+    for (const p of players) p.mesh = null;
+  }
   return { ST, STATE_NAMES, players, genRoster, overall, create, clear, setState, teleport, controlFactor, updateMovement, updateVertical, jump, pushHistory, delayedPos, faceToward, faceVelocity, costStamina, reachHeight, speedMul, fatigueMul, buildMesh, destroyMeshes, matsFor };
 })();
 // ==== END PLAYER ====
@@ -1271,12 +1351,13 @@ const BallSys = (() => {
       else if (spd > 0.5) { fwd = 0.34; }
     } else if (s === ST.SHOOT) {
       const k = U.clamp(p.stateT / 0.3, 0, 1); const rel = p.shot.released;
-      lateral = p.hand * 0.12; fwd = 0.18 + 0.1 * k; y = p.y + h * U.lerp(1.25, 2.15, k) + (rel ? 0.2 : 0);
+      const relK = rel ? U.clamp((p.stateT - p.shot.relT) / 0.22, 0, 1) : 0;
+      lateral = p.hand * 0.12; fwd = 0.18 + 0.1 * k; y = p.y + h * (U.lerp(1.32, 1.74, k) + 0.34 * relK);
     } else if (s === ST.PUMP) {
       const k = Math.sin(U.clamp(p.stateT / p.stateDur, 0, 1) * Math.PI); lateral = p.hand * 0.12; fwd = 0.2; y = h * U.lerp(1.15, 1.85, k);
     } else if (s === ST.HESI) { lateral = p.hand * 0.4; fwd = 0.25; y = h * 0.95; }
-    else if (s === ST.DUNK) { const k = U.clamp(p.stateT / Math.max(0.01, p.dunk.slamAt), 0, 1); lateral = p.dunk.kind === 'two' ? 0 : p.hand * 0.22; fwd = 0.25 + 0.25 * k; y = p.y + h * U.lerp(1.2, 2.5, k); }
-    else if (s === ST.LAYUP) { const k = U.clamp(p.stateT / Math.max(0.01, p.dunk.slamAt), 0, 1); lateral = p.hand * 0.2; fwd = 0.3; y = p.y + h * U.lerp(1.2, 2.3, k); }
+    else if (s === ST.DUNK) { const k = U.clamp(p.stateT / Math.max(0.01, p.dunk.slamAt), 0, 1); lateral = p.dunk.kind === 'two' ? 0 : p.hand * 0.22; fwd = 0.25 + 0.25 * k; y = p.y + h * U.lerp(1.30, 2.06, k); }
+    else if (s === ST.LAYUP) { const k = U.clamp(p.stateT / Math.max(0.01, p.dunk.slamAt), 0, 1); lateral = p.hand * 0.2; fwd = 0.3; y = p.y + h * U.lerp(1.30, 1.96, k); }
     else if (s === ST.PASS) { lateral = 0; fwd = 0.35; y = h * 1.3; }
     else if (s === ST.INBOUND) { lateral = 0; fwd = 0.15; y = h * 2.05; }
     else { lateral = p.hand * 0.25; fwd = 0.3; y = p.y + h * 1.15; }
@@ -1459,7 +1540,7 @@ const Shooting = (() => {
     const h = Game.hoopFor(p.team); const sh = p.shot; const res = evaluate(p, g, h);
     sh.released = true; sh.relT = p.stateT; sh.timing = sh.meterT; sh.quality = res.q; sh.green = res.green;
     const hh = p.height / 1.93, fx = Math.sin(p.facing), fz = Math.cos(p.facing);
-    const x0 = p.x + fx * 0.28, z0 = p.z + fz * 0.28, y0 = p.y + hh * 2.12;
+    const x0 = p.x + fx * 0.28, z0 = p.z + fz * 0.28, y0 = p.y + hh * 2.02;
     const t = targetFor(h, x0, z0, res.make, res.q);
     const dist = U.dist(x0, z0, h.x, h.z);
     const ang = (dist < 3.2 ? SC.closeLaunchAngle : SC.launchAngle) * Math.PI / 180 + (RNG.next() - 0.5) * 0.06;
@@ -2461,50 +2542,82 @@ function init(container) {
     ballShadow.visible = !on; if (Court.group) Court.group.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
   }
   const ST = PlayerSys.ST;
+  // Limb convention: on an arm, negative rotation.x raises the hand forward and up, and a negative elbow
+  // bends the forearm toward the chest. On a leg, positive rotation.x swings the foot back and a positive
+  // knee bends the heel up behind, which is the only way a knee actually goes.
   function animate(p, m, dt, fac) {
     const s = p.state, st = p.stateT, dur = Math.max(p.stateDur, 0.001), k = U.clamp(st / dur, 0, 1);
     const grp = m.group; const spd = p.speed;
     m.legPhase += spd * dt * 2.6;
-    const amp = U.clamp(spd / 6.6, 0, 1) * 0.8;
-    let lL = Math.sin(m.legPhase) * amp, lR = -Math.sin(m.legPhase) * amp;
-    let aL = -Math.sin(m.legPhase) * amp * 0.55, aR = Math.sin(m.legPhase) * amp * 0.55, azL = -0.12, azR = 0.12;
-    let leanX = 0.10 * amp, leanZ = 0, yaw = fac, crouch = 0, bodyX = 0;
-    if (p.airborne) { lL = 0.45; lR = -0.15; }
+    const ph = m.legPhase, amp = U.clamp(spd / 6.6, 0, 1) * 0.85;
+    // run cycle: hips alternate, knees fold on the recovery swing
+    let lL = Math.sin(ph) * amp, lR = -Math.sin(ph) * amp;
+    let kL = 0.12 + amp * 1.45 * U.clamp(Math.sin(ph - 0.55), 0, 1);
+    let kR = 0.12 + amp * 1.45 * U.clamp(Math.sin(ph - 0.55 + Math.PI), 0, 1);
+    let aL = -Math.sin(ph) * amp * 0.5 - 0.08, aR = Math.sin(ph) * amp * 0.5 - 0.08;
+    let eL = -(0.35 + 0.45 * U.clamp(Math.sin(ph), 0, 1)), eR = -(0.35 + 0.45 * U.clamp(-Math.sin(ph), 0, 1));
+    let azL = -0.11, azR = 0.11;
+    let leanX = 0.11 * amp, leanZ = 0, yaw = fac, crouch = 0, bodyX = 0;
+    if (p.airborne) { lL = -0.30; lR = 0.18; kL = 0.85; kR = 0.35; }
+    const hand = p.hand > 0 ? 1 : -1;
+    // dribbling hand reaches down to meet the ball, elbow opening as the ball drops
     if (p.hasBall && (s === ST.IDLE || s === ST.MOVE || s === ST.LAND || s === ST.STUMBLE || s === ST.SIDESTEP || s === ST.STEPBACK)) {
       const bh = U.clamp((BallSys.ball.y - BallSys.R) / Math.max(0.2, p.dribbleH), 0, 1);
-      const arm = -(0.55 + 0.5 * (1 - bh)); if (p.hand > 0) { aR = arm; azR = 0.35; } else { aL = arm; azL = -0.35; }
+      const a = -0.18 - 0.22 * bh, e = -(1.05 - 0.75 * bh), az = 0.30;
+      if (hand > 0) { aR = a; eR = e; azR = az; } else { aL = a; eL = e; azL = -az; }
     }
     switch (s) {
-      case ST.CROSSOVER: { const arm = -(0.6 + 0.4 * Math.sin(k * Math.PI)); aL = arm * (p.hand < 0 ? 1 : 0.5); aR = arm * (p.hand > 0 ? 1 : 0.5); leanZ = p.hand * 0.18 * Math.sin(k * Math.PI); break; }
-      case ST.SIDESTEP: leanZ = -Math.sign(p.moveDir.x * Math.cos(fac) - p.moveDir.z * Math.sin(fac) || 1) * 0.22 * Math.sin(k * Math.PI); break;
-      case ST.STEPBACK: leanX = -0.25 * Math.sin(k * Math.PI); break;
-      case ST.SPIN: yaw = fac + p.hand * Math.PI * 2 * (k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k)); aL = -1.0; aR = -1.0; break;
-      case ST.HESI: crouch = 0.08 * Math.sin(k * Math.PI); aR = p.hand > 0 ? -0.9 : 0; aL = p.hand < 0 ? -0.9 : 0; break;
-      case ST.PUMP: { const r = Math.sin(k * Math.PI); aL = -2.3 * r; aR = -2.5 * r; azL = -0.1; azR = 0.1; break; }
-      case ST.SHOOT: { const r = U.clamp(st / 0.22, 0, 1); const rel = p.shot.released ? U.clamp((st - p.shot.relT) / 0.25, 0, 1) : 0; aR = -2.55 * r - 0.55 * rel; aL = -2.2 * r + 0.9 * rel; azR = 0.05; azL = -0.2 + 0.2 * rel; lL = 0.25; lR = -0.1; break; }
-      case ST.LAYUP: { const r = U.clamp(st / 0.25, 0, 1); if (p.hand > 0) { aR = -2.9 * r; aL = -0.6; lL = -0.9; lR = 0.2; } else { aL = -2.9 * r; aR = -0.6; lR = -0.9; lL = 0.2; } break; }
-      case ST.DUNK: {
-        const r = U.clamp(st / 0.3, 0, 1); const kind = p.dunk.kind; const after = p.dunk.released ? U.clamp((st - p.dunk.slamAt) / 0.3, 0, 1) : 0;
-        if (kind === 'two') { aL = -3.0 * r + 1.6 * after; aR = -3.0 * r + 1.6 * after; }
-        else if (kind === 'tomahawk') { const w = -3.2 * r + 0.5 * Math.sin(r * Math.PI); aR = w + 2.2 * after; aL = -1.2; }
-        else if (kind === 'windmill') { aR = -Math.PI * 2 * U.clamp(st / p.dunk.slamAt, 0, 1) - 0.5 + 2.2 * after; aL = -1.0; }
-        else if (kind === 'reverse') { yaw = fac + Math.PI * U.clamp(st / p.dunk.slamAt, 0, 1); aR = -3.1 * r + 1.6 * after; aL = -3.1 * r + 1.6 * after; }
-        else { aR = -3.1 * r + 1.8 * after; aL = -1.0; }
-        lL = 0.5; lR = -0.3; leanX = 0.15; break;
+      case ST.CROSSOVER: {
+        const w = Math.sin(k * Math.PI);
+        aL = -0.30 - 0.25 * w; aR = -0.30 - 0.25 * w; eL = -(0.9 + 0.5 * w); eR = -(0.9 + 0.5 * w);
+        azL = -0.20 - 0.25 * w; azR = 0.20 + 0.25 * w; leanZ = p.hand * 0.18 * w; break;
       }
-      case ST.JUMP: aL = -2.9; aR = -2.9; azL = -0.25; azR = 0.25; break;
-      case ST.STEAL: aR = -1.5 * Math.sin(k * Math.PI); leanX = 0.35 * Math.sin(k * Math.PI); break;
-      case ST.STUMBLE: leanZ = 0.32 * Math.sin(st * 13) * (1 - k * 0.6); leanX = 0.28; aL = -0.8; aR = -0.6; azL = -0.5; azR = 0.5; break;
-      case ST.FALL: bodyX = 1.35 * Math.min(1, st / 0.25) * (k < 0.75 ? 1 : (1 - (k - 0.75) / 0.25)); aL = -1.2; aR = -1.2; break;
-      case ST.LAND: crouch = 0.09 * Math.sin(k * Math.PI); break;
-      case ST.PASS: aL = -1.3 * Math.sin(k * Math.PI); aR = -1.3 * Math.sin(k * Math.PI); break;
-      case ST.INBOUND: aL = -2.7; aR = -2.7; azL = -0.15; azR = 0.15; break;
+      case ST.SIDESTEP: leanZ = -Math.sign(p.moveDir.x * Math.cos(fac) - p.moveDir.z * Math.sin(fac) || 1) * 0.22 * Math.sin(k * Math.PI); kL = kR = 0.35; break;
+      case ST.STEPBACK: leanX = -0.26 * Math.sin(k * Math.PI); kL = kR = 0.30 + 0.25 * Math.sin(k * Math.PI); break;
+      case ST.SPIN: yaw = fac + p.hand * Math.PI * 2 * (k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k)); aL = -0.5; aR = -0.5; eL = eR = -1.3; azL = -0.45; azR = 0.45; break;
+      case ST.HESI: { crouch = 0.09 * Math.sin(k * Math.PI); kL = kR = 0.45 + 0.3 * Math.sin(k * Math.PI); break; }
+      case ST.PUMP: { const r = Math.sin(k * Math.PI); aL = -1.45 * r; aR = -1.55 * r; eL = -1.5 * r; eR = -1.6 * r; azL = -0.12; azR = 0.12; kL = kR = 0.25 + 0.2 * r; break; }
+      case ST.SHOOT: {
+        // set point: upper arm up, forearm vertical under the ball; release straightens into a follow-through
+        const r = U.clamp(st / 0.20, 0, 1), rel = p.shot.released ? U.clamp((st - p.shot.relT) / 0.26, 0, 1) : 0;
+        const aS = -1.75 * r - 0.95 * rel, eS = -1.75 * r + 1.50 * rel;
+        const aG = -1.20 * r + 0.40 * rel, eG = -1.45 * r + 0.80 * rel;
+        if (hand > 0) { aR = aS; eR = eS; azR = 0.05; aL = aG; eL = eG; azL = -0.44; }
+        else { aL = aS; eL = eS; azL = -0.05; aR = aG; eR = eG; azR = 0.44; }
+        lL = -0.16; lR = 0.10; kL = 0.32 * (1 - r); kR = 0.32 * (1 - r); break;
+      }
+      case ST.LAYUP: {
+        const r = U.clamp(st / 0.24, 0, 1);
+        if (hand > 0) { aR = -2.55 * r; eR = -0.55 * r; aL = -0.75; eL = -1.1; }
+        else { aL = -2.55 * r; eL = -0.55 * r; aR = -0.75; eR = -1.1; }
+        lL = hand > 0 ? -0.95 : 0.25; lR = hand > 0 ? 0.25 : -0.95; kL = hand > 0 ? 1.25 : 0.2; kR = hand > 0 ? 0.2 : 1.25; break;
+      }
+      case ST.DUNK: {
+        const r = U.clamp(st / 0.28, 0, 1); const kind = p.dunk.kind;
+        const after = p.dunk.released ? U.clamp((st - p.dunk.slamAt) / 0.3, 0, 1) : 0;
+        if (kind === 'two') { aL = -3.0 * r + 1.5 * after; aR = -3.0 * r + 1.5 * after; eL = eR = -0.18; }
+        else if (kind === 'tomahawk') { const w = -3.15 * r + 0.45 * Math.sin(r * Math.PI); aR = w + 2.1 * after; eR = -0.9 + 0.75 * r; aL = -1.1; eL = -1.2; }
+        else if (kind === 'windmill') { aR = -Math.PI * 2 * U.clamp(st / Math.max(0.01, p.dunk.slamAt), 0, 1) - 0.5 + 2.1 * after; eR = -0.25; aL = -0.95; eL = -1.2; }
+        else if (kind === 'reverse') { yaw = fac + Math.PI * U.clamp(st / Math.max(0.01, p.dunk.slamAt), 0, 1); aL = -3.05 * r + 1.5 * after; aR = -3.05 * r + 1.5 * after; eL = eR = -0.2; }
+        else { aR = -3.1 * r + 1.7 * after; eR = -0.18; aL = -1.0; eL = -1.15; }
+        lL = -0.45; lR = 0.30; kL = 1.05; kR = 0.30; leanX = 0.14; break;
+      }
+      case ST.JUMP: aL = -2.80; aR = -2.80; eL = eR = -0.20; azL = -0.22; azR = 0.22; lL = -0.20; lR = 0.14; kL = kR = 0.55; break;
+      case ST.STEAL: { const w = Math.sin(k * Math.PI); aR = -1.35 * w; eR = -0.35 * w; leanX = 0.34 * w; kL = kR = 0.5 * w + 0.15; break; }
+      case ST.STUMBLE: { const w = 1 - k * 0.6; leanZ = 0.34 * Math.sin(st * 13) * w; leanX = 0.26; aL = -0.7; aR = -0.55; eL = -0.5; eR = -0.6; azL = -0.65; azR = 0.65; kL = 0.55; kR = 0.25; break; }
+      case ST.FALL: bodyX = 1.35 * Math.min(1, st / 0.25) * (k < 0.75 ? 1 : (1 - (k - 0.75) / 0.25)); aL = -1.1; aR = -1.1; eL = eR = -0.8; kL = kR = 0.6; break;
+      case ST.LAND: crouch = 0.10 * Math.sin(k * Math.PI); kL = kR = 0.25 + 0.55 * Math.sin(k * Math.PI); break;
+      case ST.PASS: { const w = Math.sin(k * Math.PI); aL = -1.15 * w; aR = -1.15 * w; eL = -1.0 + 0.9 * w; eR = -1.0 + 0.9 * w; azL = -0.1; azR = 0.1; break; }
+      case ST.INBOUND: aL = -2.62; aR = -2.62; eL = eR = -0.55; azL = -0.16; azR = 0.16; break;
     }
-    if (p.armsUp && s !== ST.JUMP) { aL = -2.6; aR = -2.6; }
+    // contesting: both arms straight overhead, whatever else the state wanted
+    if (p.armsUp && s !== ST.JUMP) { aL = -2.72; aR = -2.72; eL = eR = -0.12; azL = -0.16; azR = 0.16; }
     const e = 1 - Math.exp(-dt * 22);
     m.armL.rotation.x += (aL - m.armL.rotation.x) * e; m.armR.rotation.x += (aR - m.armR.rotation.x) * e;
     m.armL.rotation.z += (azL - m.armL.rotation.z) * e; m.armR.rotation.z += (azR - m.armR.rotation.z) * e;
+    m.foreL.rotation.x += (eL - m.foreL.rotation.x) * e; m.foreR.rotation.x += (eR - m.foreR.rotation.x) * e;
     m.legL.rotation.x += (lL - m.legL.rotation.x) * e; m.legR.rotation.x += (lR - m.legR.rotation.x) * e;
+    m.shinL.rotation.x += (kL - m.shinL.rotation.x) * e; m.shinR.rotation.x += (kR - m.shinR.rotation.x) * e;
     grp.rotation.set(leanX + bodyX, yaw, leanZ, 'YXZ');
     const sy = (1 - crouch) * (1 + 0.012 * Math.sin(t * 2.2 + p.id));
     grp.scale.set(m.girthS, m.heightS * sy, m.girthS);
