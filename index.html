@@ -598,6 +598,7 @@ const TEAMS = [
   { id: 'cinders',   city: 'Ashfall',   name: 'Cinders',   abbr: 'ASH', primary: 0xd1202a, secondary: 0x2a2a2e, dark: true },
 ];
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const FIRST_NAMES = ['Jaxon', 'Deshawn', 'Malik', 'Trey', 'Kobi', 'Andre', 'Tyrese', 'Marcus', 'Elijah', 'Cam', 'Zion', 'Darius', 'Lamar', 'Rasheed', 'Isaiah', 'Terrence', 'Kwame', 'Devin', 'Jalen', 'Bryce', 'Omar', 'Luka', 'Nico', 'Matteo', 'Reggie', 'Jamal', 'Cedric', 'Tobias', 'Xavier', 'Quincy', 'Amari', 'Dante'];
 const LAST_NAMES = ['Vell', 'Okoro', 'Hart', 'Brooks', 'Mensah', 'Delgado', 'Whitfield', 'Cole', 'Adeyemi', 'Frost', 'Navarro', 'Keane', 'Osei', 'Rourke', 'Blackwood', 'Ferreira', 'Grant', 'Ito', 'Novak', 'Bell', 'Saito', 'Lindqvist', 'Reyes', 'Pryce', 'Achebe', 'Marchetti', 'Dunmore', 'Kessler', 'Voss', 'Tate', 'Hollins', 'Quist'];
 const POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
@@ -1763,7 +1764,7 @@ const Game = (() => {
     let html = '<div class="final-board">' + blk(A, g.score[0], wA, 'a') + '<div class="fmid">Final</div>' + blk(B, g.score[1], wB, 'b') + '</div>';
     for (let t = 0; t < 2; t++) {
       html += '<h2 class="sec">' + g.teams[t].city + ' ' + g.teams[t].name + '</h2><table><tr><th>Player</th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>FG</th><th>3P</th><th>FT</th><th>TO</th><th>PF</th></tr>';
-      for (const p of P) { if (p.team !== t) continue; const s = p.stats; html += '<tr><td>' + p.num + '  ' + (p.ctlName || p.name) + '</td><td>' + s.pts + '</td><td>' + s.reb + '</td><td>' + s.ast + '</td><td>' + s.stl + '</td><td>' + s.blk + '</td><td>' + s.fgm + '/' + s.fga + '</td><td>' + s.tpm + '/' + s.tpa + '</td><td>' + s.ftm + '/' + s.fta + '</td><td>' + s.to + '</td><td>' + s.pf + '</td></tr>'; }
+      for (const p of P) { if (p.team !== t) continue; const s = p.stats; html += '<tr><td>' + p.num + '  ' + esc(p.ctlName || p.name) + '</td><td>' + s.pts + '</td><td>' + s.reb + '</td><td>' + s.ast + '</td><td>' + s.stl + '</td><td>' + s.blk + '</td><td>' + s.fgm + '/' + s.fga + '</td><td>' + s.tpm + '/' + s.tpa + '</td><td>' + s.ftm + '/' + s.fta + '</td><td>' + s.to + '</td><td>' + s.pf + '</td></tr>'; }
       html += '</table>';
     }
     return html;
@@ -2467,7 +2468,7 @@ const UI = (() => {
       k('sidestep') + 'sidestep ' + k('crossover') + 'cross ' + k('stepback') + 'stepback ' + k('spin') + 'spin ' + k('hesi') + 'hesi ' + k('pump') + 'pump ' + k('pause') + 'pause';
   }
   function setText(id, v) { if (last[id] !== v) { last[id] = v; if (id === 'fouls') el[id].innerHTML = v; else el[id].textContent = v; } }
-  function toast(text, sub) { el.toast.innerHTML = '<span class="rib"><span>' + text + '</span></span>' + (sub ? '<small>' + sub + '</small>' : ''); el.toast.classList.remove('show'); void el.toast.offsetWidth; el.toast.classList.add('show'); }
+  function toast(text, sub) { el.toast.innerHTML = '<span class="rib"><span>' + esc(text) + '</span></span>' + (sub ? '<small>' + esc(sub) + '</small>' : ''); el.toast.classList.remove('show'); void el.toast.offsetWidth; el.toast.classList.add('show'); }
   const fbPos = { x: 0, y: 0, visible: false };
   function feedback(text, color) { el.feedback.style.left = fbPos.x + 'px'; el.feedback.style.top = fbPos.y + 'px'; el.feedback.textContent = text; el.feedback.style.color = color; el.feedback.classList.remove('show'); void el.feedback.offsetWidth; el.feedback.classList.add('show'); }
   function toggleDebug() { debugOn = !debugOn; el.debug.classList.toggle('hidden', !debugOn); }
@@ -2515,7 +2516,7 @@ const UI = (() => {
       if (!_pt.visible) { d.classList.add('hidden'); continue; }
       d.classList.remove('hidden'); d.style.left = _pt.x + 'px'; d.style.top = _pt.y + 'px';
       const txt = (p.ctlName || p.name.split(' ')[1]).toUpperCase(); const key = txt + p.controlled + p.num;
-      if (d.dataset.k !== key) { d.dataset.k = key; d.innerHTML = '<span class="n">' + p.num + '</span>' + txt; d.className = 'tag' + (p.controlled ? ' me' : ''); d.style.borderColor = p.controlled ? '' : hex(g.teams[p.team].primary); }
+      if (d.dataset.k !== key) { d.dataset.k = key; d.innerHTML = '<span class="n">' + p.num + '</span>' + esc(txt); d.className = 'tag' + (p.controlled ? ' me' : ''); d.style.borderColor = p.controlled ? '' : hex(g.teams[p.team].primary); }
     }
   }
   let dbgT = 0;
@@ -2542,7 +2543,7 @@ const UI = (() => {
       case 'buzzer': AudioSys.play('buzzer'); break;
       case 'shake': CameraSys.addShake(d.t || 0.3); break;
       case 'netpulse': Court.netPulse(d.hoop); break;
-      case 'final': showFinal(d.title, d.html); break;
+      case 'final': showFinal(String(d.title), Net.isGuest ? Game.boxScore() : d.html); break;
     }
   }
   function update(dt, stats) {
@@ -2575,7 +2576,7 @@ const Net = (() => {
   const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   const PLAYER_BYTES = 76, HEAD_BYTES = 9 + 21 + 26;
   let role = 'none', status = 'offline', err = '', panel = null, lib = null, libPromise = null, peer = null, transport = 'peerjs';
-  let myName = (U.loadLS('hw_name', '') || ('Hooper' + (100 + ((Math.random() * 900) | 0)))).slice(0, 14);
+  let myName = String(U.loadLS('hw_name', '') || ('Hooper' + (100 + ((Math.random() * 900) | 0)))).replace(/[^\w \-.]/g, '').trim().slice(0, 14) || 'Hooper';
   // host state
   const guests = new Map(); // pid -> { conn, name, team, playerId, inGame, remote: {input,bits,held,seq,rel} }
   const hostMember = { team: 0 };
@@ -2758,7 +2759,7 @@ const Net = (() => {
     let m; try { m = JSON.parse(data); } catch (e) { return; }
     switch (m.t) {
       case 'ping': break;
-      case 'lobby': lobbyView = m; if (panel) renderPanel(panel); break;
+      case 'lobby': if (Array.isArray(m.members)) for (const mm of m.members) mm.name = cleanName(mm.name); lobbyView = m; if (panel) renderPanel(panel); break;
       case 'start': pendingStart = m; Game.settings.quarterLen = m.quarterLen; Game.settings.makeItTakeIt = m.makeItTakeIt; Game.settings.difficulty = m.difficulty; Main.startGame(m.mode, m.a, m.b); break;
       case 'ctl': myPlayerId = m.playerId; Game.setHuman(myPlayerId, true); { const me = PlayerSys.players[myPlayerId]; if (me) { me.authX = me.x; me.authZ = me.z; } } break;
       case 'ev': if (m.name === 'bsfx') BallSys.ball.events.push(m.data); else Game.g.events.push({ name: m.name, data: m.data }); break;
@@ -2770,7 +2771,7 @@ const Net = (() => {
     const m = pendingStart; if (!m) return; const g = Game.g; g.locked = true; inGame = true;
     const mine = m.roster.find((r) => r.pid === myPid || (transport === 'direct' && r.pid === 'direct'));
     myPlayerId = mine ? mine.playerId : -1; g.humanTeam = mine ? mine.team : -1;
-    for (const r of m.roster) if (r.playerId >= 0 && (!mine || r.pid !== mine.pid)) Game.setController(r.playerId, r.pid, r.name);
+    for (const r of m.roster) if (r.playerId >= 0 && (!mine || r.pid !== mine.pid)) Game.setController(r.playerId, String(r.pid), cleanName(r.name));
     Game.setHuman(myPlayerId, true);
     snaps.length = 0; lastSnapSeq = -1; seq = 0;
   }
@@ -2868,7 +2869,7 @@ const Net = (() => {
   function renderPanel(cont) {
     panel = cont;
     const view = role === 'host' ? lobbyMsg() : lobbyView;
-    let html = '<div class="opt"><span>Your name</span><input class="field" id="netNameIn" maxlength="14" value="' + myName.replace(/"/g, '') + '"></div>';
+    let html = '<div class="opt"><span>Your name</span><input class="field" id="netNameIn" maxlength="14" value="' + esc(myName) + '"></div>';
     html += '<div class="status">status: ' + status + (err ? ' · ' + err : '') + '</div>';
     if (role === 'none') {
       html += '<div class="note">One code per lobby. Up to ' + NC.maxPerTeam + ' humans per team, switch sides whenever you like, the CPU fills empty slots. Game traffic is peer-to-peer.</div>';
@@ -2880,20 +2881,20 @@ const Net = (() => {
       else { html += '<h2 class="sec">1. Paste the host\'s offer</h2><textarea class="sig" id="netOfferIn" placeholder="paste offer here"></textarea><div class="row"><button class="btn primary" id="netMakeAnswer">Create answer</button><button class="btn" id="netCancel">Cancel</button></div>'; if (directAnswer) html += '<h2 class="sec">2. Send this answer back to the host</h2><textarea class="sig" id="netAnswer" readonly>' + directAnswer + '</textarea><div class="row"><button class="btn small" id="netCopyAnswer">Copy</button></div><div class="note">Waiting for the host to connect…</div>'; }
     } else if (view) {
       const teams = view.teams || UI.pick; const capN = view.mode === '5v5' ? 5 : view.mode === '3v3' ? 3 : 1; const me = role === 'host' ? 'host' : myPid;
-      html += '<div class="row" style="align-items:center"><span class="subtitle">Lobby code</span><span class="title" style="font-size:40px;letter-spacing:0.16em;background:var(--accent);color:var(--accent-ink);padding:4px 14px 0;transform:skewX(var(--skew))">' + view.code + '</span>' + (transport === 'peerjs' ? '<button class="btn small" id="netCopyCode">Copy</button>' : '') + '</div>';
+      html += '<div class="row" style="align-items:center"><span class="subtitle">Lobby code</span><span class="title" style="font-size:40px;letter-spacing:0.16em;background:var(--accent);color:var(--accent-ink);padding:4px 14px 0;transform:skewX(var(--skew))">' + esc(view.code) + '</span>' + (transport === 'peerjs' ? '<button class="btn small" id="netCopyCode">Copy</button>' : '') + '</div>';
       if (role === 'host') { html += '<div class="row"><span class="subtitle" style="margin:0;align-self:center">Mode</span>'; for (const m of ['1v1', '3v3', '5v5']) html += '<button class="btn small' + (view.mode === m ? ' sel' : '') + '" data-netmode="' + m + '">' + m + '</button>'; html += '<span class="note" style="margin:0;align-self:center">Teams come from the Play screen, quarter length from Settings.</span></div>'; }
       else html += '<div class="note">Mode: ' + view.mode + ' · the host starts the game.</div>';
       html += '<div class="grid2" style="margin-top:12px">';
       for (let t = 0; t < 2; t++) {
         const team = TEAMS[teams[t]]; const mem = view.members.filter((m) => m.team === t);
         html += '<div><div class="kv" style="border-bottom:3px solid ' + hex(team.primary) + '"><b class="dsp" style="font-size:18px">' + team.city + ' ' + team.name + '</b><span class="k">' + mem.length + '/' + capN + '</span></div>';
-        for (let i = 0; i < capN; i++) { const m = mem[i]; html += '<div class="kv"><span' + (m && m.pid === me ? ' style="color:var(--accent)"' : (m ? '' : ' class="k"')) + '>' + (m ? (m.name + (m.isHost ? ' ★' : '')) : 'CPU') + '</span><span class="k">' + POSITIONS[i] + '</span></div>'; }
+        for (let i = 0; i < capN; i++) { const m = mem[i]; html += '<div class="kv"><span' + (m && m.pid === me ? ' style="color:var(--accent)"' : (m ? '' : ' class="k"')) + '>' + (m ? (esc(m.name) + (m.isHost ? ' ★' : '')) : 'CPU') + '</span><span class="k">' + POSITIONS[i] + '</span></div>'; }
         const mine = view.members.find((m) => m.pid === me); const here = mine && mine.team === t;
         html += '<div class="row"><button class="btn small' + (here ? ' sel' : '') + '" data-jointeam="' + t + '"' + (here || mem.length >= capN ? ' disabled' : '') + '>' + (here ? 'You are here' : 'Join') + '</button></div></div>';
       }
       html += '</div>';
       const specs = view.members.filter((m) => m.team < 0);
-      html += '<div class="kv"><span class="k">Spectators: ' + (specs.length ? specs.map((m) => m.name + (m.isHost ? ' ★' : '')).join(', ') : 'none') + '</span><button class="btn small" data-jointeam="-1">Spectate</button></div>';
+      html += '<div class="kv"><span class="k">Spectators: ' + (specs.length ? specs.map((m) => esc(m.name) + (m.isHost ? ' ★' : '')).join(', ') : 'none') + '</span><button class="btn small" data-jointeam="-1">Spectate</button></div>';
       if (view.running && role === 'guest' && !inGame) html += '<div class="note" style="color:var(--accent)">A game is in progress. You will be placed when the host starts the next one.</div>';
       html += '<div class="row">' + (role === 'host' ? '<button class="btn primary" id="netStart">Start game</button><button class="btn" id="netClose">Close lobby</button>' : '<button class="btn" id="netClose">Leave lobby</button>') + '</div>';
     } else { html += '<div class="row"><button class="btn" id="netCancel">Cancel</button></div>'; }
