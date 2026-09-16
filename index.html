@@ -306,6 +306,13 @@ const CONFIG = {
   camera: { broadcastHeight: 10.8, broadcastDist: 19.5, followX: 0.86, lookY: 1.1, lookZ: 0.28, damp: 4.5, lookDamp: 6, fov: 42, halfCourtZoom: 0.86 },
   render: { shadows: false, crowd: true, pixelRatioCap: 1.5 },
   audio: { volume: 0.8 },
+  net: {
+    // PeerJS signaling: null = free public cloud (0.peerjs.com). Self-host later with { host, port, path, secure }.
+    peerServer: null,
+    peerJsUrl: 'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js',
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    lobbyIdPrefix: 'HWLOBBY', snapHz: 20, inputHz: 30, interpDelay: 0.1, maxPerTeam: 5,
+  },
 };
 // ==== END CONFIG ====
 
@@ -733,7 +740,7 @@ const PlayerSys = (() => {
       x: 0, y: 0, z: 0, px: 0, py: 0, pz: 0, vx: 0, vy: 0, vz: 0, facing: 0, pfacing: 0, speed: 0,
       state: ST.IDLE, stateT: 0, stateDur: 0, hasBall: false, hand: 1, handFrom: 1, dribblePhase: 0, dribbleH: 0.85,
       stamina: PC.staminaMax, winded: false, sprinting: false, comboCount: 0, lastMoveEnd: -9, cd: { move: 0, steal: 0, jump: 0, pump: 0, pass: 0, contest: 0 },
-      airborne: false, input: makeInput(), human: false, remote: false, controlled: false, moveDir: { x: 0, z: 0 }, moveKind: '', stumbleT: 0, bumped: 0,
+      airborne: false, input: makeInput(), human: false, remote: false, controlled: false, ctl: null, ctlName: '', moveDir: { x: 0, z: 0 }, moveKind: '', stumbleT: 0, bumped: 0,
       shot: { meterT: 0, released: false, dur: 1, timing: 0, quality: 0, green: false, fake: false, setShot: false, moving: 0 },
       dunk: { kind: '', t: 0, dur: 0, slamAt: 0, released: false, tx: 0, tz: 0, contact: false },
       matchup: -1, spot: -1, ai: { t: 0, phase: Math.random() * 100, intent: 0, target: { x: 0, z: 0 }, wantShoot: false, releaseAt: 0.7, cutT: 0, screenT: 0, role: 'spot', holdT: 0, lastDecision: 0, aggression: 0.5, driveT: 0, helping: false, dribbleT: 0, hesiT: 0 },
@@ -1543,7 +1550,7 @@ const Game = (() => {
     score: [0, 0], quarter: 1, clock: 0, shotClock: 24, possession: 0, hoopOf: [1, 0], human: -1, humanTeam: 0,
     mustClear: false, fouls: [0, 0], halfCourt: true, playersPerTeam: 1, lastShot: null, events: [], running: false,
     nextPossession: 0, deadDelay: 1.5, deadReason: '', inbounder: -1, inboundSpots: null, winner: -1, aiDiff: 'pro',
-    ftShooter: -1, ftLeft: 0, ftTotal: 0, ftAndOne: false, lastEvent: '', lastEventT: -9, teamFouls: [0, 0], possArrow: 0, inbound: null, pendingFoul: null, lastPass: null, ftLive: false, ftResolved: false, remoteTeam: -1, remoteHuman: -1,
+    ftShooter: -1, ftLeft: 0, ftTotal: 0, ftAndOne: false, lastEvent: '', lastEventT: -9, teamFouls: [0, 0], possArrow: 0, inbound: null, pendingFoul: null, lastPass: null, ftLive: false, ftResolved: false, locked: false, spectateTeam: 0,
   };
   const settings = Object.assign({ difficulty: 'pro', quarterLen: 120, shadows: false, camera: 'broadcast', volume: 0.8, sfx: true, greenAuto: true, meterHelp: true, crowd: true, makeItTakeIt: false }, U.loadLS('hw_settings', {}));
   function saveSettings() { U.saveLS('hw_settings', settings); }
@@ -1566,7 +1573,7 @@ const Game = (() => {
     if (mode === 'practice') PlayerSys.create(g.rosters[0][1], 0, 1);
     else for (let t = 0; t < 2; t++) for (const si of pickSlots(g.rosters[t], g.playersPerTeam)) PlayerSys.create(g.rosters[t][si], t, si);
     RNG.seed((Date.now() & 0xffff) + teamA * 31 + teamB * 17);
-    g.humanTeam = 0; g.running = true; g.state = S.PLAY; g.stateT = 0;
+    g.humanTeam = 0; g.locked = false; g.running = true; g.state = S.PLAY; g.stateT = 0;
     AI.reset(g);
     if (mode === 'practice') { const p = P[0]; const h = hoopFor(0); PlayerSys.teleport(p, h.x - h.s * 7, 0, Math.atan2(h.s, 0)); setHuman(p.id); BallSys.setHolder(p); g.possession = 0; ball.state = BS.HELD; }
     else if (g.halfCourt) setupPossession(0);
@@ -1580,9 +1587,24 @@ const Game = (() => {
     return [best];
   }
   function stop() { g.running = false; g.state = S.MENU; }
-  function setHuman(id) { for (const p of P) { const was = p.human; p.controlled = p.id === id; p.human = p.id === id; if (was && !p.human) clearInput(p.input); } g.human = id; }
-  function setRemoteHuman(id) { for (const p of P) { const was = p.remote; p.remote = p.id === id; if (was && !p.remote) clearInput(p.input); } g.remoteHuman = id; }
-  function setSpectate(on) { g.humanTeam = on ? -1 : 0; if (on) setHuman(-1); else { const tp = teamPlayers(0); const holder = P[ball.holder]; setHuman(holder && holder.team === 0 ? holder.id : tp[0].id); } }
+  // Controllers: p.ctl is null (AI), 'local' (this keyboard) or a peer id (remote human). A team with a single
+  // human keeps the classic auto-switch (control follows the ball); teams with several humans are locked.
+  function setController(id, ctl, name) { const p = P[id]; if (!p) return; p.ctl = ctl; p.human = ctl === 'local'; p.remote = !!ctl && ctl !== 'local'; p.ctlName = name || ''; if (!ctl) { p.controlled = false; clearInput(p.input); } }
+  function canAutoSwitch(team) { let n = 0; for (const p of P) if (p.ctl && p.team === team) n++; return n <= 1; }
+  function setHuman(id, force) {
+    if (!force && id >= 0 && P[id] && !canAutoSwitch(P[id].team)) return;
+    for (const p of P) if (p.ctl === 'local' && p.id !== id) { p.ctl = null; p.human = false; p.controlled = false; clearInput(p.input); }
+    if (id >= 0 && P[id]) { const p = P[id]; p.ctl = 'local'; p.human = true; p.remote = false; p.controlled = true; p.ctlName = Net.myName; }
+    g.human = id;
+  }
+  // Move a team's single human controller onto player `id` (no-op for locked multi-human teams).
+  function autoSwitch(id) {
+    const p = P[id]; if (!p || !canAutoSwitch(p.team)) return;
+    let cur = null; for (const q of P) if (q.ctl && q.team === p.team) { cur = q; break; }
+    if (!cur || cur.id === id) return;
+    if (cur.ctl === 'local') setHuman(id, true); else Net.reassign(cur.ctl, cur.id, id);
+  }
+  function setSpectate(on) { if (on) { g.spectateTeam = g.humanTeam; g.humanTeam = -1; setHuman(-1, true); } else { g.humanTeam = g.spectateTeam >= 0 ? g.spectateTeam : 0; const tp = teamPlayers(g.humanTeam); const holder = P[ball.holder]; setHuman(holder && holder.team === g.humanTeam ? holder.id : (tp[0] ? tp[0].id : -1), true); } }
   // Spacing spots relative to a hoop: [top, right wing, left wing, right corner, left corner]
   const _spots = [{ x: 0, z: 0 }, { x: 0, z: 0 }, { x: 0, z: 0 }, { x: 0, z: 0 }, { x: 0, z: 0 }];
   const SPOT_REL = [[7.7, 0], [6.0, 5.3], [6.0, -5.3], [1.2, 6.4], [1.2, -6.4]];
@@ -1597,8 +1619,7 @@ const Game = (() => {
     def.forEach((p, i) => { const m = off[Math.min(i, off.length - 1)]; const dx = h.x - m.x, dz = h.z - m.z; const dl = Math.sqrt(dx * dx + dz * dz) || 1; const x = m.x + dx / dl * 1.5, z = m.z + dz / dl * 1.5; PlayerSys.teleport(p, x, z, Math.atan2(m.x - x, m.z - z)); PlayerSys.setState(p, ST.IDLE); p.hasBall = false; });
     ball.shotLive = false; ball.scored = false; BallSys.setHolder(off[0]); ball.state = BS.HELD;
     AI.assignMatchups(g); AI.onPossessionChange(g);
-    if (g.humanTeam >= 0) setHuman(team === g.humanTeam ? off[0].id : def[0].id);
-    if (g.remoteTeam >= 0) setRemoteHuman(team === g.remoteTeam ? off[0].id : def[0].id);
+    autoSwitch(off[0].id); autoSwitch(def[0].id);
     g.shotClock = g.halfCourt ? GC.halfShotClock : GC.shotClock; g.state = S.PLAY; g.stateT = 0;
     for (const p of P) { p.stamina = Math.min(PC.staminaMax, p.stamina + 12); clearInput(p.input); p.armsUp = false; p.bumped = 0; }
   }
@@ -1619,8 +1640,7 @@ const Game = (() => {
       if (g.halfCourt) { g.mustClear = true; toast('CLEAR IT', 'TAKE IT BACK PAST THE ARC'); }
       AI.onPossessionChange(g);
     } else if (wasShot) g.shotClock = Math.max(g.shotClock, GC.offRebClock);
-    if (p.team === g.humanTeam && g.humanTeam >= 0) setHuman(p.id);
-    else if (p.team === g.remoteTeam && g.remoteTeam >= 0) setRemoteHuman(p.id);
+    autoSwitch(p.id);
   }
   function gameOver(winner) {
     g.state = S.OVER; g.winner = winner; emit('buzzer'); emit('cheer', { big: 1.5 });
@@ -1658,7 +1678,7 @@ const Game = (() => {
     const mates = teamPlayers(p.team); if (mates.length < 2) return;
     let best = null, bd = 1e9;
     for (const m of mates) { if (m.id === p.id) continue; const d = U.dist(m.x, m.z, ball.x, ball.z); if (d < bd) { bd = d; best = m; } }
-    if (best) { if (p.human) setHuman(best.id); else setRemoteHuman(best.id); }
+    if (best) autoSwitch(best.id);
   }
   function onLand(p) {
     p.armsUp = false;
@@ -1736,7 +1756,7 @@ const Game = (() => {
     if (live) pickupLoose();
     for (const p of P) if (!p.human && !p.remote) clearInputEdges(p.input);
   }
-  return { S, g, settings, saveSettings, start, stop, step, hoopFor, otherTeam, teamPlayers, setHuman, setRemoteHuman, setSpectate, setupPossession, setupInbound, deadBall, emit, toast, applyInput, onScored, onPossession, gameOver, formationSpots, boxScore };
+  return { S, g, settings, saveSettings, start, stop, step, hoopFor, otherTeam, teamPlayers, setHuman, setController, autoSwitch, canAutoSwitch, setSpectate, setupPossession, setupInbound, deadBall, emit, toast, applyInput, onScored, onPossession, gameOver, formationSpots, boxScore };
 })();
 
 // ---------- Passing: chest/bounce passes with lead, catches, interceptions, inbounds ----------
@@ -1772,7 +1792,7 @@ const Passing = (() => {
     ball.passTarget = m.id; ball.passer = p.id; ball.passT = 0; ball.spinDir = 1; ball.lastTouch = p.id; ball.lastTeam = p.team;
     p.facing = Math.atan2(dx, dz); if (p.state !== ST.INBOUND) PlayerSys.setState(p, ST.PASS, 0.28); p.lastPassT = g.time; p.cd.pass = 0.4;
     g.lastPass = { from: p.id, to: m.id, t: g.time, bounce };
-    if (p.human) Game.setHuman(m.id); else if (p.remote) Game.setRemoteHuman(m.id);
+    if (p.human || p.remote) Game.autoSwitch(m.id);
     Game.emit('sound', { name: 'catchBall' });
   }
   function update(dt, g) {
@@ -1984,8 +2004,7 @@ const Rules = {
     PlayerSys.teleport(inb, ib.x, ib.z, Math.atan2(-ib.x, -ib.z)); PlayerSys.setState(inb, ST.INBOUND, 99);
     ball.shotLive = false; ball.scored = false; BallSys.setHolder(inb);
     AI.assignMatchups(g); AI.onPossessionChange(g);
-    if (ib.team === g.humanTeam) Game.setHuman(inb.id); else if (g.humanTeam >= 0) { const hp = P[g.human]; if (!hp || hp.team !== g.humanTeam) Game.setHuman(Game.teamPlayers(g.humanTeam)[0].id); }
-    if (g.remoteTeam >= 0) { if (ib.team === g.remoteTeam) Game.setRemoteHuman(inb.id); else { const rp = P[g.remoteHuman]; if (!rp || rp.team !== g.remoteTeam) Game.setRemoteHuman(Game.teamPlayers(g.remoteTeam)[0].id); } }
+    Game.autoSwitch(inb.id);
     for (const p of P) { clearInput(p.input); p.armsUp = false; if (p !== inb && p.state === ST.INBOUND) PlayerSys.setState(p, ST.IDLE); p.stamina = Math.min(CONFIG.player.staminaMax, p.stamina + 6); }
     g.shotClock = CONFIG.game.shotClock; g.state = Game.S.INBOUND; g.stateT = 0;
   },
@@ -2021,8 +2040,7 @@ const Rules = {
     def.forEach((p, i) => { const side = i % 2 ? 1 : -1; if (i < 2) PlayerSys.teleport(p, laneX[0], side * 2.9, Math.atan2(-s, 0)); else if (i < 4) PlayerSys.teleport(p, laneX[2], side * 2.9, Math.atan2(-s, 0)); else PlayerSys.teleport(p, h.x - s * 8.5, 0, Math.atan2(s, 0)); PlayerSys.setState(p, ST.IDLE); });
     off.forEach((p, i) => { const side = i % 2 ? 1 : -1; if (i < 2) PlayerSys.teleport(p, laneX[1], side * 2.9, Math.atan2(s, 0)); else PlayerSys.teleport(p, h.x - s * 8.5, side * 3.5, Math.atan2(s, 0)); PlayerSys.setState(p, ST.IDLE); });
     for (const p of P) { clearInput(p.input); p.armsUp = false; }
-    if (sh.team === g.humanTeam) Game.setHuman(sh.id);
-    if (sh.team === g.remoteTeam) Game.setRemoteHuman(sh.id);
+    Game.autoSwitch(sh.id);
     g.stateT = 0; g.ftResolved = false; g.ftLive = false; g.ftNextT = 0;
   },
   ftResult(g, made) {
@@ -2269,7 +2287,8 @@ const UI = (() => {
   function showFirstRun() { renderBinds(el.bindList3, false); el.firstrun.classList.remove('hidden'); }
   function showHUD() { el.hud.classList.remove('hidden'); hudVisible = true; }
   function hideHUD() { el.hud.classList.add('hidden'); hudVisible = false; }
-  function showFinal(title, html) { el.finalTitle.textContent = title; el.finalBody.innerHTML = html; el.final.classList.remove('hidden'); }
+  function showFinal(title, html) { el.finalTitle.textContent = title; el.finalBody.innerHTML = html; el.final.classList.remove('hidden'); $('btnRematch').classList.toggle('hidden', Net.isGuest); }
+  function openNet() { showMenu(); show('menuNet'); Net.renderPanel(el.netBody); }
 
   function renderTeamPick() {
     for (const [side, cont] of [[0, el.teamPickA], [1, el.teamPickB]]) {
@@ -2365,7 +2384,7 @@ const UI = (() => {
       Render.project(p.x, p.y + p.height * 1.02, p.z, _pt);
       if (!_pt.visible) { d.classList.add('hidden'); continue; }
       d.classList.remove('hidden'); d.style.left = _pt.x + 'px'; d.style.top = _pt.y + 'px';
-      const txt = p.name.split(' ')[1].toUpperCase(); const key = txt + p.controlled + p.num;
+      const txt = (p.ctlName || p.name.split(' ')[1]).toUpperCase(); const key = txt + p.controlled + p.num;
       if (d.dataset.k !== key) { d.dataset.k = key; d.innerHTML = '<span class="n">' + p.num + '</span>' + txt; d.className = 'tag' + (p.controlled ? ' me' : ''); d.style.borderColor = p.controlled ? '' : hex(g.teams[p.team].primary); }
     }
   }
@@ -2408,126 +2427,264 @@ const UI = (() => {
     updateHUD(g); updateMeter(g); updateTags(g);
     if (debugOn) updateDebug(dt, stats);
   }
-  return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, update, toast, feedback, toggleDebug, clearToast, renderTeamPick, get pick() { return pick; }, get debugOn() { return debugOn; } };
+  return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, openNet, update, toast, feedback, toggleDebug, clearToast, renderTeamPick, get pick() { return pick; }, get debugOn() { return debugOn; } };
 })();
 // ==== END UI ====
 
 // ==== BEGIN NET ====
-// Peer-to-peer multiplayer over WebRTC DataChannels with manual copy/paste signaling (no server).
-// Host-authoritative: the host runs Sim.step for both humans, the client sends Input records, the host streams
-// snapshots at SNAP_HZ. The client predicts its own player's movement and interpolates everything else.
+// Multiplayer: lobbies with a join code over PeerJS (free public signaling, or your own PeerServer via
+// CONFIG.net.peerServer), plus a no-server direct connect fallback (manual offer/answer). Host-authoritative:
+// the host simulates, every human sends Input records, the host streams compact binary snapshots to all
+// guests, and each guest predicts its own movement and interpolates everything else. Up to 5 humans per team;
+// AI fills the open slots. Teams with one human keep auto-switch; multi-human teams are locked to a player.
 const Net = (() => {
-  const ICE = [{ urls: 'stun:stun.l.google.com:19302' }];
-  const SNAP_HZ = 20, INPUT_HZ = 30, INTERP_DELAY = 0.1;
+  const NC = CONFIG.net;
   const BITS = ['sprint', 'shoot', 'shootPressed', 'shootReleased', 'sidestep', 'crossover', 'stepback', 'spin', 'hesi', 'pump', 'pass', 'steal', 'switch'];
   const HELD_MASK = 0b11, EDGE_MASK = ~HELD_MASK;
-  let pc = null, chFast = null, chRel = null, role = 'none', connected = false, status = 'offline', panel = null, err = '';
-  let seq = 0, sendAcc = 0, snapAcc = 0, edgeBits = 0, recvSnaps = 0;
-  const localInput = makeInput();
-  const remote = { input: makeInput(), bits: 0, held: 0, seq: -1, rel: null };
-  let pressT = 0, pressDur = 1, relPending = null;
-  const snaps = [];
+  const DUNK_KINDS = ['', 'one', 'two', 'tomahawk', 'windmill', 'reverse', 'layup'];
+  const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const PLAYER_BYTES = 76, HEAD_BYTES = 9 + 21 + 26;
+  let role = 'none', status = 'offline', err = '', panel = null, lib = null, libPromise = null, peer = null, transport = 'peerjs';
+  let myName = (U.loadLS('hw_name', '') || ('Hooper' + (100 + ((Math.random() * 900) | 0)))).slice(0, 14);
+  // host state
+  const guests = new Map(); // pid -> { conn, name, team, playerId, inGame, remote: {input,bits,held,seq,rel} }
+  const hostMember = { team: 0 };
+  const lobby = { code: '', mode: '5v5', open: false };
+  // guest state
+  let hostConn = null, myPid = '', myPlayerId = -1, lobbyView = null, pendingStart = null, inGame = false, hostSeen = 0;
+  const snaps = []; let lastSnapSeq = -1, seq = 0, sendAcc = 0, snapAcc = 0, edgeBits = 0, recvSnaps = 0;
+  const localInput = makeInput(); let pressT = 0, pressDur = 1, relPending = null;
+  // direct transport state
+  let pc = null, chRel = null, chFast = null, directOffer = '', directAnswer = '', directMode = '';
   const r3 = (v) => Math.round(v * 1000) / 1000;
   function packBits(inp) { let b = 0; for (let i = 0; i < BITS.length; i++) if (inp[BITS[i]]) b |= 1 << i; return b; }
   function unpackBits(b, inp) { for (let i = 0; i < BITS.length; i++) inp[BITS[i]] = !!(b & (1 << i)); }
   function setStatus(sv) { status = sv; if (panel) renderPanel(panel); }
-  const enc = (o) => btoa(unescape(encodeURIComponent(JSON.stringify(o))));
-  const dec = (str) => JSON.parse(decodeURIComponent(escape(atob(str.trim()))));
+  function genCode() { let c = ''; for (let i = 0; i < 6; i++) c += ALPHABET[(Math.random() * ALPHABET.length) | 0]; return c; }
+  function cleanName(n) { return String(n || '').replace(/[^\w \-.]/g, '').trim().slice(0, 14) || 'Hooper'; }
+  const cap = () => (lobby.mode === '5v5' ? 5 : lobby.mode === '3v3' ? 3 : 1);
+  const send = (conn, data) => { if (conn) conn.send(data); };
 
-  // ---------- signaling ----------
-  function createPeer(isHost) {
-    pc = new RTCPeerConnection({ iceServers: ICE });
-    pc.onconnectionstatechange = () => { setStatus(pc.connectionState); if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') onDisconnect(); };
-    if (isHost) { chRel = pc.createDataChannel('rel', { ordered: true }); chFast = pc.createDataChannel('fast', { ordered: false, maxRetransmits: 0 }); wire(chRel); wire(chFast); }
-    else pc.ondatachannel = (e) => { if (e.channel.label === 'rel') chRel = e.channel; else chFast = e.channel; wire(e.channel); };
+  // ---------- PeerJS ----------
+  function ensureLib() {
+    if (window.Peer) { lib = window.Peer; return Promise.resolve(); }
+    if (libPromise) return libPromise;
+    libPromise = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = NC.peerJsUrl; sc.onload = () => { lib = window.Peer; res(); }; sc.onerror = () => { libPromise = null; rej(new Error('could not load PeerJS from the CDN')); }; document.head.appendChild(sc); });
+    return libPromise;
   }
-  function wire(ch) {
-    ch.onopen = () => { if (chRel && chRel.readyState === 'open' && chFast && chFast.readyState === 'open') onConnected(); };
-    ch.onmessage = (e) => onMessage(e.data); ch.onclose = () => onDisconnect();
-  }
-  function waitIce() { return new Promise((res) => { if (pc.iceGatheringState === 'complete') return res(); const t = setTimeout(res, 4000); pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } }; }); }
-  async function hostCreateOffer() { role = 'host'; createPeer(true); const offer = await pc.createOffer(); await pc.setLocalDescription(offer); await waitIce(); return enc(pc.localDescription); }
-  async function hostAcceptAnswer(str) { await pc.setRemoteDescription(dec(str)); }
-  async function clientCreateAnswer(offerStr) { role = 'client'; createPeer(false); await pc.setRemoteDescription(dec(offerStr)); const ans = await pc.createAnswer(); await pc.setLocalDescription(ans); await waitIce(); return enc(pc.localDescription); }
+  function newPeer(id) { const opts = { debug: 0, config: { iceServers: NC.iceServers } }; if (NC.peerServer) Object.assign(opts, NC.peerServer); return id ? new lib(id, opts) : new lib(opts); }
+  function wrapConn(conn) { return { pid: conn.peer, send(data) { if (conn.open) { try { conn.send(data); } catch (e) { /* closing */ } } }, close() { try { conn.close(); } catch (e) { /* ignore */ } } }; }
+  function wrapRaw(pid) { return { pid, send(data) { const ch = typeof data === 'string' ? chRel : chFast; if (ch && ch.readyState === 'open') { try { ch.send(data); } catch (e) { /* closing */ } } }, close() { try { if (chRel) chRel.close(); if (chFast) chFast.close(); if (pc) pc.close(); } catch (e) { /* ignore */ } pc = chRel = chFast = null; } }; }
+  function toBuffer(data, cb) { if (data instanceof ArrayBuffer) cb(data); else if (data && data.buffer instanceof ArrayBuffer) cb(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)); else if (data instanceof Blob) data.arrayBuffer().then(cb); }
 
-  // ---------- session ----------
-  function onConnected() { connected = true; setStatus('connected'); AudioSys.play('ui'); }
-  function onDisconnect() {
-    if (!connected) { if (role !== 'none') setStatus('disconnected'); return; }
-    connected = false; setStatus('disconnected');
-    if (role === 'host') { Game.setRemoteHuman(-1); Game.g.remoteTeam = -1; Game.toast('OPPONENT DISCONNECTED', 'CPU TAKES OVER'); }
-    else if (role === 'client') { Game.g.events.push({ name: 'toast', data: { text: 'CONNECTION LOST' } }); setTimeout(() => Main.quit(), 1500); }
-    role = 'none';
+  // ---------- host: lobby ----------
+  async function hostCreateLobby() {
+    reset(); role = 'host'; transport = 'peerjs'; err = ''; setStatus('starting');
+    try { await ensureLib(); } catch (e) { err = e.message; role = 'none'; setStatus('error'); return; }
+    lobby.code = genCode(); lobby.open = true; hostMember.team = 0;
+    openHostPeer();
   }
-  function close() { try { if (chRel) chRel.close(); if (chFast) chFast.close(); if (pc) pc.close(); } catch (e) { /* ignore */ } pc = chRel = chFast = null; connected = false; role = 'none'; snaps.length = 0; setStatus('offline'); }
-  function onQuit() { if (role === 'host') send(chRel, { t: 'quit' }); close(); }
-  function send(ch, obj) { if (ch && ch.readyState === 'open') { try { ch.send(JSON.stringify(obj)); } catch (e) { /* channel closing */ } } }
-  function hostStart(mode, a, b) { const g = Game.g; g.remoteTeam = 1; const tp = Game.teamPlayers(1); Game.setRemoteHuman(tp.length ? tp[0].id : -1); const inb = g.inbound ? g.inbound.inbounder : -1; const P = PlayerSys.players; if (inb >= 0 && P[inb].team === 1) Game.setRemoteHuman(inb); send(chRel, { t: 'start', mode, a, b, quarterLen: Game.settings.quarterLen, makeItTakeIt: Game.settings.makeItTakeIt, difficulty: Game.settings.difficulty }); }
-  function enterClient() { const g = Game.g; g.humanTeam = 1; const tp = Game.teamPlayers(1); Game.setHuman(tp.length ? tp[0].id : -1); snaps.length = 0; }
-  function forwardEvent(name, data) { if (role !== 'host' || !connected) return; if (name === 'start') return; send(chRel, { t: 'ev', name, data }); }
-  function onMessage(data) {
-    let m; try { m = JSON.parse(data); } catch (e) { return; }
-    if (role === 'host') { if (m.t === 'in' && m.seq > remote.seq) { remote.seq = m.seq; remote.input.mx = m.mx; remote.input.mz = m.mz; remote.held = m.h; remote.bits |= m.b; if (m.rel != null) remote.rel = m.rel; } else if (m.t === 'quit') onDisconnect(); return; }
-    if (m.t === 'start') { Game.settings.quarterLen = m.quarterLen; Game.settings.makeItTakeIt = m.makeItTakeIt; Game.settings.difficulty = m.difficulty; Main.startGame(m.mode, m.a, m.b); }
-    else if (m.t === 'snap') { m.rt = performance.now() / 1000; snaps.push(m); recvSnaps++; if (snaps.length > 6) snaps.shift(); }
-    else if (m.t === 'ev') { if (m.name === 'bsfx') BallSys.ball.events.push(m.data); else Game.g.events.push({ name: m.name, data: m.data }); }
-    else if (m.t === 'quit') { onDisconnect(); }
+  function openHostPeer() {
+    peer = newPeer(NC.lobbyIdPrefix + lobby.code);
+    peer.on('open', () => { setStatus('lobby open'); });
+    peer.on('connection', (conn) => {
+      conn.on('open', () => { addGuest(wrapConn(conn)); });
+      conn.on('data', (d) => onGuestMessage(conn.peer, d));
+      conn.on('close', () => removeGuest(conn.peer));
+      conn.on('error', () => removeGuest(conn.peer));
+    });
+    peer.on('error', (e) => { if (e.type === 'unavailable-id') { try { peer.destroy(); } catch (x) { /* ignore */ } lobby.code = genCode(); openHostPeer(); } else if (role === 'host') { err = e.type || String(e); setStatus('error'); } });
+    peer.on('disconnected', () => { if (role === 'host' && peer && !peer.destroyed) { try { peer.reconnect(); } catch (e) { /* ignore */ } } });
   }
-
-  // ---------- host: apply the client's inputs each tick ----------
+  function addGuest(conn) { guests.set(conn.pid, { conn, name: 'joining…', team: -1, playerId: -1, inGame: false, lastSeen: performance.now(), remote: { input: makeInput(), bits: 0, held: 0, seq: -1, rel: null } }); AudioSys.play('ui'); if (panel) renderPanel(panel); }
+  function removeGuest(pid) {
+    const gst = guests.get(pid); if (!gst) return; guests.delete(pid);
+    if (gst.playerId >= 0 && Game.g.running) { Game.setController(gst.playerId, null); Game.toast(gst.name.toUpperCase() + ' LEFT', 'CPU TAKES OVER'); }
+    broadcastLobby();
+  }
+  function autoTeam() { const n = [0, 0]; for (const m of members()) if (m.team >= 0) n[m.team]++; if (n[0] <= n[1] && n[0] < cap()) return 0; if (n[1] < cap()) return 1; return -1; }
+  function members() { const arr = [{ pid: 'host', name: myName, team: hostMember.team, isHost: true }]; for (const [pid, gst] of guests) arr.push({ pid, name: gst.name, team: gst.team, isHost: false }); return arr; }
+  function lobbyMsg() { return { t: 'lobby', code: lobby.code, mode: lobby.mode, members: members(), teams: [UI.pick[0], UI.pick[1]], quarterLen: Game.settings.quarterLen, transport, running: Game.g.running }; }
+  function broadcastLobby() { const m = lobbyMsg(); lobbyView = m; broadcast(JSON.stringify(m)); if (panel) renderPanel(panel); }
+  function broadcast(data, onlyInGame) { for (const gst of guests.values()) if (!onlyInGame || gst.inGame) gst.conn.send(data); }
+  function setTeam(pid, team) {
+    const m = pid === 'host' ? hostMember : guests.get(pid); if (!m) return;
+    if (team >= 0 && team !== m.team) { let n = 0; for (const x of members()) if (x.team === team) n++; if (n >= cap()) return; }
+    m.team = team; broadcastLobby();
+  }
+  function setMode(mode) {
+    lobby.mode = mode; const n = [0, 0];
+    for (const m of members()) { if (m.team < 0) continue; if (n[m.team] >= cap()) { (m.pid === 'host' ? hostMember : guests.get(m.pid)).team = -1; } else n[m.team]++; }
+    broadcastLobby();
+  }
+  function onGuestMessage(pid, data) {
+    const gst = guests.get(pid); if (!gst) return; gst.lastSeen = performance.now();
+    if (typeof data === 'string') {
+      let m; try { m = JSON.parse(data); } catch (e) { return; }
+      if (m.t === 'ping') return;
+      if (m.t === 'join') { gst.name = cleanName(m.name); if (gst.team < 0 && !gst.named) gst.team = autoTeam(); gst.named = true; broadcastLobby(); }
+      else if (m.t === 'team') setTeam(pid, m.team === 0 || m.team === 1 ? m.team : -1);
+      else if (m.t === 'leave') { gst.conn.close(); removeGuest(pid); }
+      return;
+    }
+    toBuffer(data, (buf) => decodeInput(buf, gst.remote));
+  }
+  // Start: humans fill each team's roster slots in join order, AI fills the rest.
+  function hostStart(mode, a, b) {
+    const g = Game.g; g.locked = true; const counts = [0, 0]; const roster = [];
+    for (const m of members()) {
+      let playerId = -1;
+      if (m.team >= 0) { const tp = Game.teamPlayers(m.team); const pl = tp[counts[m.team]]; if (pl) { playerId = pl.id; counts[m.team]++; } }
+      roster.push({ pid: m.pid, team: playerId >= 0 ? m.team : -1, playerId, name: m.name });
+      if (m.pid === 'host') { g.humanTeam = playerId >= 0 ? m.team : -1; Game.setHuman(playerId, true); }
+      else { const gst = guests.get(m.pid); gst.playerId = playerId; gst.inGame = true; gst.remote.bits = 0; gst.remote.rel = null; if (playerId >= 0) Game.setController(playerId, m.pid, m.name); }
+    }
+    broadcast(JSON.stringify({ t: 'start', mode, a, b, roster, quarterLen: Game.settings.quarterLen, makeItTakeIt: Game.settings.makeItTakeIt, difficulty: Game.settings.difficulty }));
+    seq = 0;
+  }
+  function reassign(pid, oldId, newId) { const gst = guests.get(pid); if (!gst) return; Game.setController(oldId, null); Game.setController(newId, pid, gst.name); gst.playerId = newId; gst.conn.send(JSON.stringify({ t: 'ctl', playerId: newId })); }
   function hostApplyInputs() {
-    const g = Game.g; const p = PlayerSys.players[g.remoteHuman]; if (!p) return;
-    const inp = p.input; clearInputEdges(inp);
-    inp.mx = remote.input.mx; inp.mz = remote.input.mz; inp.sprint = !!(remote.held & 1); inp.shoot = !!(remote.held & 2);
-    if (remote.bits) { unpackBits(remote.bits & EDGE_MASK, inp); inp.sprint = !!(remote.held & 1); inp.shoot = !!(remote.held & 2); remote.bits = 0; }
-    // trust the guest's own meter reading for release timing so latency does not make every shot late
-    if (inp.shootReleased && remote.rel != null) { if (p.state === PlayerSys.ST.SHOOT && !p.shot.released) p.shot.meterT = U.clamp(remote.rel, 0, 1); remote.rel = null; }
+    const P = PlayerSys.players;
+    for (const gst of guests.values()) {
+      const p = P[gst.playerId]; if (!p || !gst.inGame) continue; const rem = gst.remote, inp = p.input;
+      clearInputEdges(inp);
+      inp.mx = rem.input.mx; inp.mz = rem.input.mz; inp.sprint = !!(rem.held & 1); inp.shoot = !!(rem.held & 2);
+      if (rem.bits) { unpackBits(rem.bits & EDGE_MASK, inp); inp.sprint = !!(rem.held & 1); inp.shoot = !!(rem.held & 2); rem.bits = 0; }
+      if (inp.shootReleased && rem.rel != null) { if (p.state === PlayerSys.ST.SHOOT && !p.shot.released) p.shot.meterT = U.clamp(rem.rel, 0, 1); rem.rel = null; }
+    }
   }
-  function buildSnap() {
-    const P = PlayerSys.players, b = BallSys.ball, g = Game.g;
-    const pl = new Array(P.length);
-    for (let i = 0; i < P.length; i++) { const p = P[i]; pl[i] = [r3(p.x), r3(p.y), r3(p.z), r3(p.vx), r3(p.vy), r3(p.vz), r3(p.facing), p.state, r3(p.stateT), p.hasBall ? 1 : 0, p.hand, r3(p.stamina), p.armsUp ? 1 : 0, p.airborne ? 1 : 0, r3(p.shot.meterT), p.shot.released ? 1 : 0, p.dunk.kind, p.dunk.released ? 1 : 0, r3(p.dunk.slamAt), r3(p.stateDur), r3(p.dribblePhase), r3(p.shot.timing), p.shot.green ? 1 : 0, r3(p.shot.quality), r3(p.dribbleH), r3(p.shot.relT), r3(p.shot.dur), p.winded ? 1 : 0]; }
-    return { t: 'snap', seq: ++seq, pl, b: [r3(b.x), r3(b.y), r3(b.z), r3(b.vx), r3(b.vy), r3(b.vz), b.state, b.holder], g: { st: g.state, sc: g.score, q: g.quarter, ck: r3(g.clock), shc: r3(g.shotClock), pos: g.possession, mc: g.mustClear ? 1 : 0, tf: g.teamFouls, hoop: g.hoopOf, ctrl: g.remoteHuman } };
+  function forwardEvent(name, data) { if (role !== 'host' || name === 'start' || !guests.size) return; broadcast(JSON.stringify({ t: 'ev', name, data }), true); }
+  let pingAcc = 0, liveAcc = 0;
+  function update(dt) {
+    if (role === 'host') {
+      if (!guests.size) return;
+      if (Game.g.running) { snapAcc += dt; if (snapAcc >= 1 / NC.snapHz) { snapAcc = 0; broadcast(encodeSnap(), true); } }
+      pingAcc += dt; if (pingAcc >= 2) { pingAcc = 0; broadcast('{"t":"ping"}'); }
+      liveAcc += dt; if (liveAcc >= 1) { liveAcc = 0; const now = performance.now(); for (const [pid, gst] of guests) if (now - gst.lastSeen > 9000) { gst.conn.close(); removeGuest(pid); } }
+    } else if (role === 'guest' && hostConn) {
+      pingAcc += dt; if (pingAcc >= 2) { pingAcc = 0; hostConn.send('{"t":"ping"}'); }
+      if (performance.now() - hostSeen > 12000) onHostLost();
+    }
   }
-  function update(dt) { if (role !== 'host' || !connected || !Game.g.running) return; snapAcc += dt; if (snapAcc >= 1 / SNAP_HZ) { snapAcc = 0; send(chFast, buildSnap()); } }
 
-  // ---------- client: send inputs, interpolate snapshots, predict own movement ----------
-  function clientStep(dt) {
-    const g = Game.g; const ST = PlayerSys.ST;
+  // ---------- binary codec ----------
+  function encodeSnap() {
+    const P = PlayerSys.players, b = BallSys.ball, g = Game.g, n = P.length;
+    const buf = new ArrayBuffer(HEAD_BYTES + n * PLAYER_BYTES); const dv = new DataView(buf); let o = 0;
+    dv.setUint8(o, 1); o += 1; dv.setUint32(o, ++seq, true); o += 4; dv.setFloat32(o, g.time, true); o += 4;
+    dv.setUint8(o++, g.state); dv.setUint8(o++, g.quarter); dv.setUint16(o, g.score[0], true); o += 2; dv.setUint16(o, g.score[1], true); o += 2;
+    dv.setFloat32(o, g.clock, true); o += 4; dv.setFloat32(o, g.shotClock, true); o += 4;
+    dv.setUint8(o++, g.possession); dv.setUint8(o++, g.mustClear ? 1 : 0); dv.setUint8(o++, g.teamFouls[0]); dv.setUint8(o++, g.teamFouls[1]); dv.setUint8(o++, g.hoopOf[0]); dv.setUint8(o++, g.hoopOf[1]); dv.setUint8(o++, n);
+    dv.setFloat32(o, b.x, true); o += 4; dv.setFloat32(o, b.y, true); o += 4; dv.setFloat32(o, b.z, true); o += 4; dv.setFloat32(o, b.vx, true); o += 4; dv.setFloat32(o, b.vy, true); o += 4; dv.setFloat32(o, b.vz, true); o += 4;
+    dv.setUint8(o++, b.state); dv.setInt8(o++, b.holder);
+    for (let i = 0; i < n; i++) {
+      const p = P[i]; const f = [p.x, p.y, p.z, p.vx, p.vy, p.vz, p.facing, p.stateT, p.stamina, p.shot.meterT, p.shot.timing, p.shot.quality, p.dribblePhase, p.dribbleH, p.shot.relT, p.shot.dur, p.dunk.slamAt, p.stateDur];
+      for (let k = 0; k < 18; k++) { dv.setFloat32(o, f[k], true); o += 4; }
+      dv.setUint8(o++, p.state);
+      dv.setUint8(o++, (p.hasBall ? 1 : 0) | (p.armsUp ? 2 : 0) | (p.airborne ? 4 : 0) | (p.shot.released ? 8 : 0) | (p.dunk.released ? 16 : 0) | (p.shot.green ? 32 : 0) | (p.winded ? 64 : 0));
+      dv.setInt8(o++, p.hand); dv.setUint8(o++, Math.max(0, DUNK_KINDS.indexOf(p.dunk.kind)));
+    }
+    return buf;
+  }
+  function decodeSnap(buf) {
+    const dv = new DataView(buf); let o = 0; if (dv.getUint8(o) !== 1) return null; o += 1;
+    const sq = dv.getUint32(o, true); o += 4; const time = dv.getFloat32(o, true); o += 4;
+    const G = {}; G.st = dv.getUint8(o++); G.q = dv.getUint8(o++); G.sc = [dv.getUint16(o, true), dv.getUint16(o + 2, true)]; o += 4; G.ck = dv.getFloat32(o, true); o += 4; G.shc = dv.getFloat32(o, true); o += 4;
+    G.pos = dv.getUint8(o++); G.mc = dv.getUint8(o++); G.tf = [dv.getUint8(o++), dv.getUint8(o++)]; G.hoop = [dv.getUint8(o++), dv.getUint8(o++)]; const n = dv.getUint8(o++);
+    const b = []; for (let k = 0; k < 6; k++) { b.push(dv.getFloat32(o, true)); o += 4; } b.push(dv.getUint8(o++)); b.push(dv.getInt8(o++));
+    const pl = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const f = new Array(18); for (let k = 0; k < 18; k++) { f[k] = dv.getFloat32(o, true); o += 4; }
+      const st = dv.getUint8(o++), fl = dv.getUint8(o++), hand = dv.getInt8(o++), dk = dv.getUint8(o++);
+      pl[i] = [f[0], f[1], f[2], f[3], f[4], f[5], f[6], st, f[7], fl & 1, hand, f[8], (fl & 2) ? 1 : 0, (fl & 4) ? 1 : 0, f[9], (fl & 8) ? 1 : 0, DUNK_KINDS[dk] || '', (fl & 16) ? 1 : 0, f[16], f[17], f[12], f[10], (fl & 32) ? 1 : 0, f[11], f[13], f[14], f[15], (fl & 64) ? 1 : 0];
+    }
+    return { seq: sq, time, g: G, b, pl, rt: performance.now() / 1000 };
+  }
+  function encodeInput(mx, mz, held, bits, rel) { const buf = new ArrayBuffer(20); const dv = new DataView(buf); dv.setUint8(0, 2); dv.setUint32(1, ++seq, true); dv.setFloat32(5, mx, true); dv.setFloat32(9, mz, true); dv.setUint8(13, held); dv.setUint16(14, bits & 0xffff, true); dv.setFloat32(16, rel == null ? NaN : rel, true); return buf; }
+  function decodeInput(buf, rem) {
+    if (buf.byteLength < 20) return; const dv = new DataView(buf); if (dv.getUint8(0) !== 2) return;
+    rem.bits |= dv.getUint16(14, true); const rel = dv.getFloat32(16, true); if (!Number.isNaN(rel)) rem.rel = rel;
+    const sq = dv.getUint32(1, true); if (sq <= rem.seq) return; rem.seq = sq;
+    rem.input.mx = dv.getFloat32(5, true); rem.input.mz = dv.getFloat32(9, true); rem.held = dv.getUint8(13);
+  }
+
+  // ---------- guest ----------
+  async function joinLobby(code) {
+    code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (code.length < 4) { err = 'enter the 6-character code'; setStatus('error'); return; }
+    reset(); role = 'guest'; transport = 'peerjs'; err = ''; setStatus('connecting');
+    try { await ensureLib(); } catch (e) { err = e.message; role = 'none'; setStatus('error'); return; }
+    peer = newPeer();
+    peer.on('open', (id) => {
+      myPid = id; const conn = peer.connect(NC.lobbyIdPrefix + code, { reliable: false, serialization: 'raw' });
+      conn.on('open', () => { hostConn = wrapConn(conn); hostSeen = performance.now(); setStatus('in lobby'); hostConn.send(JSON.stringify({ t: 'join', name: myName })); });
+      conn.on('data', onHostMessage); conn.on('close', onHostLost); conn.on('error', () => onHostLost());
+    });
+    peer.on('error', (e) => { if (role !== 'guest') return; err = e.type === 'peer-unavailable' ? 'no lobby with that code' : (e.type || String(e)); setStatus('error'); });
+    peer.on('disconnected', () => { if (role === 'guest' && peer && !peer.destroyed) { try { peer.reconnect(); } catch (e) { /* ignore */ } } });
+  }
+  function onHostMessage(data) {
+    hostSeen = performance.now();
+    if (typeof data !== 'string') { toBuffer(data, (buf) => { const sn = decodeSnap(buf); if (!sn || sn.seq <= lastSnapSeq) return; lastSnapSeq = sn.seq; snaps.push(sn); recvSnaps++; if (snaps.length > 6) snaps.shift(); }); return; }
+    let m; try { m = JSON.parse(data); } catch (e) { return; }
+    switch (m.t) {
+      case 'ping': break;
+      case 'lobby': lobbyView = m; if (panel) renderPanel(panel); break;
+      case 'start': pendingStart = m; Game.settings.quarterLen = m.quarterLen; Game.settings.makeItTakeIt = m.makeItTakeIt; Game.settings.difficulty = m.difficulty; Main.startGame(m.mode, m.a, m.b); break;
+      case 'ctl': myPlayerId = m.playerId; Game.setHuman(myPlayerId, true); { const me = PlayerSys.players[myPlayerId]; if (me) { me.authX = me.x; me.authZ = me.z; } } break;
+      case 'ev': if (m.name === 'bsfx') BallSys.ball.events.push(m.data); else Game.g.events.push({ name: m.name, data: m.data }); break;
+      case 'tolobby': if (Game.g.running) Main.quit(); break;
+      case 'closed': leaveLobby('the host closed the lobby'); break;
+    }
+  }
+  function enterGuest() {
+    const m = pendingStart; if (!m) return; const g = Game.g; g.locked = true; inGame = true;
+    const mine = m.roster.find((r) => r.pid === myPid || (transport === 'direct' && r.pid === 'direct'));
+    myPlayerId = mine ? mine.playerId : -1; g.humanTeam = mine ? mine.team : -1;
+    for (const r of m.roster) if (r.playerId >= 0 && (!mine || r.pid !== mine.pid)) Game.setController(r.playerId, r.pid, r.name);
+    Game.setHuman(myPlayerId, true);
+    snaps.length = 0; lastSnapSeq = -1; seq = 0;
+  }
+  function onHostLost() { if (role !== 'guest') return; leaveLobby('connection to the host was lost'); }
+  function leaveLobby(reason) {
+    const wasRunning = Game.g.running; const r = role; reset();
+    if (r === 'guest') { err = reason || ''; if (wasRunning) { Game.g.events.push({ name: 'toast', data: { text: 'DISCONNECTED', sub: (reason || '').toUpperCase() } }); setTimeout(() => Main.quit(), 1200); } else setStatus(reason ? 'left' : 'offline'); }
+  }
+  function guestStep(dt) {
+    const g = Game.g, ST = PlayerSys.ST;
     Input.sample(localInput, CameraSys.basis);
     edgeBits |= packBits(localInput) & EDGE_MASK;
     const meP = PlayerSys.players[g.human]; const nowS = performance.now() / 1000;
     if (localInput.shootPressed && meP && meP.hasBall) { pressT = nowS; pressDur = Shooting.meterDuration(meP, g.state === Game.S.FREETHROW ? 'ft' : Shooting.zoneFor(meP, Game.hoopFor(meP.team))); }
     if (localInput.shootReleased && pressT > 0) { relPending = r3(U.clamp((nowS - pressT) / pressDur, 0, 1)); pressT = 0; }
     sendAcc += dt;
-    if (sendAcc >= 1 / INPUT_HZ) { sendAcc = 0; const pkt = { t: 'in', seq: ++seq, mx: r3(localInput.mx), mz: r3(localInput.mz), h: packBits(localInput) & HELD_MASK, b: edgeBits }; if (relPending != null) { pkt.rel = relPending; relPending = null; } send(chFast, pkt); edgeBits = 0; }
+    if (sendAcc >= 1 / NC.inputHz && meP) { sendAcc = 0; send(hostConn, encodeInput(localInput.mx, localInput.mz, packBits(localInput) & HELD_MASK, edgeBits, relPending)); relPending = null; edgeBits = 0; }
     g.time += dt;
     if (!snaps.length) return;
-    let A = snaps[0], B = snaps[0];
-    if (snaps.length > 1) { const now = performance.now() / 1000 - INTERP_DELAY; for (let i = 0; i < snaps.length - 1; i++) { if (snaps[i].rt <= now) { A = snaps[i]; B = snaps[i + 1]; } } if (now > snaps[snaps.length - 1].rt) { A = B = snaps[snaps.length - 1]; } }
-    const f = B.rt > A.rt ? U.clamp((performance.now() / 1000 - INTERP_DELAY - A.rt) / (B.rt - A.rt), 0, 1) : 1;
+    let A = snaps[0], B = snaps[0]; const now = nowS - NC.interpDelay;
+    if (snaps.length > 1) { for (let i = 0; i < snaps.length - 1; i++) if (snaps[i].rt <= now) { A = snaps[i]; B = snaps[i + 1]; } if (now > snaps[snaps.length - 1].rt) A = B = snaps[snaps.length - 1]; }
+    const f = B.rt > A.rt ? U.clamp((now - A.rt) / (B.rt - A.rt), 0, 1) : 1;
     applySnap(A, B, f);
     const me = PlayerSys.players[g.human];
     if (me && me.state === ST.SHOOT && !me.shot.released && pressT > 0) { me.shot.meterT = U.clamp((nowS - pressT) / pressDur, 0, 1); me.shot.dur = pressDur; }
     if (me && (me.state === ST.IDLE || me.state === ST.MOVE) && !me.airborne) {
       me.input.mx = localInput.mx; me.input.mz = localInput.mz; me.input.sprint = localInput.sprint;
       PlayerSys.updateMovement(me, dt);
-      const ex = me.authX - me.x, ez = me.authZ - me.z; const d = Math.sqrt(ex * ex + ez * ez);
-      if (d > 0.9) { me.x = me.authX; me.z = me.authZ; } else { me.x += ex * (1 - Math.exp(-dt * 6)); me.z += ez * (1 - Math.exp(-dt * 6)); }
+      const ex = (me.authX || 0) - me.x, ez = (me.authZ || 0) - me.z; const d = Math.sqrt(ex * ex + ez * ez);
+      if (d > 0.9) { me.x = me.authX; me.z = me.authZ; } else { const k = 1 - Math.exp(-dt * 6); me.x += ex * k; me.z += ez * k; }
       if (me.speed > 0.6) PlayerSys.faceVelocity(me, dt);
       if (me.hasBall && BallSys.ball.holder === me.id) BallSys.updateHeld(me, dt);
     }
     Court.setShotClock(g.mode === 'practice' ? -1 : g.shotClock);
   }
   function applySnap(A, B, f) {
-    const P = PlayerSys.players, g = Game.g, ball = BallSys.ball;
+    const P = PlayerSys.players, g = Game.g, ball = BallSys.ball, ST = PlayerSys.ST;
     for (let i = 0; i < P.length; i++) {
       const a = A.pl[i], b = B.pl[i], p = P[i]; if (!a || !b) continue;
       p.px = p.x; p.py = p.y; p.pz = p.z; p.pfacing = p.facing;
       const x = U.lerp(a[0], b[0], f), y = U.lerp(a[1], b[1], f), z = U.lerp(a[2], b[2], f);
-      const predicted = p.id === g.human && (b[7] === PlayerSys.ST.IDLE || b[7] === PlayerSys.ST.MOVE) && !b[13];
-      if (predicted) { p.authX = x; p.authZ = z; p.y = y; if (p.authX === undefined) { p.x = x; p.z = z; } }
-      else { p.x = x; p.y = y; p.z = z; p.facing = U.angleLerp(a[6], b[6], f); }
+      const predicted = p.id === g.human && (b[7] === ST.IDLE || b[7] === ST.MOVE) && !b[13];
+      if (predicted) { if (p.authX === undefined) { p.x = x; p.z = z; } p.authX = x; p.authZ = z; p.y = y; }
+      else { p.x = x; p.y = y; p.z = z; p.facing = U.angleLerp(a[6], b[6], f); p.authX = x; p.authZ = z; }
       p.vx = b[3]; p.vy = b[4]; p.vz = b[5]; p.state = b[7]; p.stateT = b[8]; p.hasBall = !!b[9]; p.hand = b[10]; p.stamina = b[11]; p.armsUp = !!b[12]; p.airborne = !!b[13];
       p.shot.meterT = b[14]; p.shot.released = !!b[15]; p.dunk.kind = b[16]; p.dunk.released = !!b[17]; p.dunk.slamAt = b[18]; p.stateDur = b[19]; p.dribblePhase = b[20]; p.shot.timing = b[21]; p.shot.green = !!b[22]; p.shot.quality = b[23]; p.dribbleH = b[24]; p.shot.relT = b[25]; p.shot.dur = b[26]; p.winded = !!b[27];
       if (!predicted) p.speed = Math.sqrt(p.vx * p.vx + p.vz * p.vz);
@@ -2536,45 +2693,105 @@ const Net = (() => {
     ball.px = ball.x; ball.py = ball.y; ball.pz = ball.z;
     ball.x = U.lerp(ba[0], bb[0], f); ball.y = U.lerp(ba[1], bb[1], f); ball.z = U.lerp(ba[2], bb[2], f); ball.vx = bb[3]; ball.vy = bb[4]; ball.vz = bb[5]; ball.state = bb[6]; ball.holder = bb[7];
     const G = B.g; g.state = G.st; g.score[0] = G.sc[0]; g.score[1] = G.sc[1]; g.quarter = G.q; g.clock = G.ck; g.shotClock = G.shc; g.possession = G.pos; g.mustClear = !!G.mc; g.teamFouls[0] = G.tf[0]; g.teamFouls[1] = G.tf[1]; g.hoopOf[0] = G.hoop[0]; g.hoopOf[1] = G.hoop[1];
-    if (G.ctrl !== g.human) { Game.setHuman(G.ctrl); const me = P[G.ctrl]; if (me) { me.authX = me.x; me.authZ = me.z; } }
   }
 
-  // ---------- UI panel ----------
-  let mode = 'pick', offerText = '', answerText = '';
+  // ---------- direct connect (no signaling server): a two-person lobby over manual offer/answer ----------
+  function createRawPeer(isHost) {
+    pc = new RTCPeerConnection({ iceServers: NC.iceServers });
+    pc.onconnectionstatechange = () => { const cs = pc.connectionState; if (cs === 'disconnected' || cs === 'failed' || cs === 'closed') { if (role === 'host') removeGuest('direct'); else if (role === 'guest') onHostLost(); } };
+    const wire = (ch) => {
+      ch.binaryType = 'arraybuffer';
+      ch.onopen = () => { if (chRel && chRel.readyState === 'open' && chFast && chFast.readyState === 'open') onRawConnected(); };
+      ch.onmessage = (e) => { if (role === 'host') onGuestMessage('direct', e.data); else onHostMessage(e.data); };
+      ch.onclose = () => { if (role === 'host') removeGuest('direct'); else if (role === 'guest') onHostLost(); };
+    };
+    if (isHost) { chRel = pc.createDataChannel('rel', { ordered: true }); chFast = pc.createDataChannel('fast', { ordered: false, maxRetransmits: 0 }); wire(chRel); wire(chFast); }
+    else pc.ondatachannel = (e) => { if (e.channel.label === 'rel') chRel = e.channel; else chFast = e.channel; wire(e.channel); };
+  }
+  function waitIce() { return new Promise((res) => { if (pc.iceGatheringState === 'complete') return res(); const t = setTimeout(res, 4000); pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } }; }); }
+  const enc = (o) => btoa(unescape(encodeURIComponent(JSON.stringify(o)))), dec = (str) => JSON.parse(decodeURIComponent(escape(atob(str.trim()))));
+  async function directHost() { reset(); role = 'host'; transport = 'direct'; lobby.code = 'DIRECT'; lobby.open = true; hostMember.team = 0; directMode = 'host'; setStatus('working'); createRawPeer(true); const offer = await pc.createOffer(); await pc.setLocalDescription(offer); await waitIce(); directOffer = enc(pc.localDescription); setStatus('offer ready'); }
+  async function directAccept(str) { await pc.setRemoteDescription(dec(str)); setStatus('connecting'); }
+  async function directJoin(offerStr) { reset(); role = 'guest'; transport = 'direct'; myPid = 'direct'; directMode = 'join'; setStatus('working'); createRawPeer(false); await pc.setRemoteDescription(dec(offerStr)); const ans = await pc.createAnswer(); await pc.setLocalDescription(ans); await waitIce(); directAnswer = enc(pc.localDescription); setStatus('answer ready'); }
+  function onRawConnected() {
+    if (role === 'host') { addGuest(wrapRaw('direct')); setStatus('lobby open'); }
+    else { hostConn = wrapRaw('direct'); hostSeen = performance.now(); setStatus('in lobby'); hostConn.send(JSON.stringify({ t: 'join', name: myName })); }
+  }
+
+  // ---------- lifecycle ----------
+  function reset() {
+    for (const gst of guests.values()) gst.conn.close(); guests.clear();
+    if (hostConn) hostConn.close(); hostConn = null;
+    if (peer) { try { peer.destroy(); } catch (e) { /* ignore */ } } peer = null;
+    if (pc) { try { pc.close(); } catch (e) { /* ignore */ } } pc = chRel = chFast = null;
+    role = 'none'; lobby.open = false; lobby.code = ''; lobbyView = null; pendingStart = null; inGame = false; myPlayerId = -1; snaps.length = 0; lastSnapSeq = -1; directOffer = directAnswer = ''; directMode = '';
+    if (Game.g) Game.g.locked = false;
+  }
+  function closeLobby() { if (role === 'host') broadcast(JSON.stringify({ t: 'closed' })); else if (role === 'guest') send(hostConn, JSON.stringify({ t: 'leave' })); reset(); setStatus('offline'); }
+  // Quitting a game returns everyone to the lobby, connections intact.
+  function onQuit() {
+    if (role === 'host') { broadcast(JSON.stringify({ t: 'tolobby' }), true); for (const gst of guests.values()) { gst.inGame = false; gst.playerId = -1; } Game.g.locked = false; setTimeout(() => UI.openNet(), 0); broadcastLobby(); }
+    else if (role === 'guest') { inGame = false; myPlayerId = -1; Game.g.locked = false; setTimeout(() => UI.openNet(), 0); }
+  }
+
+  // ---------- lobby UI ----------
   function renderPanel(cont) {
-    panel = cont; const busy = status === 'working';
-    let html = '<div class="note">Play a friend with no server: one of you hosts, the other joins. Exchange the two codes over any chat app. The host picks the mode and teams from the main menu once connected (host = home team, guest = away team).</div>';
+    panel = cont;
+    const view = role === 'host' ? lobbyMsg() : lobbyView;
+    let html = '<div class="opt"><span>Your name</span><input id="netNameIn" maxlength="14" value="' + myName.replace(/"/g, '') + '" style="pointer-events:auto;background:rgba(0,0,0,0.4);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-family:var(--sans)"></div>';
     html += '<div class="status">status: ' + status + (err ? ' · ' + err : '') + '</div>';
-    if (connected) {
-      html += '<div class="note" style="color:var(--ok)">Connected. ' + (role === 'host' ? 'Pick a mode above to start the game for both players.' : 'Waiting for the host to start the game…') + '</div>';
-      html += '<div class="row"><button class="btn" id="netClose">Disconnect</button></div>';
-    } else if (mode === 'pick') {
-      html += '<div class="row"><button class="btn primary" id="netHost">Host a game</button><button class="btn" id="netJoin">Join a game</button></div>';
-    } else if (mode === 'host') {
-      html += '<h2 class="sec">1. Your offer code (send it to your friend)</h2><textarea class="sig" id="netOffer" readonly>' + offerText + '</textarea>';
-      html += '<div class="row"><button class="btn small" id="netCopyOffer">Copy</button></div>';
-      html += '<h2 class="sec">2. Paste their answer code</h2><textarea class="sig" id="netAnswerIn" placeholder="paste answer here"></textarea>';
-      html += '<div class="row"><button class="btn primary" id="netConnect">Connect</button><button class="btn" id="netCancel">Cancel</button></div>';
-    } else if (mode === 'join') {
-      html += '<h2 class="sec">1. Paste the host\'s offer code</h2><textarea class="sig" id="netOfferIn" placeholder="paste offer here"></textarea>';
-      html += '<div class="row"><button class="btn primary" id="netMakeAnswer"' + (busy ? ' disabled' : '') + '>Create answer</button><button class="btn" id="netCancel">Cancel</button></div>';
-      if (answerText) { html += '<h2 class="sec">2. Send this answer code back to the host</h2><textarea class="sig" id="netAnswer" readonly>' + answerText + '</textarea><div class="row"><button class="btn small" id="netCopyAnswer">Copy</button></div><div class="note">Waiting for the host to connect…</div>'; }
-    }
+    if (role === 'none') {
+      html += '<div class="note">One join code per lobby. Up to ' + NC.maxPerTeam + ' humans per team; switch sides freely; CPU fills the empty slots. Signaling goes through the free PeerJS cloud, game traffic is peer-to-peer.</div>';
+      html += '<div class="row"><button class="btn primary" id="netCreate">Create lobby</button><input id="netCodeIn" placeholder="CODE" maxlength="6" style="pointer-events:auto;width:110px;text-transform:uppercase;letter-spacing:0.2em;background:rgba(0,0,0,0.4);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font-family:var(--mono);font-weight:700"><button class="btn" id="netJoin">Join lobby</button></div>';
+      html += '<h2 class="sec">No signaling server? Direct connect (2 players)</h2>';
+      html += '<div class="row"><button class="btn small" id="netDirectHost">Create offer</button><button class="btn small" id="netDirectJoin">I have an offer</button></div>';
+    } else if (transport === 'direct' && !(role === 'host' ? guests.size : hostConn)) {
+      if (directMode === 'host') { html += '<h2 class="sec">1. Send this offer to your friend</h2><textarea class="sig" id="netOffer" readonly>' + directOffer + '</textarea><div class="row"><button class="btn small" id="netCopyOffer">Copy</button></div><h2 class="sec">2. Paste their answer</h2><textarea class="sig" id="netAnswerIn" placeholder="paste answer here"></textarea><div class="row"><button class="btn primary" id="netConnect">Connect</button><button class="btn" id="netCancel">Cancel</button></div>'; }
+      else { html += '<h2 class="sec">1. Paste the host\'s offer</h2><textarea class="sig" id="netOfferIn" placeholder="paste offer here"></textarea><div class="row"><button class="btn primary" id="netMakeAnswer">Create answer</button><button class="btn" id="netCancel">Cancel</button></div>'; if (directAnswer) html += '<h2 class="sec">2. Send this answer back to the host</h2><textarea class="sig" id="netAnswer" readonly>' + directAnswer + '</textarea><div class="row"><button class="btn small" id="netCopyAnswer">Copy</button></div><div class="note">Waiting for the host to connect…</div>'; }
+    } else if (view) {
+      const teams = view.teams || UI.pick; const capN = view.mode === '5v5' ? 5 : view.mode === '3v3' ? 3 : 1; const me = role === 'host' ? 'host' : myPid;
+      html += '<div class="row" style="align-items:center"><span class="subtitle" style="margin:0">Lobby code</span><span class="title" style="font-size:34px;letter-spacing:0.18em">' + view.code + '</span>' + (transport === 'peerjs' ? '<button class="btn small" id="netCopyCode">Copy</button>' : '') + '</div>';
+      if (role === 'host') { html += '<div class="row"><span class="subtitle" style="margin:0;align-self:center">Mode</span>'; for (const m of ['1v1', '3v3', '5v5']) html += '<button class="btn small' + (view.mode === m ? ' sel' : '') + '" data-netmode="' + m + '">' + m + '</button>'; html += '<span class="note" style="margin:0;align-self:center">Teams and quarter length come from the main menu settings.</span></div>'; }
+      else html += '<div class="note">Mode: ' + view.mode + ' · the host starts the game.</div>';
+      html += '<div class="grid2" style="margin-top:12px">';
+      for (let t = 0; t < 2; t++) {
+        const team = TEAMS[teams[t]]; const mem = view.members.filter((m) => m.team === t);
+        html += '<div><div class="kv" style="border-bottom:2px solid ' + hex(team.primary) + '"><b>' + team.city + ' ' + team.name + '</b><span class="k">' + mem.length + '/' + capN + '</span></div>';
+        for (let i = 0; i < capN; i++) { const m = mem[i]; html += '<div class="kv"><span' + (m && m.pid === me ? ' style="color:var(--accent)"' : (m ? '' : ' class="k"')) + '>' + (m ? (m.name + (m.isHost ? ' ★' : '')) : 'CPU') + '</span><span class="k">' + POSITIONS[i] + '</span></div>'; }
+        const mine = view.members.find((m) => m.pid === me); const here = mine && mine.team === t;
+        html += '<div class="row"><button class="btn small' + (here ? ' sel' : '') + '" data-jointeam="' + t + '"' + (here || mem.length >= capN ? ' disabled' : '') + '>' + (here ? 'You are here' : 'Join') + '</button></div></div>';
+      }
+      html += '</div>';
+      const specs = view.members.filter((m) => m.team < 0);
+      html += '<div class="kv"><span class="k">Spectators: ' + (specs.length ? specs.map((m) => m.name + (m.isHost ? ' ★' : '')).join(', ') : 'none') + '</span><button class="btn small" data-jointeam="-1">Spectate</button></div>';
+      if (view.running && role === 'guest' && !inGame) html += '<div class="note" style="color:var(--accent)">A game is in progress. You will be placed when the host starts the next one.</div>';
+      html += '<div class="row">' + (role === 'host' ? '<button class="btn primary" id="netStart">Start game</button><button class="btn" id="netClose">Close lobby</button>' : '<button class="btn" id="netClose">Leave lobby</button>') + '</div>';
+    } else { html += '<div class="row"><button class="btn" id="netCancel">Cancel</button></div>'; }
     cont.innerHTML = html;
     const $ = (id) => cont.querySelector('#' + id);
     const copy = (id) => { const ta = $(id); ta.select(); try { navigator.clipboard.writeText(ta.value); } catch (e) { document.execCommand('copy'); } AudioSys.play('ui'); };
-    if ($('netHost')) $('netHost').onclick = async () => { mode = 'host'; err = ''; setStatus('working'); try { offerText = await hostCreateOffer(); setStatus('offer ready'); } catch (e) { err = e.message; setStatus('error'); } };
-    if ($('netJoin')) $('netJoin').onclick = () => { mode = 'join'; answerText = ''; renderPanel(cont); };
+    $('netNameIn').onchange = (e) => { myName = cleanName(e.target.value); U.saveLS('hw_name', myName); if (role === 'host') broadcastLobby(); else if (hostConn) hostConn.send(JSON.stringify({ t: 'join', name: myName })); };
+    $('netNameIn').onkeydown = (e) => e.stopPropagation();
+    if ($('netCodeIn')) $('netCodeIn').onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') joinLobby($('netCodeIn').value); };
+    if ($('netCreate')) $('netCreate').onclick = () => hostCreateLobby();
+    if ($('netJoin')) $('netJoin').onclick = () => joinLobby($('netCodeIn').value);
+    if ($('netDirectHost')) $('netDirectHost').onclick = () => directHost().catch((e) => { err = e.message; setStatus('error'); });
+    if ($('netDirectJoin')) $('netDirectJoin').onclick = () => { reset(); role = 'guest'; transport = 'direct'; directMode = 'join'; setStatus('paste the offer'); };
     if ($('netCopyOffer')) $('netCopyOffer').onclick = () => copy('netOffer');
     if ($('netCopyAnswer')) $('netCopyAnswer').onclick = () => copy('netAnswer');
-    if ($('netConnect')) $('netConnect').onclick = async () => { const v = $('netAnswerIn').value; if (!v.trim()) return; err = ''; setStatus('connecting'); try { await hostAcceptAnswer(v); } catch (e) { err = e.message; setStatus('error'); } };
-    if ($('netMakeAnswer')) $('netMakeAnswer').onclick = async () => { const v = $('netOfferIn').value; if (!v.trim()) return; err = ''; setStatus('working'); try { answerText = await clientCreateAnswer(v); setStatus('answer ready'); } catch (e) { err = e.message; setStatus('error'); } };
-    if ($('netCancel')) $('netCancel').onclick = () => { close(); mode = 'pick'; offerText = ''; answerText = ''; renderPanel(cont); };
-    if ($('netClose')) $('netClose').onclick = () => { onQuit(); mode = 'pick'; offerText = ''; answerText = ''; renderPanel(cont); };
+    if ($('netCopyCode')) $('netCopyCode').onclick = () => { try { navigator.clipboard.writeText(lobby.code || (lobbyView && lobbyView.code) || ''); } catch (e) { /* ignore */ } AudioSys.play('ui'); };
+    if ($('netConnect')) $('netConnect').onclick = () => { const v = $('netAnswerIn').value; if (v.trim()) directAccept(v).catch((e) => { err = e.message; setStatus('error'); }); };
+    if ($('netMakeAnswer')) $('netMakeAnswer').onclick = () => { const v = $('netOfferIn').value; if (v.trim()) directJoin(v).catch((e) => { err = e.message; setStatus('error'); }); };
+    if ($('netCancel')) $('netCancel').onclick = () => { closeLobby(); };
+    if ($('netClose')) $('netClose').onclick = () => { closeLobby(); };
+    if ($('netStart')) $('netStart').onclick = () => { AudioSys.play('ui'); Main.startGame(lobby.mode, UI.pick[0], UI.pick[1]); };
+    cont.querySelectorAll('[data-netmode]').forEach((b) => { b.onclick = () => setMode(b.dataset.netmode); });
+    cont.querySelectorAll('[data-jointeam]').forEach((b) => { b.onclick = () => { const t = parseInt(b.dataset.jointeam, 10); if (role === 'host') setTeam('host', t); else if (hostConn) hostConn.send(JSON.stringify({ t: 'team', team: t })); AudioSys.play('ui'); }; });
   }
-  function statusText() { return role + '/' + status + (role === 'client' ? ' snaps ' + recvSnaps + ' buf ' + snaps.length : role === 'host' ? ' seq ' + seq : ''); }
-  return { renderPanel, status: statusText, update, clientStep, hostApplyInputs, hostStart, enterClient, forwardEvent, onQuit, hostCreateOffer, hostAcceptAnswer, clientCreateAnswer,
-    get active() { return connected && role !== 'none'; }, get isHost() { return role === 'host' && connected; }, get isClient() { return role === 'client' && connected; } };
+  window.addEventListener('pagehide', () => { try { if (role === 'host') broadcast(JSON.stringify({ t: 'closed' })); else if (role === 'guest') send(hostConn, JSON.stringify({ t: 'leave' })); if (peer) peer.destroy(); } catch (e) { /* unloading */ } });
+  function statusText() { return role + '/' + status + (role === 'guest' ? ' snaps ' + recvSnaps + ' buf ' + snaps.length : role === 'host' ? ' guests ' + guests.size + ' seq ' + seq : ''); }
+  return { renderPanel, status: statusText, update, guestStep, hostApplyInputs, hostStart, enterGuest, forwardEvent, onQuit, reassign, hostCreateLobby, joinLobby, setTeam, setMode, closeLobby, directHost, directAccept, directJoin,
+    get myName() { return myName; }, get active() { return role !== 'none'; }, get isHost() { return role === 'host'; }, get isGuest() { return role === 'guest' && !!hostConn; }, get lobby() { return lobby; }, get guestCount() { return guests.size; }, get directOffer() { return directOffer; }, get directAnswer() { return directAnswer; } };
 })();
 // ==== END NET ====
 
@@ -2606,7 +2823,8 @@ const Main = (() => {
   }
   function startGame(mode, a, b) {
     lastMode = mode; Render.buildArena(TEAMS[a], TEAMS[b]); Game.start(mode, a, b); Render.buildPlayers(Game.g.teams); Render.setShadows(Game.settings.shadows);
-    if (Net.isHost) Net.hostStart(mode, a, b); else if (Net.isClient) Net.enterClient();
+    document.getElementById('final').classList.add('hidden');
+    if (Net.isHost) Net.hostStart(mode, a, b); else if (Net.isGuest) Net.enterGuest();
     UI.hideMenu(); UI.showHUD(); UI.clearToast(); const ball = BallSys.ball; CameraSys.snap(ball.x, ball.z); acc = 0; paused = false;
     const sb = document.getElementById('btnSpectate'); if (sb) sb.textContent = 'CPU plays for me: off';
     if (!U.loadLS('hw_seen', false)) { pause(true); UI.showFirstRun(); }
@@ -2614,7 +2832,7 @@ const Main = (() => {
   function pause(silent) { paused = true; if (!silent) UI.showPause(true); }
   function resume() { paused = false; UI.showPause(false); last = performance.now(); acc = 0; }
   function quit() { Game.stop(); paused = false; UI.showPause(false); UI.showMenu(); if (Net.active) Net.onQuit(); }
-  function rematch() { const g = Game.g; startGame(lastMode, g.teamIdx[0], g.teamIdx[1]); document.getElementById('final').classList.add('hidden'); }
+  function rematch() { if (Net.isGuest) return; const g = Game.g; startGame(lastMode, g.teamIdx[0], g.teamIdx[1]); }
   function frame(now) {
     requestAnimationFrame(frame);
     if (!visible) return;
@@ -2625,14 +2843,14 @@ const Main = (() => {
     if (g.running && !paused) {
       acc += elapsed; const s0 = performance.now();
       while (acc >= DT && steps < CONFIG.physics.maxSteps) {
-        const human = PlayerSys.players[g.human]; if (human && !Net.isClient) Input.sample(human.input, CameraSys.basis);
-        if (Net.isClient) Net.clientStep(DT); else Game.step(DT);
+        const human = PlayerSys.players[g.human]; if (human && !Net.isGuest) Input.sample(human.input, CameraSys.basis);
+        if (Net.isGuest) Net.guestStep(DT); else Game.step(DT);
         Input.endTick(); acc -= DT; steps++;
       }
       if (steps === CONFIG.physics.maxSteps) acc = 0;
-      if (Net.active) Net.update(elapsed);
       simMs = performance.now() - s0;
     } else Input.endTick();
+    if (Net.active) Net.update(elapsed);
     const alpha = g.running && !paused ? acc / DT : 1;
     Render.sync(alpha, elapsed);
     const ball = BallSys.ball; CameraSys.update(elapsed, ball.x, ball.z, g);

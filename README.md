@@ -15,10 +15,16 @@ WASD move · Shift sprint · Space shoot/jump · X sidestep · C crossover · V 
 E pass · F steal · Tab switch · Esc pause · ` debug overlay. Keybinds are remappable (saved to localStorage).
 
 ## Multiplayer
-Main menu → Multiplayer. One player clicks **Host a game** and sends the offer code to a friend (any chat app).
-The friend clicks **Join a game**, pastes it, clicks **Create answer**, and sends the answer code back. The host pastes it and clicks **Connect**.
-Once connected, the host picks a mode from the main menu; the game starts on both screens (host = home team, guest = away team).
-The host runs the simulation; the guest sends inputs, predicts their own movement, and interpolates everything else.
+Main menu → **Multiplayer**. Type a name, click **Create lobby**, and share the 6-character code. Friends click **Join lobby** with the code.
+Everyone can switch between the two teams (or spectate); up to five humans per side, CPU fills the rest. The host picks the mode
+(1v1 / 3v3 / 5v5) and presses **Start game**; quitting a game returns the whole lobby to the lobby screen.
+
+Signaling uses the free public PeerJS cloud (loaded from a CDN only when you open the Multiplayer panel). To run your own
+signaling server, set `CONFIG.net.peerServer` to `{ host, port, path, secure }` for any PeerServer instance.
+Game traffic is peer-to-peer WebRTC: the host simulates, guests send inputs, and the host streams compact binary snapshots.
+Players on a team with one human keep auto-switch (control follows the ball); teams with several humans lock each person to their player.
+
+There is also a **Direct connect** fallback for two players that needs no signaling server at all: exchange the offer and answer codes by hand.
 
 ## Dev
 `node .claude/serve.js` serves the folder on http://127.0.0.1:8765 (only needed for the in-app preview; the file works from `file://` too).
