@@ -261,7 +261,7 @@
         <button class="mode" data-mode="1v1"><span class="mode-big">1v1</span><span class="mode-body"><b>Streetball</b><span>Half court, first to 21, loser's ball. Break ankles and get to the rim.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M4 26h20M88 26h-20"/><path d="M28 4v44" /><path d="M64 4v44"/><path d="M4 14h12a12 12 0 0 1 0 24H4"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/></svg></button>
         <button class="mode" data-mode="3v3"><span class="mode-big">3v3</span><span class="mode-body"><b>Half court</b><span>Three a side with a 14-second clock. Clear it past the arc after every stop.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M46 4v44"/><path d="M4 14h12a12 12 0 0 1 0 24H4"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><circle cx="46" cy="26" r="7"/></svg></button>
         <button class="mode sel" data-mode="5v5"><span class="mode-big">5v5</span><span class="mode-body"><b>Full court</b><span>Four quarters, 24-second clock, inbounds, fouls and free throws. The whole broadcast.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M46 4v44"/><circle cx="46" cy="26" r="7"/><path d="M4 8h22a18 18 0 0 1 0 36H4"/><path d="M88 8h-22a18 18 0 0 0 0 36h22"/><path d="M4 18h9v16H4M88 18h-9v16h9"/></svg></button>
-         <button class="mode compact" data-mode="practice"><span class="mode-big">Gym</span><span class="mode-body"><b>Practice</b><span>Walk the court with AI defenders. Pick defender count below.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><circle cx="72" cy="26" r="2.5"/></svg></button>
+         <button class="mode compact" data-mode="practice"><span class="mode-big">Gym</span><span class="mode-body"><b>Practice</b><span>Empty court, unlimited shots, no clock.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><circle cx="72" cy="26" r="2.5"/></svg></button>
       </div>
       <div class="matchup">
         <div class="side"><button class="arrow" data-cycle="0,-1">&#9664;</button><div class="jersey" id="jerseyA"><span class="lbl">Home</span><span class="city"></span><span class="name"></span></div><button class="arrow" data-cycle="0,1">&#9654;</button></div>
@@ -1903,7 +1903,7 @@ const Game = (() => {
   function toast(text, sub) { emit('toast', { text, sub }); }
 
   // ---------- setup ----------
-  let practiceDefenders = U.clamp(parseInt(U.loadLS('hw_practiceDef', 1), 10) || 1, 0, 3), practiceLooseSince = 0;
+  let practiceLooseSince = 0;
   function start(mode, teamA, teamB) {
     g.mode = mode; g.teamIdx = [teamA, teamB]; g.teams = [TEAMS[teamA], TEAMS[teamB]];
     g.halfCourt = mode !== '5v5'; g.playersPerTeam = mode === '5v5' ? 5 : mode === '3v3' ? 3 : 1;
@@ -1912,19 +1912,14 @@ const Game = (() => {
     g.hoopOf = g.halfCourt ? [1, 1] : [1, 0];
     PlayerSys.clear();
     g.rosters = [PlayerSys.genRoster(teamA), PlayerSys.genRoster(teamB)];
-    if (mode === 'practice') {
-      PlayerSys.create(g.rosters[0][0], 0, 0);
-      for (let i = 0; i < practiceDefenders; i++) { const slot = i % g.rosters[1].length; PlayerSys.create(g.rosters[1][slot], 1, slot); }
-    } else for (let t = 0; t < 2; t++) for (const si of pickSlots(g.rosters[t], g.playersPerTeam)) PlayerSys.create(g.rosters[t][si], t, si);
+    if (mode === 'practice') PlayerSys.create(g.rosters[0][0], 0, 0);   // empty gym: one player, no defense
+    else for (let t = 0; t < 2; t++) for (const si of pickSlots(g.rosters[t], g.playersPerTeam)) PlayerSys.create(g.rosters[t][si], t, si);
     RNG.seed((Date.now() & 0xffff) + teamA * 31 + teamB * 17);
     g.humanTeam = 0; g.locked = false; g.running = true; g.state = S.PLAY; g.stateT = 0;
     AI.reset(g);
     if (mode === 'practice') {
       const h = hoopFor(0), p = P[0];
       PlayerSys.teleport(p, h.x - h.s * 7, 0, Math.atan2(h.s, 0)); setHuman(p.id, true);
-      const defs = teamPlayers(1);
-      defs.forEach((d, i) => { const z = defs.length === 1 ? 0 : (i - (defs.length - 1) / 2) * 3.2; PlayerSys.teleport(d, h.x - h.s * 4.5, z, Math.atan2(-h.s, 0)); });
-      AI.assignMatchups(g);
       BallSys.setHolder(p); g.possession = 0; ball.state = BS.HELD; practiceLooseSince = 0;
     }
     else { const tp = teamPlayers(0); setHuman(tp.length ? tp[0].id : -1, true); if (g.halfCourt) setupPossession(0); else setupTip(); }
@@ -2113,8 +2108,7 @@ const Game = (() => {
     } else practiceLooseSince = 0;
     for (const p of P) if (!p.human && !p.remote) clearInputEdges(p.input);
   }
-  return { get practiceDefenders() { return practiceDefenders; }, setPracticeDefenders(n) { practiceDefenders = U.clamp(n | 0, 0, 3); U.saveLS('hw_practiceDef', practiceDefenders); },
-    S, g, settings, saveSettings, start, stop, step, hoopFor, otherTeam, teamPlayers, setHuman, setController, autoSwitch, canAutoSwitch, setSpectate, setupPossession, setupInbound, deadBall, emit, toast, applyInput, onScored, onPossession, gameOver, formationSpots, boxScore };
+  return { S, g, settings, saveSettings, start, stop, step, hoopFor, otherTeam, teamPlayers, setHuman, setController, autoSwitch, canAutoSwitch, setSpectate, setupPossession, setupInbound, deadBall, emit, toast, applyInput, onScored, onPossession, gameOver, formationSpots, boxScore };
 })();
 
 // ---------- Passing: chest/bounce passes with lead, catches, interceptions, inbounds ----------
@@ -2709,7 +2703,7 @@ const UI = (() => {
     el.wipe.classList.remove('go'); void el.wipe.offsetWidth; el.wipe.classList.add('go');
     setTimeout(cb, 360); setTimeout(() => el.wipe.classList.remove('go'), 900);
   }
-   const MODE_NOTES = { '1v1': 'Half court to 21', '3v3': 'Half court to 21, 14-second clock', '5v5': 'Four quarters', practice: 'No clock, walk the court. Pick defender count below.' };
+   const MODE_NOTES = { '1v1': 'Half court to 21', '3v3': 'Half court to 21, 14-second clock', '5v5': 'Four quarters', practice: 'No clock, no defense' };
   function selectMode(m) { mode = m; U.saveLS('hw_mode', m); document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('sel', b.dataset.mode === m)); renderMatchup(); }
   function cycleTeam(side, dir) { let v = (pick[side] + dir + TEAMS.length) % TEAMS.length; if (v === pick[1 - side]) v = (v + dir + TEAMS.length) % TEAMS.length; pick[side] = v; U.saveLS('hw_pick', pick); renderMatchup(); }
    function renderMatchup() {
@@ -2718,11 +2712,8 @@ const UI = (() => {
        jer.querySelector('.city').textContent = t.city; jer.querySelector('.name').textContent = t.name; jer.dataset.num = String(side === 0 ? 1 : 2);
      }
      const A = TEAMS[pick[0]], B = TEAMS[pick[1]];
-el.tipnote.textContent = mode === 'practice' ? 'Shootaround in the ' + A.name + ' gym. ' + MODE_NOTES.practice + ' ' + Game.practiceDefenders + ' defender' + (Game.practiceDefenders === 1 ? '' : 's') + '.' : A.name + ' vs ' + B.name + '. ' + MODE_NOTES[mode] + (mode === '5v5' ? ' of ' + U.fmtClock(Game.settings.quarterLen) + '.' : '.');
-     if (mode === 'practice') {
-       if (!el.defCountBtn) { el.defCountBtn = document.createElement('button'); el.defCountBtn.className = 'btn small ghost'; el.defCountBtn.textContent = 'Defenders: ' + Game.practiceDefenders; el.defCountBtn.style.marginLeft = '12px'; el.defCountBtn.onclick = () => { Game.setPracticeDefenders(Game.practiceDefenders % 3 + 1); el.defCountBtn.textContent = 'Defenders: ' + Game.practiceDefenders; renderMatchup(); AudioSys.play('ui'); }; }
-       if (!el.defCountBtn.parentNode) { const tipoff = el.menuHome.querySelector('.tipoff'); if (tipoff) tipoff.appendChild(el.defCountBtn); }
-     } else if (el.defCountBtn && el.defCountBtn.parentNode) { el.defCountBtn.parentNode.removeChild(el.defCountBtn); el.defCountBtn = null; }
+     el.tipnote.textContent = mode === 'practice' ? 'Shootaround in the ' + A.name + ' gym. ' + MODE_NOTES.practice + '.'
+       : A.name + ' vs ' + B.name + '. ' + MODE_NOTES[mode] + (mode === '5v5' ? ' of ' + U.fmtClock(Game.settings.quarterLen) + '.' : '.');
    }
   const BIND_GROUPS = [['Move', ['up', 'down', 'left', 'right', 'sprint']], ['Offense', ['shoot', 'pass', 'crossover', 'sidestep', 'stepback', 'spin', 'hesi', 'pump']], ['Defense and game', ['steal', 'switch', 'pause', 'debug']]];
   function renderBinds(cont, editable) {
