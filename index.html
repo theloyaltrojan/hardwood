@@ -476,6 +476,8 @@ const CONFIG = {
     zones: { three: { base: 0.27, rating: 0.43 }, mid: { base: 0.37, rating: 0.45 }, close: { base: 0.46, rating: 0.44 }, ft: { base: 0.52, rating: 0.45 } },
     blockWindow: 0.45, blockReach: 1.35, blockChanceBase: 0.62,
     meterRatingSpeed: 0.25, // meter duration shrinks by up to this fraction for low ratings
+    rangeBonus: 1.6,        // metres past the arc a 99 shooter is still comfortable from
+    rangeK: 2.2,            // how quickly the odds fall away past that
   },
   dunk: { dunkBase: 0.70, dunkRating: 0.23, dunkContestFloor: 0.45, range: 3.4, minSpeed: 2.4, layupRange: 3.7, layupMinSpeed: 0.9, standingRange: 1.5, standingRating: 78, flightTime: 0.82, slamAt: 0.42, layupTime: 0.72, layupReleaseAt: 0.30, contactRadius: 1.15, posterTime: 1.3, layupBase: 0.52, layupRating: 0.42 },
   ai: {
@@ -485,8 +487,10 @@ const CONFIG = {
       pro:     { reaction: 0.18, contest: 0.75, shotNoise: 0.085, stealRate: 0.7, help: 0.75, shootBoost: 1.0, moveRate: 0.7, releaseQ: 0.76 },
       allstar: { reaction: 0.11, contest: 0.9, shotNoise: 0.06, stealRate: 1.0, help: 1.0, shootBoost: 1.08, moveRate: 1.0, releaseQ: 0.86 },
     },
-    // shot-selection preference, not physics: pure points-per-shot makes every team live at the arc
-    zoneBias: { three: 0.80, mid: 1.16, close: 1.10 },
+    // Shot-selection preference, not physics. Threes used to be pushed down hard here because teams looked
+    // like they lived at the arc — that was the stale-hasBall bug firing phantom 25m "threes", not real shot
+    // selection, so the penalty is gone. All that is left is a mild pull toward the rim.
+    zoneBias: { three: 1.00, mid: 1.00, close: 1.05 },
     driveBias: 1.02,
     bar: { early: 1.06, mid: 0.94, late: 0.80, last: 0.56 },
   },
@@ -1097,7 +1101,19 @@ const PlayerSys = (() => {
   }
   function clear() { players.length = 0; }
   function setState(p, s, dur) { p.state = s; p.stateT = 0; p.stateDur = dur || 0; }
-  function teleport(p, x, z, facing) { p.x = p.px = x; p.z = p.pz = z; p.y = p.py = 0; p.vx = p.vz = p.vy = 0; if (facing != null) p.facing = p.pfacing = facing; p.airborne = false; p.histN = 0; }
+  // A teleport ends whatever the player was doing. Anything that moves a player bodily — a quarter break,
+  // an inbound, a possession reset — has also invalidated the shot, dunk or dribble move they were in the
+  // middle of, and the teams swap ends at half time, so a surviving action would aim at the wrong basket.
+  function teleport(p, x, z, facing) {
+    p.x = p.px = x; p.z = p.pz = z; p.y = p.py = 0; p.vx = p.vz = p.vy = 0;
+    if (facing != null) p.facing = p.pfacing = facing;
+    p.airborne = false; p.histN = 0;
+    if (p.state === ST.SHOOT || p.state === ST.LAYUP || p.state === ST.DUNK || p.state === ST.JUMP) {
+      p.shot.released = false; p.shot.meterT = 0; p.shot.fake = false; p.dunk.kind = ''; p.armsUp = false;
+      setState(p, ST.IDLE);
+    }
+    p.moveVel.t = 0; p.faceT = null; p.buf = ''; p.bufT = 0;
+  }
 
   // control factor: how much input steers velocity in each state
   // Steering authority during an animation. Moves hand control back over their last stretch so a move
@@ -1745,7 +1761,12 @@ const BallSys = (() => {
     shot: { shooter: -1, team: -1, value: 2, make: false, hoop: -1, quality: 0, contested: 0, kind: 'jumper', blockable: true, x: 0, z: 0, fouled: false },
     rest: 0, bounceCount: 0, spinDir: 1, dribbleFloor: false, events: [], airT: 0, shotLive: false, rimTick: false, scoredTeam: -1, blockedBy: -1, passer: -1,
   };
+  // Handing the ball over has to take it off whoever had it. Without this the old holder keeps
+  // `hasBall`, and a player who lost the ball on an inbound or a violation can still start a shot —
+  // which teleports the live ball across the court to them and fires it at their own basket from 25m.
   function setHolder(p) {
+    const prev = ball.holder >= 0 ? PlayerSys.players[ball.holder] : null;
+    if (prev && prev !== p) prev.hasBall = false;
     ball.holder = p ? p.id : -1; ball.state = p ? BS.HELD : BS.LOOSE;
     if (p) { p.hasBall = true; p.hold.set = false; ball.lastTouch = p.id; ball.lastTeam = p.team; ball.touchedRim = false; ball.touchedBoard = false; ball.scored = false; ball.vx = ball.vy = ball.vz = 0; ball.passTarget = -1; ball.airT = 0; }
   }
@@ -1887,10 +1908,20 @@ const Shooting = (() => {
   const SC = CONFIG.shooting, ST = PlayerSys.ST, ball = BallSys.ball, BS = BallSys.BS, G = -CONFIG.physics.gravity, P = PlayerSys.players;
   function zoneFor(p, h) { if (Court.isThree(p.x, p.z, h)) return 'three'; return U.dist(p.x, p.z, h.x, h.z) > 4.3 ? 'mid' : 'close'; }
   function ratingFor(p, zone) { const r = p.ratings; return zone === 'three' ? r.threePt : zone === 'mid' ? r.midRange : zone === 'ft' ? (r.midRange + r.threePt) / 2 : r.closeShot; }
+  // Past the arc a shot gets harder the further out it is, on a curve that starts at the shooter's own
+  // comfortable range. Without this a half-court heave carried the same odds as a corner three, which also
+  // made it the highest-value shot on the floor for the AI — and the AI took it.
+  function rangeFactor(dist, zone, rating) {
+    if (zone !== 'three') return 1;
+    const over = dist - (Court.C.threeR + SC.rangeBonus * (rating / 99));
+    if (over <= 0) return 1;
+    const k = over / SC.rangeK;
+    return 1 / (1 + k * k);
+  }
   function meterDuration(p, zone) { let d = SC.meterDur * (1 - SC.meterRatingSpeed * (1 - ratingFor(p, zone) / 99)); if (p.stamina < CONFIG.player.lowStamina) d *= 0.85; return d; }
   function isShooting(p) { return p.state === ST.SHOOT; }
   function start(p, g) {
-    if (!p.hasBall || p.airborne) return false;
+    if (!p.hasBall || p.airborne || ball.holder !== p.id) return false;
     const h = Game.hoopFor(p.team); const sh = p.shot;
     sh.moving = p.speed; sh.setShot = g.time < p.setShotT; sh.meterT = 0; sh.released = false; sh.green = false; sh.quality = 0; sh.timing = 0; sh.relT = 0; sh.hideMeter = false; sh.fake = false;
     sh.ft = g.state === Game.S.FREETHROW; sh.zone = sh.ft ? 'ft' : zoneFor(p, h); sh.dur = meterDuration(p, sh.zone);
@@ -1938,6 +1969,7 @@ const Shooting = (() => {
      let pct = base * (0.3 + 0.7 * q); let contested = 0;
      if (!sh.ft) {
        const c = contest(p, h, zone); pct *= c.factor; contested = c.contested;
+       pct *= rangeFactor(U.dist(p.x, p.z, h.x, h.z), zone, ratingFor(p, zone));
        if (sh.moving > SC.movingSpeed && !sh.setShot) pct *= SC.movingPenalty;
        if (sh.setShot) pct *= SC.stepbackBonus;
        if (p.stamina < CONFIG.player.lowStamina) pct *= SC.fatiguePenalty;
@@ -1994,7 +2026,7 @@ const Shooting = (() => {
     }
     Game.emit('sound', { name: 'catchBall' });
   }
-  return { start, update, release, isShooting, evaluate, solveLaunch, zoneFor, ratingFor, contest, meterDuration };
+  return { start, update, release, isShooting, evaluate, solveLaunch, zoneFor, ratingFor, contest, meterDuration, rangeFactor };
 })();
 // ==== END SHOOTING ====
 
@@ -2180,7 +2212,8 @@ const AI = (() => {
     const zone = zoneAt(x, z, h), Z = SC.zones[zone];
     const rating = zone === 'three' ? p.ratings.threePt : zone === 'mid' ? p.ratings.midRange : p.ratings.closeShot;
     const q = (diff.releaseQ || 0.76) + 0.14 * (rating / 99);           // the meter timing this difficulty lands
-    let pct = (Z.base + Z.rating * (rating / 99)) * (0.3 + 0.7 * U.clamp(q, 0, 1)) * contestFactor(defDist);
+    let pct = (Z.base + Z.rating * (rating / 99)) * (0.3 + 0.7 * U.clamp(q, 0, 1)) * contestFactor(defDist)
+      * Shooting.rangeFactor(U.dist(x, z, h.x, h.z), zone, rating);
     if (p.stamina < CONFIG.player.lowStamina) pct *= SC.fatiguePenalty;
     return U.clamp(pct, 0.02, 0.97) * (zone === 'three' ? 3 : 2) * AC.zoneBias[zone];
   }
