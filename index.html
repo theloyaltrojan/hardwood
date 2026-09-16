@@ -314,7 +314,7 @@
   <div class="inner">
     <div class="title">How to play</div>
     <div class="howto" id="bindList3"></div>
-    <div class="note">Hold shoot to start the meter and let go in the green. Sprint at the rim inside the paint and shoot to dunk. Time a crossover while the defender is mirroring you and they hit the floor.</div>
+    <div class="note">Hold <b>shoot</b> to start the meter and let go in the green. Sprint at the rim and shoot to dunk. The <b>dribble move</b> key does a different move depending on the direction you push: nothing for a crossover, toward the rim to spin, away to step back, sideways to sidestep. Time one while the defender is mirroring you and they hit the floor.</div>
     <div class="row"><button class="btn primary" id="btnFirstOk"><span class="t">Let's hoop</span></button></div>
   </div>
 </div>
@@ -371,7 +371,7 @@ const CONFIG = {
   player: {
     radius: 0.42, walkSpeed: 3.7, sprintSpeed: 6.6, accel: 13, decel: 24, turnDecel: 30, turnRate: 14,
     dribbleSpeedMul: 0.93, jumpVel: 4.4, staminaMax: 100, sprintDrain: 11, regen: 9, regenMoving: 5,
-    lowStamina: 25, windedRecover: 18, fatigueSpeed: 0.84, catchRadius: 0.82, pickupRadius: 0.74,
+    lowStamina: 25, windedRecover: 18, fatigueSpeed: 0.84, catchRadius: 0.82, pickupRadius: 0.74, inputBuffer: 0.26, moveRecover: 0.62,
     reachHeightMul: 1.28, historyLen: 60,
   },
   moves: {
@@ -464,19 +464,26 @@ const RNG = {
 function makeInput() {
   return { mx: 0, mz: 0, sprint: false, shoot: false, shootPressed: false, shootReleased: false,
     sidestep: false, crossover: false, stepback: false, spin: false, hesi: false, pump: false,
-    pass: false, steal: false, switch: false };
+    move: false, fake: false, pass: false, steal: false, switch: false };
 }
-function clearInputEdges(i) { i.shootPressed = i.shootReleased = i.sidestep = i.crossover = i.stepback = i.spin = i.hesi = i.pump = i.pass = i.steal = i.switch = false; }
+function clearInputEdges(i) { i.shootPressed = i.shootReleased = i.sidestep = i.crossover = i.stepback = i.spin = i.hesi = i.pump = i.move = i.fake = i.pass = i.steal = i.switch = false; }
 function clearInput(i) { i.mx = i.mz = 0; i.sprint = i.shoot = false; clearInputEdges(i); }
 
 const Input = (() => {
   const DEFAULT_BINDS = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft', shoot: 'Space',
+    move: 'KeyQ', fake: 'KeyR',
     sidestep: 'KeyX', crossover: 'KeyC', stepback: 'KeyV', spin: 'KeyZ', hesi: 'KeyR', pump: 'KeyQ',
     pass: 'KeyE', steal: 'KeyF', switch: 'Tab', pause: 'Escape', debug: 'Backquote' };
   const LABELS = { up: 'Move up', down: 'Move down', left: 'Move left', right: 'Move right', sprint: 'Sprint',
-    shoot: 'Shoot / jump (hold + release)', sidestep: 'Sidestep', crossover: 'Crossover', stepback: 'Stepback',
-    spin: 'Spin move', hesi: 'Hesitation / hard stop', pump: 'Pump fake', pass: 'Pass', steal: 'Steal (defense)',
+    shoot: 'Shoot / dunk (hold, release)', move: 'Dribble move (push a direction)', fake: 'Fake', pass: 'Pass',
+    sidestep: 'Sidestep', crossover: 'Crossover', stepback: 'Stepback',
+    spin: 'Spin move', hesi: 'Hesitation / hard stop', pump: 'Pump fake', steal: 'Steal (defense)',
     switch: 'Switch player (defense)', pause: 'Pause', debug: 'Debug overlay' };
+  // which bindings each scheme shows and uses
+  const SCHEMES = {
+    simple: ['up', 'down', 'left', 'right', 'sprint', 'shoot', 'pass', 'move', 'fake', 'switch', 'pause'],
+    advanced: ['up', 'down', 'left', 'right', 'sprint', 'shoot', 'pass', 'steal', 'sidestep', 'crossover', 'stepback', 'spin', 'hesi', 'pump', 'switch', 'pause'],
+  };
   const PREVENT = new Set(['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backquote']);
   const binds = Object.assign({}, DEFAULT_BINDS, U.loadLS('hw_binds', {}));
   const down = new Set(), pressed = new Set(), released = new Set();
@@ -505,6 +512,7 @@ const Input = (() => {
     inp.shoot = isDown('shoot'); inp.shootPressed = wasPressed('shoot'); inp.shootReleased = wasReleased('shoot');
     inp.sidestep = wasPressed('sidestep'); inp.crossover = wasPressed('crossover'); inp.stepback = wasPressed('stepback');
     inp.spin = wasPressed('spin'); inp.hesi = wasPressed('hesi'); inp.pump = wasPressed('pump');
+    inp.move = wasPressed('move'); inp.fake = wasPressed('fake');
     inp.pass = wasPressed('pass'); inp.steal = wasPressed('steal'); inp.switch = wasPressed('switch');
   }
   function endTick() { pressed.clear(); released.clear(); }
@@ -517,7 +525,7 @@ const Input = (() => {
   }
   function startRemap(action, cb) { remapping = action; remapCb = cb; }
   function reset() { Object.assign(binds, DEFAULT_BINDS); U.saveLS('hw_binds', binds); }
-  return { binds, LABELS, DEFAULT_BINDS, sample, endTick, isDown, wasPressed, wasReleased, keyLabel, startRemap, reset,
+  return { binds, LABELS, DEFAULT_BINDS, SCHEMES, sample, endTick, isDown, wasPressed, wasReleased, keyLabel, startRemap, reset,
     get remapping() { return remapping; }, onAny(f) { listeners.any.push(f); }, get down() { return down; } };
 })();
 // ==== END INPUT ====
@@ -957,7 +965,7 @@ const PlayerSys = (() => {
       dunk: { kind: '', t: 0, dur: 0, slamAt: 0, released: false, tx: 0, tz: 0, contact: false },
       matchup: -1, spot: -1, ai: { t: 0, phase: Math.random() * 100, intent: 0, target: { x: 0, z: 0 }, wantShoot: false, releaseAt: 0.7, cutT: 0, screenT: 0, role: 'spot', holdT: 0, lastDecision: 0, aggression: 0.5, driveT: 0, helping: false, dribbleT: 0, hesiT: 0 },
       hist: new Float32Array(PC.historyLen * 2), histI: 0, histN: 0,
-      armsUp: false, jumpT: 0, setShotT: 0, lastPassT: -9, fouls: 0, catchT: -9, contactT: -9,
+      armsUp: false, jumpT: 0, setShotT: 0, lastPassT: -9, fouls: 0, catchT: -9, contactT: -9, buf: '', bufT: 0, bufPress: 0, bufRelease: -1,
       stats: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, fga: 0, fgm: 0, tpa: 0, tpm: 0, fta: 0, ftm: 0, to: 0, pf: 0 },
     };
     players.push(p); return p;
@@ -967,13 +975,22 @@ const PlayerSys = (() => {
   function teleport(p, x, z, facing) { p.x = p.px = x; p.z = p.pz = z; p.y = p.py = 0; p.vx = p.vz = p.vy = 0; if (facing != null) p.facing = p.pfacing = facing; p.airborne = false; p.histN = 0; }
 
   // control factor: how much input steers velocity in each state
+  // Steering authority during an animation. Moves hand control back over their last stretch so a move
+  // never feels like a window where the stick is unplugged.
   function controlFactor(p) {
+    let base;
     switch (p.state) {
       case ST.IDLE: case ST.MOVE: return 1;
-      case ST.LAND: return 0.5; case ST.PUMP: return 0.35; case ST.PASS: return 0.6; case ST.CROSSOVER: return 0.55;
-      case ST.SIDESTEP: case ST.STEPBACK: case ST.SPIN: return 0.15;
+      case ST.LAND: base = 0.5; break;
+      case ST.PUMP: base = 0.35; break;
+      case ST.PASS: base = 0.6; break;
+      case ST.CROSSOVER: base = 0.55; break;
+      case ST.SIDESTEP: case ST.STEPBACK: case ST.SPIN: base = 0.15; break;
+      case ST.HESI: base = 0.3; break;
       default: return 0;
     }
+    const k = p.stateDur > 0 ? U.clamp((p.stateT / p.stateDur - PC.moveRecover) / (1 - PC.moveRecover), 0, 1) : 0;
+    return base + (1 - base) * k;
   }
   const speedMul = (p) => 0.8 + 0.3 * p.ratings.speed / 99;
   const accelMul = (p) => 0.8 + 0.3 * p.ratings.accel / 99;
@@ -1465,6 +1482,10 @@ const Shooting = (() => {
     const h = Game.hoopFor(p.team); const sh = p.shot;
     sh.moving = p.speed; sh.setShot = g.time < p.setShotT; sh.meterT = 0; sh.released = false; sh.green = false; sh.quality = 0; sh.timing = 0; sh.relT = 0; sh.hideMeter = false; sh.fake = false;
     sh.ft = g.state === Game.S.FREETHROW; sh.zone = sh.ft ? 'ft' : zoneFor(p, h); sh.dur = meterDuration(p, sh.zone);
+    // Assisted timing: the player taps and the release is set from the shooter's rating. It is an aid, so it
+    // never earns the perfect-release auto-make.
+    sh.assisted = p.human && Game.settings.shotTiming === 'auto';
+    if (sh.assisted) { const r = ratingFor(p, sh.zone); sh.autoAt = U.clamp(SC.perfectPoint + RNG.gauss() * 0.055 * (1.25 - 0.55 * r / 99), 0.34, 0.98); }
     p.facing = Math.atan2(h.x - p.x, h.z - p.z);
     p.vx *= 0.3; p.vz *= 0.3;
     if (!sh.ft) PlayerSys.jump(p, 3.1 + 0.7 * p.ratings.vertical / 99);
@@ -1474,6 +1495,7 @@ const Shooting = (() => {
   function update(p, dt, g) {
     const sh = p.shot; if (sh.released) return;
     sh.meterT += dt / sh.dur;
+    if (sh.assisted) { if (sh.meterT >= sh.autoAt) release(p, g); return; }
     if (p.input.shootReleased || sh.meterT >= 1) release(p, g);
   }
   // Contest: nearest-threat model. Distance, being between shooter and rim, hands up / airborne, defender rating.
@@ -1511,7 +1533,7 @@ const Shooting = (() => {
      }
      pct = U.clamp(pct, 0.02, 0.97);
      _r.pct = pct; _r.q = q; _r.green = green; _r.contested = contested;
-     _r.make = (green && SC.greenAuto && !!p.ctl) ? true : RNG.chance(pct);   // human-controlled only
+     _r.make = (green && SC.greenAuto && !!p.ctl && !sh.assisted) ? true : RNG.chance(pct);   // earned, human-controlled greens only
      _r.value = sh.ft ? 1 : Court.isThree(p.x, p.z, h) ? 3 : 2;
      return _r;
    }
@@ -2006,7 +2028,7 @@ const Game = (() => {
     nextPossession: 0, deadDelay: 1.5, deadReason: '', inbounder: -1, inboundSpots: null, winner: -1, aiDiff: 'pro',
     ftShooter: -1, ftLeft: 0, ftTotal: 0, ftAndOne: false, lastEvent: '', lastEventT: -9, teamFouls: [0, 0], possArrow: 0, inbound: null, pendingFoul: null, lastPass: null, ftLive: false, ftResolved: false, locked: false, spectateTeam: 0,
   };
-  const settings = Object.assign({ difficulty: 'pro', quarterLen: 120, shadows: false, camera: 'broadcast', volume: 0.8, sfx: true, greenAuto: true, meterHelp: true, crowd: true, makeItTakeIt: false }, U.loadLS('hw_settings', {}));
+  const settings = Object.assign({ difficulty: 'pro', quarterLen: 120, shadows: false, camera: 'broadcast', volume: 0.8, sfx: true, greenAuto: true, meterHelp: true, crowd: true, makeItTakeIt: false, controls: 'simple', shotTiming: 'meter' }, U.loadLS('hw_settings', {}));
   function saveSettings() { U.saveLS('hw_settings', settings); }
   const hoopFor = (team) => Court.hoops[g.hoopOf[team]];
   const otherTeam = (t) => 1 - t;
@@ -2122,19 +2144,71 @@ const Game = (() => {
   }
 
   // ---------- per-tick input handling (human & AI share this) ----------
+  // ---------- action layer ----------
+  // A move hands control back over its last stretch, so an action asked for slightly early is still valid;
+  // anything that cannot start yet is held for a fraction of a second rather than dropped on the floor.
+  function lateInMove(p) { return Moves.MOVE_STATES.has(p.state) && p.stateDur > 0 && p.stateT >= p.stateDur * 0.58; }
+  function canAct(p) { return p.state === ST.IDLE || p.state === ST.MOVE || p.state === ST.LAND || lateInMove(p); }
+  // One button, and the direction you are pushing picks the move: nothing = crossover, at the rim = spin,
+  // away = stepback, sideways = sidestep.
+  function contextMove(p, g) {
+    const inp = p.input, h = hoopFor(p.team);
+    const mag = Math.sqrt(inp.mx * inp.mx + inp.mz * inp.mz);
+    if (mag < 0.3) return Moves.start(p, 'crossover', g);
+    let tx = h.x - p.x, tz = h.z - p.z; const l = Math.sqrt(tx * tx + tz * tz) || 1; tx /= l; tz /= l;
+    const fwd = (inp.mx * tx + inp.mz * tz) / mag;
+    if (fwd > 0.5) return Moves.start(p, 'spin', g);
+    if (fwd < -0.4) return Moves.start(p, 'stepback', g);
+    return Moves.start(p, 'sidestep', g);
+  }
+  // `held` is how long the shoot key was down while the action was waiting, so a buffered shot keeps the
+  // timing the player actually gave it instead of restarting the meter from zero.
+  function fireShot(p, g, held) {
+    if (Dunks.tryStart(p, g)) return true;
+    if (!Shooting.start(p, g)) return false;
+    if (held > 0) { p.shot.meterT = U.clamp(held / Math.max(0.01, p.shot.dur), 0, 1); Shooting.release(p, g); }
+    return true;
+  }
+  function doAction(p, act, g, held) {
+    switch (act) {
+      case 'shoot': return canAct(p) && !p.airborne && fireShot(p, g, held);
+      case 'pass': return Passing.tryPass(p, g);
+      case 'move': return canAct(p) && contextMove(p, g);
+      case 'fake': return canAct(p) && Moves.start(p, p.speed > 1.7 ? 'hesi' : 'pump', g);
+      default: return Moves.start(p, act, g);
+    }
+  }
+  function request(p, act, g) { if (!doAction(p, act, g, 0)) { p.buf = act; p.bufT = PC.inputBuffer; p.bufPress = g.time; p.bufRelease = -1; } }
+
   function applyInput(p, dt) {
     const inp = p.input;
     if (g.state === S.INBOUND) { if (inp.pass && g.inbound && p.id === g.inbound.inbounder) Passing.inboundPass(p, g); return; }
     if (g.state === S.FREETHROW) { if (p.id === g.ftShooter && p.hasBall) { if (inp.shootPressed && p.state === ST.IDLE) Shooting.start(p, g); if (p.state === ST.SHOOT) Shooting.update(p, dt, g); } return; }
+    const simple = settings.controls !== 'advanced';
+    // a held request gets first look each tick
+    if (p.bufT > 0) {
+      p.bufT -= dt;
+      if (p.buf === 'shoot' && inp.shootReleased && p.bufRelease < 0) p.bufRelease = g.time;
+      const held = (p.buf === 'shoot' && p.bufRelease > 0) ? p.bufRelease - p.bufPress : 0;
+      if (doAction(p, p.buf, g, held)) { p.buf = ''; p.bufT = 0; }
+      else if (p.bufT <= 0) p.buf = '';
+    }
     if (p.hasBall) {
-      if (inp.shootPressed && (p.state === ST.IDLE || p.state === ST.MOVE || p.state === ST.LAND)) { if (!Dunks.tryStart(p, g)) Shooting.start(p, g); }
+      if (inp.shootPressed) request(p, 'shoot', g);
       if (p.state === ST.SHOOT) Shooting.update(p, dt, g);
-      if (inp.pass) Passing.tryPass(p, g);
-      if (inp.sidestep) Moves.start(p, 'sidestep', g); else if (inp.crossover) Moves.start(p, 'crossover', g); else if (inp.stepback) Moves.start(p, 'stepback', g);
-      else if (inp.spin) Moves.start(p, 'spin', g); else if (inp.hesi) Moves.start(p, 'hesi', g); else if (inp.pump) Moves.start(p, 'pump', g);
+      if (inp.pass) request(p, 'pass', g);
+      if (simple) {
+        if (inp.move) request(p, 'move', g);
+        else if (inp.fake) request(p, 'fake', g);
+      } else {
+        if (inp.sidestep) request(p, 'sidestep', g); else if (inp.crossover) request(p, 'crossover', g);
+        else if (inp.stepback) request(p, 'stepback', g); else if (inp.spin) request(p, 'spin', g);
+        else if (inp.hesi) request(p, 'hesi', g); else if (inp.pump) request(p, 'pump', g);
+      }
     } else {
       if (inp.shootPressed && !p.airborne && (p.state === ST.IDLE || p.state === ST.MOVE)) { PlayerSys.jump(p, PC.jumpVel * (0.85 + 0.35 * p.ratings.vertical / 99)); PlayerSys.setState(p, ST.JUMP); p.armsUp = true; }
-      if (inp.steal && p.team !== g.possession) Defense.trySteal(p, g);
+      // on defense the pass button is the steal button, so there is one fewer key to learn
+      if ((inp.steal || (simple && inp.pass)) && p.team !== g.possession) Defense.trySteal(p, g);
       if (inp.switch && (p.human || p.remote)) switchPlayer(p);
     }
   }
@@ -2241,9 +2315,20 @@ const Passing = (() => {
   function tryPass(p, g) {
     if (!canPass(p) || p.cd.pass > 0) return false;
     const mates = Game.teamPlayers(p.team); if (mates.length < 2) return false;
-    const inp = p.input; const held = Math.sqrt(inp.mx * inp.mx + inp.mz * inp.mz) > 0.2;
+    const inp = p.input; const mag = Math.sqrt(inp.mx * inp.mx + inp.mz * inp.mz);
+    const held = mag > 0.2;
     let best = null, bs = -1e9;
-    for (const m of mates) { if (m === p) continue; const dx = m.x - p.x, dz = m.z - p.z; const d = Math.sqrt(dx * dx + dz * dz) || 1; let sc = -d * 0.12 + nearestOppDist(m) * 0.15; if (held) sc += ((dx / d) * inp.mx + (dz / d) * inp.mz) * 3; if (sc > bs) { bs = sc; best = m; } }
+    for (const m of mates) {
+      if (m === p) continue;
+      const dx = m.x - p.x, dz = m.z - p.z; const d = Math.sqrt(dx * dx + dz * dz) || 1;
+      let sc = -d * 0.10 + nearestOppDist(m) * 0.18;
+      if (held) {
+        const aim = ((dx / d) * inp.mx + (dz / d) * inp.mz) / mag;   // -1..1, how well they line up with the stick
+        if (aim < -0.1) continue;                                     // never fling it behind you
+        sc += aim * 4.5;
+      }
+      if (sc > bs) { bs = sc; best = m; }
+    }
     if (!best) return false;
     throwPass(p, best, g); return true;
   }
@@ -2832,15 +2917,33 @@ const UI = (() => {
      el.tipnote.textContent = mode === 'practice' ? 'Shootaround in the ' + A.name + ' gym. ' + MODE_NOTES.practice + '.'
        : A.name + ' vs ' + B.name + '. ' + MODE_NOTES[mode] + (mode === '5v5' ? ' of ' + U.fmtClock(Game.settings.quarterLen) + '.' : '.');
    }
-  const BIND_GROUPS = [['Move', ['up', 'down', 'left', 'right', 'sprint']], ['Offense', ['shoot', 'pass', 'crossover', 'sidestep', 'stepback', 'spin', 'hesi', 'pump']], ['Defense and game', ['steal', 'switch', 'pause', 'debug']]];
+  // Rows are [title, actions, useAltLabels]. The same binding can appear twice on purpose: in the simple
+  // scheme shoot also contests and pass also steals, and showing both is clearer than a footnote.
+  const ALT_LABELS = { shoot: 'Jump / contest', pass: 'Steal' };
+  function bindGroups() {
+    if (Game.settings.controls === 'advanced') return [
+      ['Move', ['up', 'down', 'left', 'right', 'sprint'], false],
+      ['With the ball', ['shoot', 'pass', 'crossover', 'sidestep', 'stepback', 'spin', 'hesi', 'pump'], false],
+      ['On defense', ['shoot', 'steal', 'switch'], true],
+      ['Game', ['pause'], false],
+    ];
+    return [
+      ['Move', ['up', 'down', 'left', 'right', 'sprint'], false],
+      ['With the ball', ['shoot', 'move', 'fake', 'pass'], false],
+      ['On defense', ['shoot', 'pass', 'switch'], true],
+      ['Game', ['pause'], false],
+    ];
+  }
   function renderBinds(cont, editable) {
     cont.innerHTML = '';
-    for (const [title, actions] of BIND_GROUPS) {
-      const col = document.createElement('div'); const h = document.createElement('h3'); h.textContent = title; col.appendChild(h);
-      if (editable) { cont.appendChild(h); h.className = 'sec'; h.style.gridColumn = '1 / -1'; }
+    for (const [title, actions, alt] of bindGroups()) {
+      const col = document.createElement('div');
+      const h = document.createElement('h3'); h.textContent = title;
+      if (editable) { h.className = 'sec'; h.style.gridColumn = '1 / -1'; cont.appendChild(h); } else col.appendChild(h);
       for (const a of actions) {
         const row = document.createElement('div'); row.className = 'kv';
-        const k = document.createElement('span'); k.className = 'k'; k.textContent = Input.LABELS[a];
+        const k = document.createElement('span'); k.className = 'k';
+        k.textContent = (alt && ALT_LABELS[a]) || Input.LABELS[a];
         const key = document.createElement('span'); key.className = 'key'; key.textContent = Input.keyLabel(Input.binds[a]);
         if (editable) key.onclick = () => { key.textContent = 'press'; key.classList.add('wait'); Input.startRemap(a, () => { renderBinds(cont, true); updateHint(); }); };
         row.appendChild(k); row.appendChild(key); (editable ? cont : col).appendChild(row);
@@ -2849,6 +2952,8 @@ const UI = (() => {
     }
   }
   const SETTINGS_DEF = [
+    { key: 'controls', label: 'Controls', choices: [['simple', 'Simple'], ['advanced', 'Advanced']] },
+    { key: 'shotTiming', label: 'Shot timing', choices: [['meter', 'Meter'], ['auto', 'Assisted']] },
     { key: 'difficulty', label: 'AI difficulty', choices: [['rookie', 'Rookie'], ['pro', 'Pro'], ['allstar', 'All-Star']] },
     { key: 'quarterLen', label: 'Quarter length (5v5)', choices: [[60, '1:00'], [120, '2:00'], [180, '3:00'], [300, '5:00']] },
     { key: 'camera', label: 'Camera', choices: [['broadcast', 'Broadcast'], ['behind', 'Behind offense']] },
@@ -2864,14 +2969,19 @@ const UI = (() => {
       const row = document.createElement('div'); row.className = 'opt';
       const k = document.createElement('span'); k.textContent = def.label; row.appendChild(k);
       const ch = document.createElement('div'); ch.className = 'choices';
-      for (const [v, label] of def.choices) { const b = document.createElement('button'); b.className = 'btn small' + (s[def.key] === v ? ' sel' : ''); b.textContent = label; b.onclick = () => { s[def.key] = v; Game.saveSettings(); if (hooks.applySettings) hooks.applySettings(def.key); renderSettings(cont); AudioSys.play('ui'); }; ch.appendChild(b); }
+      for (const [v, label] of def.choices) { const b = document.createElement('button'); b.className = 'btn small' + (s[def.key] === v ? ' sel' : ''); b.textContent = label; b.onclick = () => { s[def.key] = v; Game.saveSettings(); if (hooks.applySettings) hooks.applySettings(def.key); renderSettings(cont); if (def.key === 'controls') updateHint(); AudioSys.play('ui'); }; ch.appendChild(b); }
       row.appendChild(ch); cont.appendChild(row);
     }
   }
   function updateHint() {
     const b = Input.binds, L = Input.keyLabel; const k = (a) => '<kbd>' + L(b[a]) + '</kbd>';
-    el.hint.innerHTML = k('shoot') + 'shoot ' + k('sprint') + 'sprint ' + k('pass') + 'pass ' + k('steal') + 'steal ' + k('switch') + 'switch<br>' +
-      k('sidestep') + 'sidestep ' + k('crossover') + 'cross ' + k('stepback') + 'stepback ' + k('spin') + 'spin ' + k('hesi') + 'hesi ' + k('pump') + 'pump ' + k('pause') + 'pause';
+    if (Game.settings.controls === 'advanced') {
+      el.hint.innerHTML = k('shoot') + 'shoot ' + k('sprint') + 'sprint ' + k('pass') + 'pass ' + k('steal') + 'steal ' + k('switch') + 'switch<br>' +
+        k('sidestep') + 'sidestep ' + k('crossover') + 'cross ' + k('stepback') + 'stepback ' + k('spin') + 'spin ' + k('hesi') + 'hesi ' + k('pump') + 'pump ' + k('pause') + 'pause';
+      return;
+    }
+    el.hint.innerHTML = k('shoot') + 'shoot / jump ' + k('sprint') + 'sprint ' + k('pass') + 'pass / steal<br>' +
+      k('move') + 'move (push a direction) ' + k('fake') + 'fake ' + k('switch') + 'switch ' + k('pause') + 'pause';
   }
   function setText(id, v) { if (last[id] !== v) { last[id] = v; if (id === 'fouls') el[id].innerHTML = v; else el[id].textContent = v; } }
   function toast(text, sub) { el.toast.innerHTML = '<span class="rib"><span>' + esc(text) + '</span></span>' + (sub ? '<small>' + esc(sub) + '</small>' : ''); el.toast.classList.remove('show'); void el.toast.offsetWidth; el.toast.classList.add('show'); }
