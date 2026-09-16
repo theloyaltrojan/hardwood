@@ -314,7 +314,7 @@
   <div class="inner">
     <div class="title">How to play</div>
     <div class="howto" id="bindList3"></div>
-    <div class="note">Hold <b>shoot</b> to start the meter and let go in the green. Sprint at the rim and shoot to dunk. The <b>dribble move</b> key does a different move depending on the direction you push: nothing for a crossover, toward the rim to spin, away to step back, sideways to sidestep. Time one while the defender is mirroring you and they hit the floor.</div>
+    <div class="note">Hold <b>shoot</b> to start the meter and let go in the green. Sprint at the rim and shoot to dunk. The <b>arrow keys</b> are your dribble moves, and they work while you are still running with WASD. Flick toward the rim to spin past, away from it to fade back, or across to cross over standing still and burst sideways on the move. Time one while the defender is mirroring you and they hit the floor.</div>
     <div class="row"><button class="btn primary" id="btnFirstOk"><span class="t">Let's hoop</span></button></div>
   </div>
 </div>
@@ -462,26 +462,29 @@ const RNG = {
 // ==== BEGIN INPUT ====
 // Input: keyboard -> per-tick Input records. Keybinds are remappable and persisted.
 function makeInput() {
-  return { mx: 0, mz: 0, sprint: false, shoot: false, shootPressed: false, shootReleased: false,
+  return { mx: 0, mz: 0, jx: 0, jz: 0, juke: false, sprint: false, shoot: false, shootPressed: false, shootReleased: false,
     sidestep: false, crossover: false, stepback: false, spin: false, hesi: false, pump: false,
     move: false, fake: false, pass: false, steal: false, switch: false };
 }
-function clearInputEdges(i) { i.shootPressed = i.shootReleased = i.sidestep = i.crossover = i.stepback = i.spin = i.hesi = i.pump = i.move = i.fake = i.pass = i.steal = i.switch = false; }
-function clearInput(i) { i.mx = i.mz = 0; i.sprint = i.shoot = false; clearInputEdges(i); }
+function clearInputEdges(i) { i.shootPressed = i.shootReleased = i.sidestep = i.crossover = i.stepback = i.spin = i.hesi = i.pump = i.move = i.juke = i.fake = i.pass = i.steal = i.switch = false; }
+function clearInput(i) { i.mx = i.mz = i.jx = i.jz = 0; i.sprint = i.shoot = false; clearInputEdges(i); }
 
 const Input = (() => {
   const DEFAULT_BINDS = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft', shoot: 'Space',
-    move: 'KeyQ', fake: 'KeyR',
+    jukeUp: 'ArrowUp', jukeDown: 'ArrowDown', jukeLeft: 'ArrowLeft', jukeRight: 'ArrowRight', fake: 'KeyR',
+    move: 'KeyQ',
     sidestep: 'KeyX', crossover: 'KeyC', stepback: 'KeyV', spin: 'KeyZ', hesi: 'KeyR', pump: 'KeyQ',
     pass: 'KeyE', steal: 'KeyF', switch: 'Tab', pause: 'Escape', debug: 'Backquote' };
   const LABELS = { up: 'Move up', down: 'Move down', left: 'Move left', right: 'Move right', sprint: 'Sprint',
-    shoot: 'Shoot / dunk (hold, release)', move: 'Dribble move (push a direction)', fake: 'Fake', pass: 'Pass',
+    shoot: 'Shoot / dunk (hold, release)', fake: 'Fake', pass: 'Pass',
+    jukeUp: 'Move: up the screen', jukeDown: 'Move: down the screen', jukeLeft: 'Move: left', jukeRight: 'Move: right',
+    move: 'Dribble move (push a direction)',
     sidestep: 'Sidestep', crossover: 'Crossover', stepback: 'Stepback',
     spin: 'Spin move', hesi: 'Hesitation / hard stop', pump: 'Pump fake', steal: 'Steal (defense)',
     switch: 'Switch player (defense)', pause: 'Pause', debug: 'Debug overlay' };
   // which bindings each scheme shows and uses
   const SCHEMES = {
-    simple: ['up', 'down', 'left', 'right', 'sprint', 'shoot', 'pass', 'move', 'fake', 'switch', 'pause'],
+    simple: ['up', 'down', 'left', 'right', 'sprint', 'shoot', 'pass', 'jukeUp', 'jukeDown', 'jukeLeft', 'jukeRight', 'fake', 'switch', 'pause'],
     advanced: ['up', 'down', 'left', 'right', 'sprint', 'shoot', 'pass', 'steal', 'sidestep', 'crossover', 'stepback', 'spin', 'hesi', 'pump', 'switch', 'pause'],
   };
   const PREVENT = new Set(['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backquote']);
@@ -508,6 +511,12 @@ const Input = (() => {
     const h = (isDown('right') ? 1 : 0) - (isDown('left') ? 1 : 0);
     const v = (isDown('up') ? 1 : 0) - (isDown('down') ? 1 : 0);
     inp.mx = basis.rx * h + basis.fx * v; inp.mz = basis.rz * h + basis.fz * v;
+    // arrows are a second stick: they pick a dribble move without touching where you are running
+    const arrow = (a) => (isDown(a) || wasPressed(a)) ? 1 : 0;
+    const jh = arrow('jukeRight') - arrow('jukeLeft');
+    const jv = arrow('jukeUp') - arrow('jukeDown');
+    inp.jx = basis.rx * jh + basis.fx * jv; inp.jz = basis.rz * jh + basis.fz * jv;
+    inp.juke = wasPressed('jukeUp') || wasPressed('jukeDown') || wasPressed('jukeLeft') || wasPressed('jukeRight');
     inp.sprint = isDown('sprint');
     inp.shoot = isDown('shoot'); inp.shootPressed = wasPressed('shoot'); inp.shootReleased = wasReleased('shoot');
     inp.sidestep = wasPressed('sidestep'); inp.crossover = wasPressed('crossover'); inp.stepback = wasPressed('stepback');
@@ -2231,15 +2240,22 @@ const Game = (() => {
   function canAct(p) { return p.state === ST.IDLE || p.state === ST.MOVE || p.state === ST.LAND || lateInMove(p); }
   // One button, and the direction you are pushing picks the move: nothing = crossover, at the rim = spin,
   // away = stepback, sideways = sidestep.
-  function contextMove(p, g) {
-    const inp = p.input, h = hoopFor(p.team);
-    const mag = Math.sqrt(inp.mx * inp.mx + inp.mz * inp.mz);
-    if (mag < 0.3) return Moves.start(p, 'crossover', g);
+  // Which move a flick produces, read against the rim: at it you spin past, away you fade back, across you
+  // cross over standing still or burst sideways on the move.
+  function moveFor(p, dx, dz) {
+    const h = hoopFor(p.team);
+    const mag = Math.sqrt(dx * dx + dz * dz);
+    if (mag < 0.25) return 'crossover';
     let tx = h.x - p.x, tz = h.z - p.z; const l = Math.sqrt(tx * tx + tz * tz) || 1; tx /= l; tz /= l;
-    const fwd = (inp.mx * tx + inp.mz * tz) / mag;
-    if (fwd > 0.5) return Moves.start(p, 'spin', g);
-    if (fwd < -0.4) return Moves.start(p, 'stepback', g);
-    return Moves.start(p, 'sidestep', g);
+    const fwd = (dx * tx + dz * tz) / mag;
+    if (fwd > 0.5) return 'spin';
+    if (fwd < -0.4) return 'stepback';
+    return p.speed > 2.2 ? 'sidestep' : 'crossover';
+  }
+  function contextMove(p, g, useJuke) {
+    const inp = p.input;
+    const dx = useJuke ? inp.jx : inp.mx, dz = useJuke ? inp.jz : inp.mz;
+    return Moves.start(p, moveFor(p, dx, dz), g);
   }
   // `held` is how long the shoot key was down while the action was waiting, so a buffered shot keeps the
   // timing the player actually gave it instead of restarting the meter from zero.
@@ -2253,7 +2269,8 @@ const Game = (() => {
     switch (act) {
       case 'shoot': return canAct(p) && !p.airborne && fireShot(p, g, held);
       case 'pass': return Passing.tryPass(p, g);
-      case 'move': return canAct(p) && contextMove(p, g);
+      case 'move': return canAct(p) && contextMove(p, g, false);
+      case 'juke': return canAct(p) && contextMove(p, g, true);
       case 'fake': return canAct(p) && Moves.start(p, p.speed > 1.7 ? 'hesi' : 'pump', g);
       default: return Moves.start(p, act, g);
     }
@@ -2277,14 +2294,15 @@ const Game = (() => {
       if (inp.shootPressed) request(p, 'shoot', g);
       if (p.state === ST.SHOOT) Shooting.update(p, dt, g);
       if (inp.pass) request(p, 'pass', g);
-      if (simple) {
-        if (inp.move) request(p, 'move', g);
-        else if (inp.fake) request(p, 'fake', g);
-      } else {
-        if (inp.sidestep) request(p, 'sidestep', g); else if (inp.crossover) request(p, 'crossover', g);
-        else if (inp.stepback) request(p, 'stepback', g); else if (inp.spin) request(p, 'spin', g);
-        else if (inp.hesi) request(p, 'hesi', g); else if (inp.pump) request(p, 'pump', g);
-      }
+      if (inp.juke) request(p, 'juke', g);
+      else if (inp.move) request(p, 'move', g);
+      else if (inp.sidestep) request(p, 'sidestep', g);
+      else if (inp.crossover) request(p, 'crossover', g);
+      else if (inp.stepback) request(p, 'stepback', g);
+      else if (inp.spin) request(p, 'spin', g);
+      else if (inp.hesi) request(p, 'hesi', g);
+      else if (inp.pump) request(p, 'pump', g);
+      else if (inp.fake) request(p, 'fake', g);
     } else {
       if (inp.shootPressed && !p.airborne && (p.state === ST.IDLE || p.state === ST.MOVE)) { PlayerSys.jump(p, PC.jumpVel * (0.85 + 0.35 * p.ratings.vertical / 99)); PlayerSys.setState(p, ST.JUMP); p.armsUp = true; }
       // on defense the pass button is the steal button, so there is one fewer key to learn
@@ -3004,12 +3022,14 @@ const UI = (() => {
     if (Game.settings.controls === 'advanced') return [
       ['Move', ['up', 'down', 'left', 'right', 'sprint'], false],
       ['With the ball', ['shoot', 'pass', 'crossover', 'sidestep', 'stepback', 'spin', 'hesi', 'pump'], false],
+      ['Dribble moves (arrows)', ['jukeUp', 'jukeDown', 'jukeLeft', 'jukeRight'], false],
       ['On defense', ['shoot', 'steal', 'switch'], true],
       ['Game', ['pause'], false],
     ];
     return [
       ['Move', ['up', 'down', 'left', 'right', 'sprint'], false],
-      ['With the ball', ['shoot', 'move', 'fake', 'pass'], false],
+      ['With the ball', ['shoot', 'pass', 'fake'], false],
+      ['Dribble moves (arrows)', ['jukeUp', 'jukeDown', 'jukeLeft', 'jukeRight'], false],
       ['On defense', ['shoot', 'pass', 'switch'], true],
       ['Game', ['pause'], false],
     ];
@@ -3060,8 +3080,8 @@ const UI = (() => {
         k('sidestep') + 'sidestep ' + k('crossover') + 'cross ' + k('stepback') + 'stepback ' + k('spin') + 'spin ' + k('hesi') + 'hesi ' + k('pump') + 'pump ' + k('pause') + 'pause';
       return;
     }
-    el.hint.innerHTML = k('shoot') + 'shoot / jump ' + k('sprint') + 'sprint ' + k('pass') + 'pass / steal<br>' +
-      k('move') + 'move (push a direction) ' + k('fake') + 'fake ' + k('switch') + 'switch ' + k('pause') + 'pause';
+    el.hint.innerHTML = k('shoot') + 'shoot / jump ' + k('sprint') + 'sprint ' + k('pass') + 'pass / steal ' + k('fake') + 'fake<br>' +
+      '<kbd>&#8592;</kbd><kbd>&#8593;</kbd><kbd>&#8594;</kbd><kbd>&#8595;</kbd>dribble moves &nbsp; ' + k('switch') + 'switch ' + k('pause') + 'pause';
   }
   function setText(id, v) { if (last[id] !== v) { last[id] = v; if (id === 'fouls') el[id].innerHTML = v; else el[id].textContent = v; } }
   function toast(text, sub) { el.toast.innerHTML = '<span class="rib"><span>' + esc(text) + '</span></span>' + (sub ? '<small>' + esc(sub) + '</small>' : ''); el.toast.classList.remove('show'); void el.toast.offsetWidth; el.toast.classList.add('show'); }
@@ -3166,7 +3186,7 @@ const UI = (() => {
 // AI fills the open slots. Teams with one human keep auto-switch; multi-human teams are locked to a player.
 const Net = (() => {
   const NC = CONFIG.net;
-  const BITS = ['sprint', 'shoot', 'shootPressed', 'shootReleased', 'sidestep', 'crossover', 'stepback', 'spin', 'hesi', 'pump', 'pass', 'steal', 'switch'];
+  const BITS = ['sprint', 'shoot', 'shootPressed', 'shootReleased', 'sidestep', 'crossover', 'stepback', 'spin', 'hesi', 'pump', 'pass', 'steal', 'switch', 'move', 'fake', 'juke'];
   const HELD_MASK = 0b11, EDGE_MASK = ~HELD_MASK;
   const DUNK_KINDS = ['', 'one', 'two', 'tomahawk', 'windmill', 'reverse', 'layup'];
   const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -3280,7 +3300,7 @@ const Net = (() => {
     for (const gst of guests.values()) {
       const p = P[gst.playerId]; if (!p || !gst.inGame) continue; const rem = gst.remote, inp = p.input;
       clearInputEdges(inp);
-      inp.mx = rem.input.mx; inp.mz = rem.input.mz; inp.sprint = !!(rem.held & 1); inp.shoot = !!(rem.held & 2);
+      inp.mx = rem.input.mx; inp.mz = rem.input.mz; inp.jx = rem.input.jx; inp.jz = rem.input.jz; inp.sprint = !!(rem.held & 1); inp.shoot = !!(rem.held & 2);
       if (rem.bits) { unpackBits(rem.bits & EDGE_MASK, inp); inp.sprint = !!(rem.held & 1); inp.shoot = !!(rem.held & 2); rem.bits = 0; }
       if (inp.shootReleased && rem.rel != null) { if (p.state === PlayerSys.ST.SHOOT && !p.shot.released) p.shot.meterT = U.clamp(rem.rel, 0, 1); rem.rel = null; }
     }
@@ -3332,12 +3352,20 @@ const Net = (() => {
     }
     return { seq: sq, time, g: G, b, pl, rt: performance.now() / 1000 };
   }
-  function encodeInput(mx, mz, held, bits, rel) { const buf = new ArrayBuffer(20); const dv = new DataView(buf); dv.setUint8(0, 2); dv.setUint32(1, ++seq, true); dv.setFloat32(5, mx, true); dv.setFloat32(9, mz, true); dv.setUint8(13, held); dv.setUint16(14, bits & 0xffff, true); dv.setFloat32(16, rel == null ? NaN : rel, true); return buf; }
+  function encodeInput(mx, mz, jx, jz, held, bits, rel) {
+    const buf = new ArrayBuffer(28); const dv = new DataView(buf);
+    dv.setUint8(0, 2); dv.setUint32(1, ++seq, true);
+    dv.setFloat32(5, mx, true); dv.setFloat32(9, mz, true);
+    dv.setUint8(13, held); dv.setUint16(14, bits & 0xffff, true); dv.setFloat32(16, rel == null ? NaN : rel, true);
+    dv.setFloat32(20, jx, true); dv.setFloat32(24, jz, true);
+    return buf;
+  }
   function decodeInput(buf, rem) {
-    if (buf.byteLength < 20) return; const dv = new DataView(buf); if (dv.getUint8(0) !== 2) return;
+    if (buf.byteLength < 28) return; const dv = new DataView(buf); if (dv.getUint8(0) !== 2) return;
     rem.bits |= dv.getUint16(14, true); const rel = dv.getFloat32(16, true); if (!Number.isNaN(rel)) rem.rel = rel;
     const sq = dv.getUint32(1, true); if (sq <= rem.seq) return; rem.seq = sq;
     rem.input.mx = dv.getFloat32(5, true); rem.input.mz = dv.getFloat32(9, true); rem.held = dv.getUint8(13);
+    rem.input.jx = dv.getFloat32(20, true); rem.input.jz = dv.getFloat32(24, true);
   }
 
   // ---------- guest ----------
@@ -3396,7 +3424,7 @@ const Net = (() => {
     if (localInput.shootPressed && meP && meP.hasBall) { pressT = nowS; pressDur = Shooting.meterDuration(meP, g.state === Game.S.FREETHROW ? 'ft' : Shooting.zoneFor(meP, Game.hoopFor(meP.team))); }
     if (localInput.shootReleased && pressT > 0) { relPending = r3(U.clamp((nowS - pressT) / pressDur, 0, 1)); pressT = 0; }
     sendAcc += dt;
-    if (sendAcc >= 1 / NC.inputHz && meP) { sendAcc = 0; send(hostConn, encodeInput(localInput.mx, localInput.mz, packBits(localInput) & HELD_MASK, edgeBits, relPending)); relPending = null; edgeBits = 0; }
+    if (sendAcc >= 1 / NC.inputHz && meP) { sendAcc = 0; send(hostConn, encodeInput(localInput.mx, localInput.mz, localInput.jx, localInput.jz, packBits(localInput) & HELD_MASK, edgeBits, relPending)); relPending = null; edgeBits = 0; }
     g.time += dt;
     if (!snaps.length) return;
     let A = snaps[0], B = snaps[0]; const now = nowS - NC.interpDelay;

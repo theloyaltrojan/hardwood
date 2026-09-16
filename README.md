@@ -13,14 +13,15 @@ No build step. Open the file in a browser and play.
 1v1 streetball · 3v3 half court · 5v5 full court · practice gym · peer-to-peer multiplayer (WebRTC, manual signaling).
 
 ## Controls
-Eight keys by default. WASD move, Shift sprint, Space shoot (hold and release the meter; sprint at the rim to dunk;
-on defense it jumps to contest), E pass (steal on defense), Q dribble move, R fake, Tab switch player, Esc pause.
+WASD move, Shift sprint, Space shoot (hold and release the meter; sprint at the rim to dunk; on defense it
+jumps to contest), E pass (steal on defense), R fake, Tab switch player, Esc pause.
 
-The dribble move key reads the direction you are pushing: nothing for a crossover, toward the rim to spin,
-away to step back, sideways to sidestep. R pump fakes standing still and hesitates on the move.
+**Arrow keys are your dribble moves**, and they work while you are still running with WASD, like a right
+stick. Flick toward the rim to spin past, away from it to fade back, or across to cross over standing still
+and burst sideways on the move. R pump fakes standing and hesitates on the move.
 
-Settings has an **Advanced** control scheme that puts every move on its own key, and **Assisted** shot timing
-that releases the meter for you. Every binding is remappable and saved in the browser.
+Settings has an **Advanced** control scheme that also puts every move on its own key, and **Assisted** shot
+timing that releases the meter for you. Every binding is remappable and saved in the browser.
 
 ## Multiplayer
 Main menu → **Multiplayer**. Type a name, click **Create lobby**, and share the 6-character code. Friends click **Join lobby** with the code.
