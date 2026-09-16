@@ -30,6 +30,10 @@
   #scorebug .mid { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 14px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); min-width: 96px; }
   #scorebug .period { font-size: 11px; color: var(--muted); letter-spacing: 0.15em; }
   #scorebug .clock { font-family: var(--mono); font-size: 18px; }
+  #scorebug .fouls { font-size: 9px; color: var(--muted); letter-spacing: 0.15em; margin-top: 2px; }
+  #scorebug .fouls b { color: var(--danger); }
+  #scorebug .score.bump { animation: bump 0.5s ease-out; }
+  @keyframes bump { 0% { transform: scale(1); color: var(--accent); } 40% { transform: scale(1.35); color: var(--accent); } 100% { transform: scale(1); } }
   #scorebug .shot { display: flex; align-items: center; justify-content: center; padding: 6px 12px; font-family: var(--mono); font-size: 20px; color: var(--accent); min-width: 54px; border-right: 1px solid var(--line); }
   #scorebug .shot.low { color: var(--danger); animation: pulse 0.5s infinite alternate; }
   @keyframes pulse { from { opacity: 1; } to { opacity: 0.35; } }
@@ -114,7 +118,7 @@
 <div id="hud" class="hidden">
   <div id="scorebug">
     <div class="team left"><div class="bar" id="barA"></div><span class="abbr" id="abbrA">HOME</span><span class="poss" id="possA"></span><span class="score" id="scoreA">0</span></div>
-    <div class="mid"><span class="period" id="period">Q1</span><span class="clock" id="clock">0:00</span></div>
+    <div class="mid"><span class="period" id="period">Q1</span><span class="clock" id="clock">0:00</span><span class="fouls" id="fouls"></span></div>
     <div class="shot" id="shotclock">24</div>
     <div class="team right"><div class="bar" id="barB"></div><span class="abbr" id="abbrB">AWAY</span><span class="poss" id="possB"></span><span class="score" id="scoreB">0</span></div>
   </div>
@@ -176,6 +180,7 @@
         <button class="btn primary" id="btnResume">Resume</button>
         <button class="btn" id="btnPauseControls">Controls</button>
         <button class="btn" id="btnPauseSettings">Settings</button>
+        <button class="btn" id="btnSpectate">CPU plays for me: off</button>
         <button class="btn" id="btnQuit">Quit to menu</button>
       </div>
     </div>
@@ -297,7 +302,7 @@ const CONFIG = {
       allstar: { reaction: 0.11, contest: 0.9, shotNoise: 0.06, stealRate: 1.0, help: 1.0, shootBoost: 1.08, moveRate: 1.0 },
     },
   },
-  game: { shotClock: 24, halfShotClock: 14, offRebClock: 14, quarterLen: 120, quarters: 4, halfCourtTarget: 21, deadBallDelay: 1.5, inboundDelay: 0.9, ftRoutine: 1.2, foulOutLimit: 6, reachInFoulChance: 0.35, shootingFoulChance: 0.4 },
+  game: { shotClock: 24, halfShotClock: 14, offRebClock: 14, quarterLen: 120, quarters: 4, halfCourtTarget: 21, deadBallDelay: 1.2, inboundDelay: 0.6, ftRoutine: 1.2, foulOutLimit: 6, reachInFoulChance: 0.35, shootingFoulChance: 0.4 },
   camera: { broadcastHeight: 10.8, broadcastDist: 19.5, followX: 0.86, lookY: 1.1, lookZ: 0.28, damp: 4.5, lookDamp: 6, fov: 42, halfCourtZoom: 0.86 },
   render: { shadows: false, crowd: true, pixelRatioCap: 1.5 },
   audio: { volume: 0.8 },
@@ -1007,6 +1012,7 @@ const BallSys = (() => {
     else if (s === ST.DUNK) { const k = U.clamp(p.stateT / Math.max(0.01, p.dunk.slamAt), 0, 1); lateral = p.dunk.kind === 'two' ? 0 : p.hand * 0.22; fwd = 0.25 + 0.25 * k; y = p.y + h * U.lerp(1.2, 2.5, k); }
     else if (s === ST.LAYUP) { const k = U.clamp(p.stateT / Math.max(0.01, p.dunk.slamAt), 0, 1); lateral = p.hand * 0.2; fwd = 0.3; y = p.y + h * U.lerp(1.2, 2.3, k); }
     else if (s === ST.PASS) { lateral = 0; fwd = 0.35; y = h * 1.3; }
+    else if (s === ST.INBOUND) { lateral = 0; fwd = 0.15; y = h * 2.05; }
     else { lateral = p.hand * 0.25; fwd = 0.3; y = p.y + h * 1.15; }
     ball.x = p.x + rx * lateral + fx * fwd; ball.z = p.z + rz * lateral + fz * fwd; ball.y = y;
     ball.vx = p.vx; ball.vz = p.vz; ball.vy = 0;
@@ -2170,6 +2176,7 @@ const Render = (() => {
       case ST.FALL: bodyX = 1.35 * Math.min(1, st / 0.25) * (k < 0.75 ? 1 : (1 - (k - 0.75) / 0.25)); aL = -1.2; aR = -1.2; break;
       case ST.LAND: crouch = 0.09 * Math.sin(k * Math.PI); break;
       case ST.PASS: aL = -1.3 * Math.sin(k * Math.PI); aR = -1.3 * Math.sin(k * Math.PI); break;
+      case ST.INBOUND: aL = -2.7; aR = -2.7; azL = -0.15; azR = 0.15; break;
     }
     if (p.armsUp && s !== ST.JUMP) { aL = -2.6; aR = -2.6; }
     const e = 1 - Math.exp(-dt * 22);
@@ -2209,7 +2216,7 @@ const Render = (() => {
 const UI = (() => {
   const $ = (id) => document.getElementById(id);
   const el = {};
-  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'teamPickA', 'teamPickB', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
+  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'teamPickA', 'teamPickB', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
   let debugOn = false, pick = [0, 1], last = {}, tagEls = [], meterVisible = false, hudVisible = false;
   const _pt = { x: 0, y: 0, visible: false };
   const hooks = { startGame: null, resume: null, quit: null, rematch: null, applySettings: null };
@@ -2233,6 +2240,7 @@ const UI = (() => {
     $('btnPauseSettings').onclick = () => { showPauseSub('pauseSettings'); renderSettings(el.settingsList2); };
     $('btnBackPauseSettings').onclick = () => showPauseSub('pauseHome');
     $('btnQuit').onclick = () => hooks.quit();
+    $('btnSpectate').onclick = () => { const on = Game.g.humanTeam >= 0; Game.setSpectate(on); $('btnSpectate').textContent = 'CPU plays for me: ' + (on ? 'on' : 'off'); AudioSys.play('ui'); };
     $('btnFirstOk').onclick = () => { el.firstrun.classList.add('hidden'); U.saveLS('hw_seen', true); hooks.resume(); };
     $('btnRematch').onclick = () => hooks.rematch();
     $('btnFinalMenu').onclick = () => hooks.quit();
@@ -2296,16 +2304,20 @@ const UI = (() => {
     el.hint.innerHTML = '<b>' + L(b.shoot) + '</b> shoot/jump · <b>' + L(b.sprint) + '</b> sprint · <b>' + L(b.pass) + '</b> pass · <b>' + L(b.steal) + '</b> steal · <b>' + L(b.switch) + '</b> switch<br>' +
       '<b>' + L(b.sidestep) + '</b> sidestep · <b>' + L(b.crossover) + '</b> crossover · <b>' + L(b.stepback) + '</b> stepback · <b>' + L(b.spin) + '</b> spin · <b>' + L(b.hesi) + '</b> hesi · <b>' + L(b.pump) + '</b> pump · <b>' + L(b.pause) + '</b> pause';
   }
-  function setText(id, v) { if (last[id] !== v) { last[id] = v; el[id].textContent = v; } }
+  function setText(id, v) { if (last[id] !== v) { last[id] = v; if (id === 'fouls') el[id].innerHTML = v; else el[id].textContent = v; } }
   function toast(text, sub) { el.toast.innerHTML = text + (sub ? '<small>' + sub + '</small>' : ''); el.toast.classList.remove('show'); void el.toast.offsetWidth; el.toast.classList.add('show'); }
   const fbPos = { x: 0, y: 0, visible: false };
   function feedback(text, color) { el.feedback.style.left = fbPos.x + 'px'; el.feedback.style.top = fbPos.y + 'px'; el.feedback.textContent = text; el.feedback.style.color = color; el.feedback.classList.remove('show'); void el.feedback.offsetWidth; el.feedback.classList.add('show'); }
   function toggleDebug() { debugOn = !debugOn; el.debug.classList.toggle('hidden', !debugOn); }
+  function clearToast() { el.toast.classList.remove('show'); el.toast.textContent = ''; el.feedback.classList.remove('show'); }
 
   function updateHUD(g) {
     const A = g.teams[0], B = g.teams[1];
     setText('abbrA', A.abbr); setText('abbrB', B.abbr); el.barA.style.background = hex(A.primary); el.barB.style.background = hex(B.primary);
+    if (last.scoreA !== undefined && last.scoreA !== String(g.score[0])) { el.scoreA.classList.remove('bump'); void el.scoreA.offsetWidth; el.scoreA.classList.add('bump'); }
+    if (last.scoreB !== undefined && last.scoreB !== String(g.score[1])) { el.scoreB.classList.remove('bump'); void el.scoreB.offsetWidth; el.scoreB.classList.add('bump'); }
     setText('scoreA', String(g.score[0])); setText('scoreB', String(g.score[1]));
+    if (g.mode === '5v5') setText('fouls', 'FOULS ' + (g.teamFouls[0] >= 5 ? '<b>' : '') + g.teamFouls[0] + ' · ' + g.teamFouls[1] + (g.teamFouls[1] >= 5 ? ' BONUS' : g.teamFouls[0] >= 5 ? ' BONUS' : '')); else setText('fouls', '');
     if (g.mode === '5v5') { setText('period', g.quarter <= CONFIG.game.quarters ? 'Q' + g.quarter : 'OT' + (g.quarter - CONFIG.game.quarters)); setText('clock', U.fmtClock(g.clock)); }
     else if (g.mode === 'practice') { setText('period', 'GYM'); setText('clock', U.fmtClock(g.time)); }
     else { setText('period', 'TO ' + CONFIG.game.halfCourtTarget); setText('clock', U.fmtClock(g.time)); }
@@ -2381,7 +2393,7 @@ const UI = (() => {
     updateHUD(g); updateMeter(g); updateTags(g);
     if (debugOn) updateDebug(dt, stats);
   }
-  return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, update, toast, feedback, toggleDebug, renderTeamPick, get pick() { return pick; }, get debugOn() { return debugOn; } };
+  return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, update, toast, feedback, toggleDebug, clearToast, renderTeamPick, get pick() { return pick; }, get debugOn() { return debugOn; } };
 })();
 // ==== END UI ====
 
@@ -2418,7 +2430,8 @@ const Main = (() => {
   }
   function startGame(mode, a, b) {
     lastMode = mode; Render.buildArena(TEAMS[a], TEAMS[b]); Game.start(mode, a, b); Render.buildPlayers(Game.g.teams); Render.setShadows(Game.settings.shadows);
-    UI.hideMenu(); UI.showHUD(); const ball = BallSys.ball; CameraSys.snap(ball.x, ball.z); acc = 0; paused = false;
+    UI.hideMenu(); UI.showHUD(); UI.clearToast(); const ball = BallSys.ball; CameraSys.snap(ball.x, ball.z); acc = 0; paused = false;
+    const sb = document.getElementById('btnSpectate'); if (sb) sb.textContent = 'CPU plays for me: off';
     if (!U.loadLS('hw_seen', false)) { pause(true); UI.showFirstRun(); }
   }
   function pause(silent) { paused = true; if (!silent) UI.showPause(true); }
