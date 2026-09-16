@@ -1,5 +1,7 @@
 # Hardwood Legends
 
+**Play it:** https://theloyaltrojan.github.io/hardwood/
+
 Arcade-sim basketball in the style of modern console hoops games, running entirely from **one file**: `index.html`.
 No build step. Open the file in a browser and play.
 
