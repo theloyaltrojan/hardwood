@@ -15,8 +15,26 @@ MyPark · MyCareer · 1v1 streetball · 2v2 · 3v3 half court · 5v5 full court 
 
 On the Play screen, click either jersey to pick from all 24 teams at once instead of stepping through with the arrows.
 
+## Store
+Main menu → **Store**. Playing earns coins: buckets, threes, dunks, blocks, steals and assists all pay, with
+a bonus for a perfect release and another for scoring through contact, plus a lump sum at the final buzzer.
+There is a **daily reward** with a streak that builds for a week.
+
+Coins buy looks and nothing else — no purchase touches a rating. Six **ball skins** and six **perfect
+release effects**, the latter firing off your fingertips whenever you green a shot. Wallet, purchases and
+streak live in `localStorage`, same as everything else.
+
+## Shooting
+The perfect-release window is **4.4% of the meter**, so greening a shot is a real ask — and a green from the
+player you control still goes in. Everything else is graded down from there.
+
+How open you are matters more than anything else about a jumper. The penalty curves sharply with the
+nearest defender's distance: a hand in your face is close to hopeless, a defender two strides away barely
+registers. The shot feedback tells you which it was — `WIDE OPEN`, `CONTESTED` or `SMOTHERED` next to the
+timing call.
+
 ## MyPark
-Main menu → **Park** (or **Go to MyPark** from the career hub). It uses your MyCareer build, so make a
+Main menu → **MyPark** in the sidebar (or **Go to MyPark** from the career hub). It uses your MyCareer build, so make a
 player first.
 
 You walk the park as your own character in third person — WASD to move, Shift to run. Six half courts ring

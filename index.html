@@ -209,6 +209,29 @@
   .final-board .fscore { font-family: var(--display); font-size: 64px; line-height: 1; }
   .final-board .fmid { font-family: var(--display); font-size: 18px; letter-spacing: 0.2em; color: var(--muted); }
 
+  /* ---------- Store ---------- */
+  .coins { font-family: var(--display); font-size: 15px; letter-spacing: 0.08em; color: var(--accent); }
+  .coins b { font-size: 26px; }
+  #coinBar { position: fixed; top: 16px; right: 18px; z-index: 7; background: rgba(10,12,17,0.82); padding: 6px 16px 4px; transform: skewX(var(--skew)); pointer-events: none; }
+  #coinBar > * { display: block; transform: skewX(var(--unskew)); }
+  #coinBar .pop { font-size: 12px; color: var(--ok); letter-spacing: 0.08em; min-height: 15px; }
+  .st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 8px; }
+  .st-card { position: relative; background: var(--panel2); border-left: 5px solid var(--line); padding: 10px 12px 11px; display: flex; flex-direction: column; gap: 3px; }
+  .st-card.owned { border-left-color: var(--ok); }
+  .st-card.on { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .st-card b { font-family: var(--display); font-size: 16px; letter-spacing: 0.05em; text-transform: uppercase; }
+  .st-card .bl { font-size: 11px; color: var(--muted); line-height: 1.4; min-height: 30px; }
+  .st-card .row2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+  .st-card .px { font-family: var(--display); font-size: 15px; color: var(--accent); }
+  .st-card .px.have { color: var(--ok); }
+  .st-swatch { height: 26px; border-radius: 13px; margin-bottom: 4px; }
+  .st-daily { display: flex; align-items: center; gap: 16px; background: var(--panel2); border-left: 6px solid var(--accent); padding: 12px 18px; margin: 4px 0 6px; }
+  .st-daily .big { font-family: var(--display); font-size: 34px; color: var(--accent); line-height: 1; }
+  .st-daily .sub { font-size: 12px; color: var(--muted); }
+  .st-log { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+  .st-log span b { color: var(--ok); font-weight: 600; }
+  .st-log span i { color: var(--danger); font-style: normal; }
+
   /* ---------- MyPark ---------- */
   #park { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
   #parkTop { position: absolute; top: 16px; left: 50%; transform: translateX(-50%) skewX(var(--skew)); background: rgba(10,12,17,0.82); padding: 7px 22px 5px; display: flex; gap: 14px; align-items: baseline; }
@@ -336,6 +359,8 @@
     <nav class="menu-nav">
       <button class="nav-item sel" data-nav="menuHome">Play</button>
       <button class="nav-item" data-nav="menuCareer">MyCareer</button>
+      <button class="nav-item" data-nav="menuPark">MyPark</button>
+      <button class="nav-item" data-nav="menuStore">Store</button>
       <button class="nav-item" data-nav="menuNet">Multiplayer</button>
       <button class="nav-item" data-nav="menuControls">Controls</button>
       <button class="nav-item" data-nav="menuSettings">Settings</button>
@@ -371,12 +396,20 @@
     <div id="menuCareer" class="pane hidden">
       <div id="careerBody"></div>
     </div>
+    <div id="menuPark" class="pane hidden">
+      <div id="parkBody"></div>
+    </div>
+    <div id="menuStore" class="pane hidden">
+      <div id="storeBody"></div>
+    </div>
     <div id="menuNet" class="pane hidden">
       <div class="pane-title">Multiplayer<small>Host a lobby and share the code, or join a friend's.</small></div>
       <div id="netBody"></div>
     </div>
   </div>
 </div>
+
+<div id="coinBar" class="hidden"><span class="coins">◆ <b id="coinNum">0</b></span><span class="pop" id="coinPop"></span></div>
 
 <div id="park" class="hidden">
   <div id="parkTop"><span class="t">MyPark</span><span class="s" id="parkSub"></span></div>
@@ -504,8 +537,8 @@ const CONFIG = {
     screenBumpTime: 0.45,
   },
   shooting: {
-    meterDur: 0.85, perfectPoint: 0.70, perfectWidth: 0.045, goodWidth: 0.17, greenAuto: true,
-    launchAngle: 50, closeLaunchAngle: 56, contestNear: 0.55, contestFar: 3.4, contestMaxPenalty: 0.68,
+    meterDur: 0.85, perfectPoint: 0.70, perfectWidth: 0.022, goodWidth: 0.21, greenAuto: true,
+    launchAngle: 50, closeLaunchAngle: 56, contestNear: 0.55, contestFar: 3.4, contestMaxPenalty: 0.80, contestCurve: 1.6,
     jumpContestBonus: 0.35, movingSpeed: 1.3, movingPenalty: 0.78, stepbackBonus: 1.06, fatiguePenalty: 0.9,
     zones: { three: { base: 0.27, rating: 0.43 }, mid: { base: 0.37, rating: 0.45 }, close: { base: 0.46, rating: 0.44 }, ft: { base: 0.52, rating: 0.45 } },
     blockWindow: 0.45, blockReach: 1.35, blockChanceBase: 0.62,
@@ -529,6 +562,12 @@ const CONFIG = {
     bar: { early: 1.06, mid: 0.94, late: 0.80, last: 0.56 },
   },
   game: { shotClock: 24, halfShotClock: 14, offRebClock: 14, quarterLen: 120, quarters: 4, halfCourtTarget: 21, deadBallDelay: 0.85, inboundDelay: 0.35, ftRoutine: 1.2, foulOutLimit: 6, reachInFoulChance: 0.18, shootingFoulChance: 0.15 },
+  // Coins. Everything the store sells is cosmetic, so these numbers only pace how long a look takes to earn.
+  money: {
+    starting: 500, two: 55, three: 95, dunk: 130, block: 110, steal: 85, assist: 45,
+    perfectBonus: 40, toughBonus: 35, win: 750, loss: 220,
+    daily: 300, dailyStreak: 120, dailyMaxStreak: 7,
+  },
   // MyPark: the walkable lobby. `goers` is how many CPU park-goers wander it besides you.
   park: {
     walkSpeed: 4.3, runSpeed: 7.2, accel: 17, turnRate: 12, goers: 14,
@@ -790,6 +829,8 @@ function kitsFor(homeIdx, awayIdx) {
   return [home, alt];
 }
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+// Surnames for callouts. Player-created names can be a single word, so fall back to the whole thing.
+const lastName = (n) => { const parts = String(n == null ? '' : n).trim().split(/\s+/); return (parts[parts.length - 1] || 'PLAYER').toUpperCase(); };
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const FIRST_NAMES = ['Jaxon', 'Deshawn', 'Malik', 'Trey', 'Kobi', 'Andre', 'Tyrese', 'Marcus', 'Elijah', 'Cam', 'Zion', 'Darius', 'Lamar', 'Rasheed', 'Isaiah', 'Terrence', 'Kwame', 'Devin', 'Jalen', 'Bryce', 'Omar', 'Luka', 'Nico', 'Matteo', 'Reggie', 'Jamal', 'Cedric', 'Tobias', 'Xavier', 'Quincy', 'Amari', 'Dante'];
 const LAST_NAMES = ['Vell', 'Okoro', 'Hart', 'Brooks', 'Mensah', 'Delgado', 'Whitfield', 'Cole', 'Adeyemi', 'Frost', 'Navarro', 'Keane', 'Osei', 'Rourke', 'Blackwood', 'Ferreira', 'Grant', 'Ito', 'Novak', 'Bell', 'Saito', 'Lindqvist', 'Reyes', 'Pryce', 'Achebe', 'Marchetti', 'Dunmore', 'Kessler', 'Voss', 'Tate', 'Hollins', 'Quist'];
@@ -1054,20 +1095,22 @@ function build(scene, teamA, teamB) {
   // ---- particles: footstep dust and rim sparks, drawn as ONE pooled Points cloud (no per-frame allocation) ----
   const PARTICLE_MAX = 200;
   const particles = [];
-  let pPoints = null, pPos = null, pAlpha = null, pSize = null;
+  let pPoints = null, pPos = null, pAlpha = null, pSize = null, pCol = null;
   function initParticles(scene) {
     if (pPoints) return;
     pPos = new Float32Array(PARTICLE_MAX * 3); pAlpha = new Float32Array(PARTICLE_MAX); pSize = new Float32Array(PARTICLE_MAX);
+    pCol = new Float32Array(PARTICLE_MAX * 3);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
     geo.setAttribute('alpha', new THREE.BufferAttribute(pAlpha, 1));
     geo.setAttribute('psize', new THREE.BufferAttribute(pSize, 1));
+    geo.setAttribute('pcol', new THREE.BufferAttribute(pCol, 3));
     geo.setDrawRange(0, 0);
     const mat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false,
-      uniforms: { uColor: { value: new THREE.Color(0xcfc3ae) }, uScale: { value: window.innerHeight * 0.5 } },
-      vertexShader: 'uniform float uScale; attribute float alpha; attribute float psize; varying float vA; void main() { vA = alpha; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = psize * uScale / max(0.001, -mv.z); gl_Position = projectionMatrix * mv; }',
-      fragmentShader: 'uniform vec3 uColor; varying float vA; void main() { vec2 d = gl_PointCoord - vec2(0.5); float r = dot(d, d); if (r > 0.25) discard; gl_FragColor = vec4(uColor, vA * (1.0 - r * 4.0)); }',
+      uniforms: { uScale: { value: window.innerHeight * 0.5 } },
+      vertexShader: 'uniform float uScale; attribute float alpha; attribute float psize; attribute vec3 pcol; varying float vA; varying vec3 vC; void main() { vA = alpha; vC = pcol; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = psize * uScale / max(0.001, -mv.z); gl_Position = projectionMatrix * mv; }',
+      fragmentShader: 'varying float vA; varying vec3 vC; void main() { vec2 d = gl_PointCoord - vec2(0.5); float r = dot(d, d); if (r > 0.25) discard; gl_FragColor = vec4(vC, vA * (1.0 - r * 4.0)); }',
     });
     pPoints = new THREE.Points(geo, mat); pPoints.frustumCulled = false; pPoints.renderOrder = 2; scene.add(pPoints);
   }
@@ -1075,6 +1118,22 @@ function build(scene, teamA, teamB) {
     count = count || 5;
     for (let i = 0; i < count && particles.length < PARTICLE_MAX; i++) {
       particles.push({ x: x + (RNG.next() - 0.5) * 0.3, y: 0.02 + RNG.next() * 0.05, z: z + (RNG.next() - 0.5) * 0.3, vx: (RNG.next() - 0.5) * 0.5, vy: RNG.next() * 0.9, vz: (RNG.next() - 0.5) * 0.5, life: 0.4 + RNG.next() * 0.3, maxLife: 0.7, size: 0.05 + RNG.next() * 0.05 });
+    }
+  }
+  // The flourish on a perfect release. `kind` shapes where the particles go; the colour comes from
+  // whatever effect the player has equipped.
+  const _bc = new THREE.Color();
+  function spawnBurst(x, y, z, colour, count, kind) {
+    _bc.setHex(colour);
+    for (let i = 0; i < count && particles.length < PARTICLE_MAX; i++) {
+      const a = (i / count) * Math.PI * 2 + RNG.next() * 0.3;
+      let vx, vy, vz, sp;
+      if (kind === 'ring') { sp = 2.6 + RNG.next() * 1.2; vx = Math.cos(a) * sp; vz = Math.sin(a) * sp; vy = 0.25 + RNG.next() * 0.5; }
+      else if (kind === 'rise') { sp = 0.5 + RNG.next() * 1.0; vx = Math.cos(a) * sp; vz = Math.sin(a) * sp; vy = 2.4 + RNG.next() * 1.6; }
+      else if (kind === 'fall') { sp = 0.9 + RNG.next() * 1.1; vx = Math.cos(a) * sp; vz = Math.sin(a) * sp; vy = -0.4 - RNG.next() * 0.6; }
+      else { sp = 1.6 + RNG.next() * 1.8; vx = Math.cos(a) * sp; vz = Math.sin(a) * sp; vy = 0.9 + RNG.next() * 1.5; }
+      particles.push({ x, y, z, vx, vy, vz, life: 0.45 + RNG.next() * 0.35, maxLife: 0.8,
+        size: 0.045 + RNG.next() * 0.04, r: _bc.r, g: _bc.g, b: _bc.b, glow: 0.95 });
     }
   }
   function spawnRimSpark(x, y, z) {
@@ -1090,10 +1149,14 @@ function build(scene, teamA, teamB) {
     }
     if (!pPoints) return;
     const n = particles.length;
-    for (let i = 0; i < n; i++) { const p = particles[i]; pPos[i * 3] = p.x; pPos[i * 3 + 1] = p.y; pPos[i * 3 + 2] = p.z; pAlpha[i] = U.clamp(p.life / p.maxLife, 0, 1) * 0.55; pSize[i] = p.size; }
+    for (let i = 0; i < n; i++) {
+      const p = particles[i]; pPos[i * 3] = p.x; pPos[i * 3 + 1] = p.y; pPos[i * 3 + 2] = p.z;
+      pAlpha[i] = U.clamp(p.life / p.maxLife, 0, 1) * (p.glow || 0.55); pSize[i] = p.size;
+      pCol[i * 3] = p.r == null ? 0.81 : p.r; pCol[i * 3 + 1] = p.g == null ? 0.765 : p.g; pCol[i * 3 + 2] = p.b == null ? 0.682 : p.b;
+    }
     const g2 = pPoints.geometry;
     g2.setDrawRange(0, n);
-    g2.attributes.position.needsUpdate = true; g2.attributes.alpha.needsUpdate = true; g2.attributes.psize.needsUpdate = true;
+    g2.attributes.position.needsUpdate = true; g2.attributes.alpha.needsUpdate = true; g2.attributes.psize.needsUpdate = true; g2.attributes.pcol.needsUpdate = true;
     pPoints.visible = n > 0;
   }
   function resizeParticles() { if (pPoints) pPoints.material.uniforms.uScale.value = window.innerHeight * 0.5; }
@@ -1102,7 +1165,7 @@ function build(scene, teamA, teamB) {
   function inBounds(x, z) { return Math.abs(x) <= C.length / 2 && Math.abs(z) <= C.width / 2; }
   function inPaint(x, z, h) { const d = h.s * (h.s * C.length / 2 - x); return d >= 0 && d <= C.keyDepth && Math.abs(z) <= C.paintW / 2; }
   function inFrontcourt(x, h) { return h.s * x > 0; }
-  return { C, hoops, boardX, build, update, setShotClock, netPulse, crowdCheer, setShadows, isThree, inBounds, inPaint, inFrontcourt, get group() { return group; }, get particles() { return particles; }, initParticles, spawnDust, spawnRimSpark, updateParticles, resizeParticles };
+  return { C, hoops, boardX, build, update, setShotClock, netPulse, crowdCheer, setShadows, isThree, inBounds, inPaint, inFrontcourt, get group() { return group; }, get particles() { return particles; }, initParticles, spawnDust, spawnRimSpark, spawnBurst, updateParticles, resizeParticles };
 })();
 // ==== END COURT ====
 
@@ -2008,7 +2071,10 @@ const Shooting = (() => {
     for (const d of P) {
       if (d.team === p.team) continue;
       const dx = d.x - p.x, dz = d.z - p.z, dist = Math.sqrt(dx * dx + dz * dz); if (dist > SC.contestFar) continue;
-      let c = 1 - U.clamp((dist - SC.contestNear) / (SC.contestFar - SC.contestNear), 0, 1);
+      // Curved, not linear, so the penalty piles up close in: a hand in your face is brutal, a defender
+      // two strides away barely registers. That makes the nearest defender's distance the thing that
+      // decides a jumper.
+      let c = Math.pow(1 - U.clamp((dist - SC.contestNear) / (SC.contestFar - SC.contestNear), 0, 1), SC.contestCurve);
       const dot = (dx * tHx + dz * tHz) / (hd * (dist || 1)); if (dot < 0.15 && dist > 0.9) c *= 0.4;
       if (d.airborne && d.armsUp) c += SC.jumpContestBonus * (dist < 1.3 ? 1 : 0.35); else if (d.armsUp) c += 0.12;
       if (d.state === ST.STUMBLE || d.state === ST.FALL) c *= 0.15;
@@ -2075,13 +2141,20 @@ const Shooting = (() => {
     const ang = (dist < 3.2 ? SC.closeLaunchAngle : SC.launchAngle) * Math.PI / 180 + (RNG.next() - 0.5) * 0.06;
     const l = solveLaunch(x0, y0, z0, t.x, t.y, t.z, ang);
     BallSys.place(x0, y0, z0); BallSys.release(l.vx, l.vy, l.vz, BS.SHOT); ball.spinDir = -1;
+    // a perfect release from the player you control sets off whatever effect they have equipped
+    if (res.green && (p.human || p.career)) {
+      const fx = Bank.effectOf(Bank.equipped.effect);
+      if (fx.count) Court.spawnBurst(x0, y0, z0, fx.colour, fx.count, fx.kind);
+    }
     const s = ball.shot; s.shooter = p.id; s.team = p.team; s.value = res.value; s.make = res.make; s.hoop = h.idx; s.quality = res.q; s.contested = res.contested; s.kind = sh.ft ? 'ft' : 'jumper'; s.blockable = !sh.ft; s.x = p.x; s.z = p.z; s.fouled = false; s.green = res.green; s.pct = res.pct; s.dunkName = '';
     s.assist = (g.lastPass && g.lastPass.to === p.id && g.time - g.lastPass.t < 3 && !sh.ft) ? g.lastPass.from : -1;
     Rules.onShot(p, g, res.value);
     if (p.human || Game.settings.meterHelp) {
       const early = sh.meterT < SC.perfectPoint;
       const txt = res.green ? 'PERFECT' : res.q > 0.55 ? (early ? 'GOOD · EARLY' : 'GOOD · LATE') : (early ? 'EARLY' : 'LATE');
-      if (p.human) Game.emit('feedback', { text: txt, color: res.green ? '#37e07a' : res.q > 0.55 ? '#ffd400' : '#ff4d5e' });
+      // say how open the look was, so the defender's distance is something you can read and learn from
+      const look = res.contested > 0.72 ? ' · SMOTHERED' : res.contested > 0.42 ? ' · CONTESTED' : res.contested < 0.12 ? ' · WIDE OPEN' : '';
+      if (p.human) Game.emit('feedback', { text: txt + look, color: res.green ? '#37e07a' : res.q > 0.55 ? '#ffd400' : '#ff4d5e' });
     }
     Game.emit('sound', { name: 'catchBall' });
   }
@@ -2196,7 +2269,7 @@ const Dunks = (() => {
           const hh = p.height / 1.93, fx = Math.sin(p.facing), fz = Math.cos(p.facing);
           BallSys.place(p.x + fx * 0.3, p.y + hh * 2.1, p.z + fz * 0.3);
           BallSys.release(-fx * 3.5 + (RNG.next() - 0.5) * 3, 2 + RNG.next() * 1.5, -fz * 3.5 + (RNG.next() - 0.5) * 3, BS.LOOSE);
-          ball.blockedBy = d.id; ball.lastTouch = d.id; ball.lastTeam = d.team; d.stats.blk++; d.cd.jump = 0.4;
+          ball.blockedBy = d.id; ball.lastTouch = d.id; ball.lastTeam = d.team; d.stats.blk++; Bank.onBlock(d); d.cd.jump = 0.4;
           Game.emit('sound', { name: 'block' }); Game.emit('feedback', { text: 'BLOCKED', color: '#ff4d5e' }); Game.toast('REJECTED', d.name.toUpperCase() + (isDunk ? ' · MET AT THE RIM' : '')); Game.emit('cheer', { big: 0.9 });
           Rules.onBlock(d, p, g);
           return true;
@@ -2228,7 +2301,7 @@ const Dunks = (() => {
       if (!RNG.chance(SC.blockChanceBase * (0.5 + 0.7 * d.ratings.block / 99) * (1 - dist / SC.blockReach * 0.5))) continue;
       const h = Court.hoops[ball.shot.hoop]; let ax = ball.x - h.x, az = ball.z - h.z; const al = Math.sqrt(ax * ax + az * az) || 1; ax /= al; az /= al;
       ball.vx = ax * 3 + (RNG.next() - 0.5) * 4; ball.vz = az * 3 + (RNG.next() - 0.5) * 4; ball.vy = 0.5 + RNG.next() * 2;
-      ball.state = BS.LOOSE; ball.blockedBy = d.id; ball.lastTouch = d.id; ball.lastTeam = d.team; d.stats.blk++;
+      ball.state = BS.LOOSE; ball.blockedBy = d.id; ball.lastTouch = d.id; ball.lastTeam = d.team; d.stats.blk++; Bank.onBlock(d);
       Game.emit('sound', { name: 'block' }); Game.emit('feedback', { text: 'BLOCKED', color: '#ff4d5e' }); Game.toast('BLOCKED', d.name.toUpperCase()); Game.emit('cheer', { big: 0.8 });
       Rules.onBlock(d, shooter, g);
       return;
@@ -2266,7 +2339,10 @@ const AI = (() => {
   function isBetween(d, p, h) { const ax = h.x - p.x, az = h.z - p.z; const l2 = ax * ax + az * az || 1; const bx = d.x - p.x, bz = d.z - p.z; const t = (bx * ax + bz * az) / l2; if (t < -0.05 || t > 1) return false; const px = p.x + ax * t, pz = p.z + az * t; return U.dist(d.x, d.z, px, pz) < 1.15; }
   // ---- value model, in expected points, so the handler can compare its options ----
   function zoneAt(x, z, h) { return Court.isThree(x, z, h) ? 'three' : U.dist(x, z, h.x, h.z) > 4.3 ? 'mid' : 'close'; }
-  function contestFactor(defDist) { return 1 - SC.contestMaxPenalty * U.clamp(1 - (defDist - SC.contestNear) / (SC.contestFar - SC.contestNear), 0, 1); }
+  function contestFactor(defDist) {
+    const t = U.clamp(1 - (defDist - SC.contestNear) / (SC.contestFar - SC.contestNear), 0, 1);
+    return 1 - SC.contestMaxPenalty * Math.pow(t, SC.contestCurve);
+  }
   function shotEV(p, x, z, h, defDist) {
     const zone = zoneAt(x, z, h), Z = SC.zones[zone];
     const rating = zone === 'three' ? p.ratings.threePt : zone === 'mid' ? p.ratings.midRange : p.ratings.closeShot;
@@ -2642,6 +2718,7 @@ const Game = (() => {
     if (g.career) { for (const p of P) if (p.career) { g.careerPid = p.id; break; } g.lockHuman = g.careerPid >= 0; }
     g.humanTeam = g.careerPid >= 0 ? P[g.careerPid].team : 0;
     g.locked = false; g.running = true; g.state = S.PLAY; g.stateT = 0;
+    Bank.startSession();
     AI.reset(g);
     if (mode === 'practice') {
       const h = hoopFor(0), p = P[0];
@@ -2726,6 +2803,10 @@ const Game = (() => {
   }
   function gameOver(winner) {
     g.state = S.OVER; g.winner = winner; emit('buzzer'); emit('cheer', { big: 1.5 });
+    if (g.humanTeam >= 0 || g.careerPid >= 0) {
+      const side = g.careerPid >= 0 ? P[g.careerPid].team : g.humanTeam;
+      Bank.onWin(winner === side, g.mode);
+    }
     let extra = '';
     if (g.career && !Net.isGuest && g.careerPid >= 0) {
       const me = P[g.careerPid];
@@ -3001,7 +3082,7 @@ const Passing = (() => {
   function catchBall(p, g, intercept) {
     const passer = P[ball.passer]; const wasInbound = g.state === Game.S.INBOUND;
     BallSys.setHolder(p); p.catchT = g.time;
-    if (intercept) { p.stats.stl++; if (passer) passer.stats.to++; Game.toast('INTERCEPTED', p.name.toUpperCase()); Game.emit('sound', { name: 'slap' }); Game.emit('cheer', { big: 0.6 }); if (wasInbound) Rules.inboundComplete(g); Game.onPossession(p, false); }
+    if (intercept) { p.stats.stl++; Bank.onSteal(p); if (passer) passer.stats.to++; Game.toast('INTERCEPTED', p.name.toUpperCase()); Game.emit('sound', { name: 'slap' }); Game.emit('cheer', { big: 0.6 }); if (wasInbound) Rules.inboundComplete(g); Game.onPossession(p, false); }
     else { Game.emit('sound', { name: 'catchBall' }); if (wasInbound) Rules.inboundComplete(g); Game.onPossession(p, false); }
   }
   function inboundPass(p, g) {
@@ -3054,7 +3135,7 @@ const Defense = {
       // knock it loose toward the defender
       const dx = p.x - ball.x, dz = p.z - ball.z; const dl = Math.sqrt(dx * dx + dz * dz) || 1;
       m.hasBall = false; BallSys.release(dx / dl * 3.5 + (RNG.next() - 0.5), 1.2, dz / dl * 3.5 + (RNG.next() - 0.5), BallSys.BS.LOOSE);
-      ball.lastTouch = p.id; ball.lastTeam = p.team; p.stats.stl++; m.stats.to++;
+      ball.lastTouch = p.id; ball.lastTeam = p.team; p.stats.stl++; Bank.onSteal(p); m.stats.to++;
       Game.emit('sound', { name: 'slap' }); Game.toast('STEAL', p.name.toUpperCase()); Game.emit('cheer', { big: 0.6 });
       Rules.onSteal(p, m, g);
       return true;
@@ -3082,12 +3163,20 @@ const Rules = {
     const swish = !ball.touchedRim && !ball.touchedBoard;
     g.score[team] += value; p.stats.pts += value;
     if (ball.shotLive) { if (s.kind === 'ft') p.stats.ftm++; else { p.stats.fgm++; if (value === 3) p.stats.tpm++; } }
-    if (ball.shotLive && s.assist >= 0 && s.kind !== 'ft') { const a = PlayerSys.players[s.assist]; if (a) a.stats.ast++; }
+    if (ball.shotLive && s.assist >= 0 && s.kind !== 'ft') { const a = PlayerSys.players[s.assist]; if (a) { a.stats.ast++; Bank.onAssist(a); } }
+    if (ball.shotLive && s.kind !== 'ft') {
+      if (s.kind === 'jumper') Bank.onMake(p, value, !!s.green, s.contested || 0); else Bank.onDunk(p);
+    }
     ball.shotLive = false; ball.scoredTeam = team;
     Game.emit('netpulse', { hoop: h.idx });
     Game.emit('sound', { name: swish ? 'swish' : 'net' });
     Game.emit('cheer', { big: s.kind === 'ft' ? 0.3 : value === 3 ? 1 : 0.7 });
-    if (s.kind !== 'ft') Game.toast((s.kind === 'dunk' ? 'SLAM' : swish ? 'SWISH' : 'BUCKET') + '  +' + value, p.name.toUpperCase() + (s.green ? ' · PERFECT RELEASE' : s.kind === 'dunk' ? ' · ' + s.dunkName : s.assist >= 0 ? ' · ASSIST ' + PlayerSys.players[s.assist].name.split(' ')[1].toUpperCase() : ''));
+    if (s.kind !== 'ft') {
+      // created players can have a one-word name, so never index blindly into the split
+      const ast = s.assist >= 0 ? PlayerSys.players[s.assist] : null;
+      const sub = s.green ? ' · PERFECT RELEASE' : s.kind === 'dunk' ? ' · ' + s.dunkName : ast ? ' · ASSIST ' + lastName(ast.name) : '';
+      Game.toast((s.kind === 'dunk' ? 'SLAM' : swish ? 'SWISH' : 'BUCKET') + '  +' + value, p.name.toUpperCase() + sub);
+    }
     Game.onScored(team, p, value);
   },
   onBlock(d, p, g) {},
@@ -3271,6 +3360,140 @@ const Rules = {
     Rules.setupInbound(g);
   },
 };// ==== END GAME ====
+
+// ==== BEGIN BANK ====
+// Coins, daily rewards and the cosmetics they buy. One object in localStorage, same as the career, so what
+// you earn survives closing the tab. Everything here is cosmetic: nothing in the store touches ratings.
+const Bank = (() => {
+  const KEY = 'hw_bank', VERSION = 1;
+  const PAY = CONFIG.money;
+  const BALLS = [
+    { id: 'classic', name: 'Classic', cost: 0, blurb: 'The one that comes in the box.', a: '#d67a2a', b: '#8a4a20', seams: '#7a3f1a' },
+    { id: 'night',   name: 'Night Run', cost: 900, blurb: 'Matte black with a cold seam.', a: '#23262e', b: '#14161b', seams: '#5cc9ff' },
+    { id: 'sunset',  name: 'Sunset', cost: 1200, blurb: 'Faded orange into deep rose.', a: '#f0793a', b: '#b8325f', seams: '#ffd7a8' },
+    { id: 'court',   name: 'Blacktop', cost: 1500, blurb: 'Worn grey, park issue.', a: '#7b8391', b: '#4a515c', seams: '#e6eaf0' },
+    { id: 'mint',    name: 'Mint', cost: 2200, blurb: 'Pale green, bright seams.', a: '#8fe3bd', b: '#3f9f79', seams: '#0f3a2b' },
+    { id: 'gold',    name: 'Gold Leaf', cost: 4500, blurb: 'Loud on purpose.', a: '#f2c318', b: '#9c7208', seams: '#2a1f04' },
+  ];
+  const EFFECTS = [
+    { id: 'none',   name: 'None', cost: 0, blurb: 'No flourish on a perfect release.', colour: 0xffffff, count: 0, kind: 'burst' },
+    { id: 'spark',  name: 'Green Spark', cost: 700, blurb: 'A clean green pop at the release.', colour: 0x37e07a, count: 20, kind: 'burst' },
+    { id: 'flame',  name: 'Heat Check', cost: 1600, blurb: 'Embers off the fingertips.', colour: 0xff6a1a, count: 26, kind: 'rise' },
+    { id: 'ice',    name: 'Cold Blooded', cost: 1600, blurb: 'Pale blue frost.', colour: 0x7fd8ff, count: 24, kind: 'fall' },
+    { id: 'violet', name: 'Purple Reign', cost: 2600, blurb: 'A wide violet ring.', colour: 0xa06aff, count: 32, kind: 'ring' },
+    { id: 'gold',   name: 'Pure Gold', cost: 5000, blurb: 'Everybody sees it.', colour: 0xf2c318, count: 36, kind: 'ring' },
+  ];
+  const ballOf = (id) => BALLS.find((b) => b.id === id) || BALLS[0];
+  const effectOf = (id) => EFFECTS.find((e) => e.id === id) || EFFECTS[0];
+
+  let d = null, storageOk = true;
+  function blank() {
+    return { v: VERSION, coins: PAY.starting, lifetime: PAY.starting, spent: 0,
+      owned: { ball: ['classic'], effect: ['none'] }, equip: { ball: 'classic', effect: 'none' },
+      daily: { last: '', streak: 0 }, log: [] };
+  }
+  function save() {
+    if (!d) return;
+    U.saveLS(KEY, d);
+    try { storageOk = !!window.localStorage.getItem(KEY); } catch (e) { storageOk = false; }
+  }
+  function load() {
+    const raw = U.loadLS(KEY, null);
+    d = (raw && typeof raw === 'object' && raw.v === VERSION && raw.owned) ? raw : blank();
+    if (!d.owned.ball || !d.owned.ball.length) d.owned.ball = ['classic'];
+    if (!d.owned.effect || !d.owned.effect.length) d.owned.effect = ['none'];
+    if (!ownsBall(d.equip.ball)) d.equip.ball = 'classic';
+    if (!ownsEffect(d.equip.effect)) d.equip.effect = 'none';
+    return d;
+  }
+  const ownsBall = (id) => d.owned.ball.indexOf(id) >= 0;
+  const ownsEffect = (id) => d.owned.effect.indexOf(id) >= 0;
+
+  // ---------- earning ----------
+  // Every award goes through here so the running total in the HUD and the ledger always agree.
+  let session = 0, pending = [];
+  function award(amount, why) {
+    amount = Math.max(0, Math.round(amount));
+    if (!amount) return 0;
+    d.coins += amount; d.lifetime += amount; session += amount;
+    pending.push({ amount, why });
+    if (pending.length > 6) pending.shift();
+    save();
+    return amount;
+  }
+  // The only player whose work pays: the one you are actually controlling.
+  function isMine(p) { return !!p && (p.human || p.career); }
+  function onMake(p, value, green, contested) {
+    if (!isMine(p)) return;
+    let c = value === 3 ? PAY.three : PAY.two;
+    if (green) c += PAY.perfectBonus;
+    if (contested > 0.42) c += PAY.toughBonus;
+    award(c, value === 3 ? 'three' : 'bucket');
+  }
+  function onDunk(p) { if (isMine(p)) award(PAY.dunk, 'dunk'); }
+  function onBlock(p) { if (isMine(p)) award(PAY.block, 'block'); }
+  function onSteal(p) { if (isMine(p)) award(PAY.steal, 'steal'); }
+  function onAssist(p) { if (isMine(p)) award(PAY.assist, 'assist'); }
+  function onWin(won, mode) { award(won ? PAY.win : PAY.loss, won ? 'win' : 'played'); }
+  function takeFeed() { const out = pending; pending = []; return out; }
+  function startSession() { session = 0; pending = []; }
+
+  // ---------- daily reward ----------
+  const today = () => { const t = new Date(); return t.getFullYear() + '-' + (t.getMonth() + 1) + '-' + t.getDate(); };
+  function dailyReady() { return d.daily.last !== today(); }
+  function dailyAmount() {
+    const streak = dailyReady() && isYesterday(d.daily.last) ? d.daily.streak + 1 : (dailyReady() ? 1 : d.daily.streak);
+    return { streak: Math.min(streak, PAY.dailyMaxStreak), coins: PAY.daily + PAY.dailyStreak * (Math.min(streak, PAY.dailyMaxStreak) - 1) };
+  }
+  function isYesterday(str) {
+    if (!str) return false;
+    const y = new Date(); y.setDate(y.getDate() - 1);
+    return str === (y.getFullYear() + '-' + (y.getMonth() + 1) + '-' + y.getDate());
+  }
+  function claimDaily() {
+    if (!dailyReady()) return null;
+    const { streak, coins } = dailyAmount();
+    d.daily.last = today(); d.daily.streak = streak;
+    d.coins += coins; d.lifetime += coins;
+    d.log.unshift({ t: Date.now(), text: 'Daily reward · day ' + streak, coins });
+    if (d.log.length > 20) d.log.pop();
+    save();
+    return { streak, coins };
+  }
+
+  // ---------- store ----------
+  function buy(kind, id) {
+    const list = kind === 'ball' ? BALLS : EFFECTS;
+    const item = list.find((x) => x.id === id);
+    if (!item) return false;
+    const owned = kind === 'ball' ? ownsBall(id) : ownsEffect(id);
+    if (owned || d.coins < item.cost) return false;
+    d.coins -= item.cost; d.spent += item.cost;
+    d.owned[kind].push(id);
+    d.log.unshift({ t: Date.now(), text: 'Bought ' + item.name, coins: -item.cost });
+    if (d.log.length > 20) d.log.pop();
+    equip(kind, id);
+    return true;
+  }
+  function equip(kind, id) {
+    const owned = kind === 'ball' ? ownsBall(id) : ownsEffect(id);
+    if (!owned) return false;
+    d.equip[kind] = id; save();
+    if (kind === 'ball') Render.setBallSkin(ballOf(id));
+    return true;
+  }
+  function applyEquipped() { Render.setBallSkin(ballOf(d.equip.ball)); }
+  function wipe() { d = blank(); save(); }
+
+  load();
+  return { BALLS, EFFECTS, ballOf, effectOf, ownsBall, ownsEffect,
+    award, onMake, onDunk, onBlock, onSteal, onAssist, onWin, takeFeed, startSession,
+    dailyReady, dailyAmount, claimDaily, buy, equip, applyEquipped, save, load, wipe,
+    get coins() { return d.coins; }, get lifetime() { return d.lifetime; }, get session() { return session; },
+    get equipped() { return d.equip; }, get log() { return d.log; }, get storageOk() { return storageOk; },
+    get data() { return d; } };
+})();
+// ==== END BANK ====
 
 // ==== BEGIN PARK ====
 // MyPark: an outdoor lobby you walk around as your MyCareer player. Six half courts, each with team pads;
@@ -3839,26 +4062,38 @@ function init(container) {
     window.addEventListener('resize', () => { cam.aspect = window.innerWidth / window.innerHeight; cam.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); Court.resizeParticles(); });
     renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); }, false);
     renderer.domElement.addEventListener('webglcontextrestored', () => { if (scene) scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; }); }, false);
-    const bc = 256, bcv = document.createElement('canvas'); bcv.width = bc; bcv.height = bc;
-    const bg = bcv.getContext('2d');
-    const rnd = (() => { let s = 42; return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }; })();
-    const img = bg.createImageData(bc, bc); const d8 = img.data;
-    for (let i = 0; i < bc * bc; i++) { const v = 214 + ((rnd() - 0.5) * 26) | 0; const o = i * 4; d8[o] = v; d8[o + 1] = (v * 0.53) | 0; d8[o + 2] = (v * 0.24) | 0; d8[o + 3] = 255; }
-    bg.putImageData(img, 0, 0);
-    bg.strokeStyle = '#b8682a'; bg.lineWidth = 3.5; bg.lineCap = 'round';
-    bg.beginPath(); bg.moveTo(bc / 2, 0); bg.lineTo(bc * 0.38, bc * 0.3); bg.lineTo(bc * 0.15, bc * 0.5); bg.lineTo(bc / 2, bc * 0.65); bg.lineTo(bc * 0.85, bc * 0.5); bg.lineTo(bc * 0.62, bc * 0.3); bg.lineTo(bc / 2, 0); bg.stroke();
-    bg.beginPath(); bg.moveTo(bc / 2, bc); bg.lineTo(bc * 0.38, bc * 0.7); bg.lineTo(bc * 0.15, bc * 0.5); bg.lineTo(bc / 2, bc * 0.35); bg.lineTo(bc * 0.85, bc * 0.5); bg.lineTo(bc * 0.62, bc * 0.7); bg.lineTo(bc / 2, bc); bg.stroke();
-    bg.lineWidth = 2; bg.strokeStyle = '#8a4a20';
-    bg.beginPath(); bg.moveTo(bc / 2, 0); bg.quadraticCurveTo(bc * 0.2, bc * 0.2, bc * 0.1, bc * 0.35); bg.stroke();
-    bg.beginPath(); bg.moveTo(bc / 2, 0); bg.quadraticCurveTo(bc * 0.8, bc * 0.2, bc * 0.9, bc * 0.35); bg.stroke();
-    bg.beginPath(); bg.moveTo(bc / 2, bc); bg.quadraticCurveTo(bc * 0.2, bc * 0.8, bc * 0.1, bc * 0.65); bg.stroke();
-    bg.beginPath(); bg.moveTo(bc / 2, bc); bg.quadraticCurveTo(bc * 0.8, bc * 0.8, bc * 0.9, bc * 0.65); bg.stroke();
-    bg.fillStyle = '#333'; bg.beginPath(); bg.arc(bc / 2, bc * 0.08, 4, 0, Math.PI * 2); bg.fill();
-    const btex = new THREE.CanvasTexture(bcv); btex.encoding = THREE.sRGBEncoding;
     const ballGeo = new THREE.SphereGeometry(BallSys.R, 20, 14);
-    ballMesh = new THREE.Mesh(ballGeo, new THREE.MeshStandardMaterial({ map: btex, roughness: 0.55, metalness: 0.12, envMapIntensity: 0.5 }));
+    ballMesh = new THREE.Mesh(ballGeo, new THREE.MeshStandardMaterial({ map: ballTexture(Bank.ballOf(Bank.equipped.ball)), roughness: 0.55, metalness: 0.12, envMapIntensity: 0.5 }));
     ballMesh.castShadow = CONFIG.render.shadows; ballMesh.receiveShadow = true; scene.add(ballMesh);
     ballShadow = new THREE.Mesh(new THREE.CircleGeometry(0.14, 16), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4, depthWrite: false })); ballShadow.rotation.x = -Math.PI / 2; ballShadow.position.y = 0.011; scene.add(ballShadow);
+  }
+  // Ball skins are the same panelled ball drawn in different colours, so a bought look costs one canvas
+  // and nothing at run time.
+  function ballTexture(skin) {
+    const bc = 256, cv = document.createElement('canvas'); cv.width = bc; cv.height = bc;
+    const g = cv.getContext('2d');
+    const rnd = (() => { let sd = 42; return () => { sd = (sd * 1103515245 + 12345) & 0x7fffffff; return sd / 0x7fffffff; }; })();
+    const grad = g.createLinearGradient(0, 0, 0, bc);
+    grad.addColorStop(0, skin.a); grad.addColorStop(1, skin.b);
+    g.fillStyle = grad; g.fillRect(0, 0, bc, bc);
+    g.globalAlpha = 0.10;                                     // pebbled grain
+    for (let i = 0; i < 2600; i++) { g.fillStyle = rnd() < 0.5 ? '#000' : '#fff'; g.fillRect(rnd() * bc, rnd() * bc, 2, 2); }
+    g.globalAlpha = 1;
+    g.strokeStyle = skin.seams; g.lineWidth = 3.5; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(bc / 2, 0); g.lineTo(bc * 0.38, bc * 0.3); g.lineTo(bc * 0.15, bc * 0.5); g.lineTo(bc / 2, bc * 0.65); g.lineTo(bc * 0.85, bc * 0.5); g.lineTo(bc * 0.62, bc * 0.3); g.lineTo(bc / 2, 0); g.stroke();
+    g.beginPath(); g.moveTo(bc / 2, bc); g.lineTo(bc * 0.38, bc * 0.7); g.lineTo(bc * 0.15, bc * 0.5); g.lineTo(bc / 2, bc * 0.35); g.lineTo(bc * 0.85, bc * 0.5); g.lineTo(bc * 0.62, bc * 0.7); g.lineTo(bc / 2, bc); g.stroke();
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(bc / 2, 0); g.quadraticCurveTo(bc * 0.2, bc * 0.2, bc * 0.1, bc * 0.35); g.stroke();
+    g.beginPath(); g.moveTo(bc / 2, 0); g.quadraticCurveTo(bc * 0.8, bc * 0.2, bc * 0.9, bc * 0.35); g.stroke();
+    g.beginPath(); g.moveTo(bc / 2, bc); g.quadraticCurveTo(bc * 0.2, bc * 0.8, bc * 0.1, bc * 0.65); g.stroke();
+    g.beginPath(); g.moveTo(bc / 2, bc); g.quadraticCurveTo(bc * 0.8, bc * 0.8, bc * 0.9, bc * 0.65); g.stroke();
+    const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; return t;
+  }
+  function setBallSkin(skin) {
+    if (!ballMesh) return;
+    const old = ballMesh.material.map;
+    ballMesh.material.map = ballTexture(skin); ballMesh.material.needsUpdate = true;
+    if (old) old.dispose();
   }
   function disposeObject(root) {
     root.traverse((o) => {
@@ -4048,7 +4283,7 @@ function init(container) {
   }
   function draw() { renderer.render(scene, cam); }
   function project(x, y, z, out) { _v.set(x, y, z).project(cam); out.x = (_v.x * 0.5 + 0.5) * window.innerWidth; out.y = (-_v.y * 0.5 + 0.5) * window.innerHeight; out.visible = _v.z < 1; return out; }
-  return { init, buildArena, buildPlayers, setShadows, sync, draw, project, setMatchFrame, poseAvatar, setSky,
+  return { init, buildArena, buildPlayers, setShadows, sync, draw, project, setMatchFrame, poseAvatar, setSky, setBallSkin,
     get renderer() { return renderer; }, get scene() { return scene; } };
 })();
 // ==== END RENDER ====
@@ -4058,7 +4293,7 @@ function init(container) {
 const UI = (() => {
   const $ = (id) => document.getElementById(id);
   const el = {};
-  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'menuCareer', 'careerBody', 'teamGrid', 'park', 'parkSub', 'parkPrompt', 'parkLog', 'parkInput', 'parkTags', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'jerseyA', 'jerseyB', 'pnum', 'tipnote', 'pauseScore', 'wipe', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
+  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'menuCareer', 'careerBody', 'teamGrid', 'menuPark', 'parkBody', 'menuStore', 'storeBody', 'coinBar', 'coinNum', 'coinPop', 'park', 'parkSub', 'parkPrompt', 'parkLog', 'parkInput', 'parkTags', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'jerseyA', 'jerseyB', 'pnum', 'tipnote', 'pauseScore', 'wipe', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
   let debugOn = false, pick = U.loadLS('hw_pick', [0, 1]), last = {}, tagEls = [], meterVisible = false, hudVisible = false, mode = U.loadLS('hw_mode', '5v5');
   if (!Array.isArray(pick) || pick.length !== 2 || pick[0] === pick[1]) pick = [0, 1];
   const _pt = { x: 0, y: 0, visible: false };
@@ -4075,7 +4310,7 @@ const UI = (() => {
     $('btnPark').onclick = () => {
       AudioSys.init(); AudioSys.play('ui');
       // the park is walked as your created player, so it needs a career first
-      if (Career.exists()) Main.enterPark(); else { show('menuCareer'); toast('MAKE A PLAYER FIRST', 'MYPARK USES YOUR MYCAREER BUILD'); }
+      show('menuPark');
     };
     $('btnResetBinds').onclick = () => { Input.reset(); renderBinds(el.bindList, true); updateHint(); };
     $('btnResetBinds2').onclick = () => { Input.reset(); renderBinds(el.bindList2, true); updateHint(); };
@@ -4099,10 +4334,11 @@ const UI = (() => {
     updateHint();
   }
   function show(sub) {
-    for (const p of ['menuHome', 'menuControls', 'menuSettings', 'menuNet', 'menuCareer']) el[p].classList.toggle('hidden', p !== sub);
+    for (const p of ['menuHome', 'menuControls', 'menuSettings', 'menuNet', 'menuCareer', 'menuPark', 'menuStore']) el[p].classList.toggle('hidden', p !== sub);
     document.querySelectorAll('#menu [data-nav]').forEach((b) => b.classList.toggle('sel', b.dataset.nav === sub));
     if (sub === 'menuControls') renderBinds(el.bindList, true); else if (sub === 'menuSettings') renderSettings(el.settingsList);
     else if (sub === 'menuNet') Net.renderPanel(el.netBody); else if (sub === 'menuCareer') renderCareer();
+    else if (sub === 'menuPark') renderParkPane(); else if (sub === 'menuStore') renderStore();
   }
   function showPauseSub(sub) {
     for (const p of ['pauseHome', 'pauseControls', 'pauseSettings']) el[p].classList.toggle('hidden', p !== sub);
@@ -4475,7 +4711,7 @@ const UI = (() => {
       Render.project(p.x, p.y + p.height * 1.02, p.z, _pt);
       if (!_pt.visible) { d.classList.add('hidden'); continue; }
       d.classList.remove('hidden'); d.style.left = _pt.x + 'px'; d.style.top = _pt.y + 'px';
-      const txt = (p.ctlName || p.name.split(' ')[1]).toUpperCase(); const key = txt + p.controlled + p.num;
+      const txt = (p.ctlName ? p.ctlName.toUpperCase() : lastName(p.name)); const key = txt + p.controlled + p.num;
       if (d.dataset.k !== key) { d.dataset.k = key; d.innerHTML = '<span class="n">' + p.num + '</span>' + esc(txt); d.className = 'tag' + (p.controlled ? ' me' : ''); d.style.borderColor = p.controlled ? '' : hex(g.teams[p.team].primary); }
     }
   }
@@ -4486,7 +4722,7 @@ const UI = (() => {
     let s = 'FPS ' + stats.fps.toFixed(0) + '  frame ' + stats.frameMs.toFixed(2) + 'ms  sim ' + stats.simMs.toFixed(2) + 'ms  steps ' + stats.steps + '\n';
     s += 'draws ' + r.calls + '  tris ' + (r.triangles / 1000).toFixed(1) + 'k  state ' + Object.keys(Game.S)[g.state] + ' poss ' + g.possession + ' shot ' + g.shotClock.toFixed(1) + '\n';
     s += 'ball ' + Object.keys(BallSys.BS)[b.state] + ' (' + b.x.toFixed(2) + ',' + b.y.toFixed(2) + ',' + b.z.toFixed(2) + ') v(' + b.vx.toFixed(1) + ',' + b.vy.toFixed(1) + ',' + b.vz.toFixed(1) + ') holder ' + b.holder + ' rim ' + b.touchedRim + '\n';
-    for (const p of PlayerSys.players) s += (p.controlled ? '>' : ' ') + p.id + ' ' + p.name.split(' ')[1].padEnd(10) + PlayerSys.STATE_NAMES[p.state].padEnd(9) + ' st ' + p.stamina.toFixed(0).padStart(3) + ' spd ' + p.speed.toFixed(1) + ' ai ' + (p.ai.role || '').padEnd(8) + ' cd ' + p.cd.move.toFixed(1) + '\n';
+    for (const p of PlayerSys.players) s += (p.controlled ? '>' : ' ') + p.id + ' ' + lastName(p.name).padEnd(10) + PlayerSys.STATE_NAMES[p.state].padEnd(9) + ' st ' + p.stamina.toFixed(0).padStart(3) + ' spd ' + p.speed.toFixed(1) + ' ai ' + (p.ai.role || '').padEnd(8) + ' cd ' + p.cd.move.toFixed(1) + '\n';
     s += 'net ' + Net.status();
     el.debug.textContent = s;
   }
@@ -4516,7 +4752,105 @@ const UI = (() => {
     if (!on) { closeChat(); el.parkLog.innerHTML = ''; el.parkPrompt.innerHTML = ''; }
     else chatDirty = true;
   }
-  function openPark() { showMenu(); show('menuCareer'); }
+  function openPark() { showMenu(); show('menuPark'); }
+  function openStore() { showMenu(); show('menuStore'); }
+  // ---------- Store: coins, the daily, and the two things they buy ----------
+  const coinFmt = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  function renderStore() {
+    const cont = el.storeBody, eq = Bank.equipped;
+    let h = '<div class="pane-title">Store<small>Coins come from playing. Everything here is a look \u2014 nothing in the store touches your ratings.</small></div>';
+    h += '<div class="st-daily">';
+    if (Bank.dailyReady()) {
+      const nx = Bank.dailyAmount();
+      h += '<div><div class="big">+' + coinFmt(nx.coins) + '</div><div class="sub">day ' + nx.streak + ' of the streak</div></div>'
+        + '<button class="btn primary" id="stDaily"><span class="t">Claim daily</span></button>';
+    } else {
+      h += '<div><div class="big">' + coinFmt(Bank.coins) + '</div><div class="sub">coins \u00b7 daily claimed, streak ' + Bank.data.daily.streak + ' \u00b7 come back tomorrow</div></div>';
+    }
+    h += '</div>';
+    if (!Bank.storageOk) h += '<div class="note" style="color:var(--danger)">This browser is blocking storage, so coins and purchases last only until you close the tab.</div>';
+    h += '<div class="coins" style="margin:10px 0 2px">Balance <b>' + coinFmt(Bank.coins) + '</b> \u00b7 <span class="k" style="font-size:12px;letter-spacing:0">' + coinFmt(Bank.lifetime) + ' earned all time</span></div>';
+
+    h += '<h2 class="sec">Ball skins</h2><div class="st-grid">';
+    for (const b of Bank.BALLS) {
+      const owned = Bank.ownsBall(b.id), on = eq.ball === b.id;
+      h += '<div class="st-card' + (owned ? ' owned' : '') + (on ? ' on' : '') + '" style="border-left-color:' + (owned ? 'var(--ok)' : b.a) + '">'
+        + '<div class="st-swatch" style="background:linear-gradient(180deg,' + b.a + ',' + b.b + ');box-shadow:inset 0 0 0 2px ' + b.seams + '"></div>'
+        + '<b>' + esc(b.name) + '</b><span class="bl">' + esc(b.blurb) + '</span>'
+        + '<div class="row2"><span class="px' + (owned ? ' have' : '') + '">' + (owned ? (on ? 'Equipped' : 'Owned') : coinFmt(b.cost)) + '</span>'
+        + (on ? '' : '<button class="btn small" data-st="ball,' + b.id + '"' + (!owned && Bank.coins < b.cost ? ' disabled' : '') + '>' + (owned ? 'Equip' : 'Buy') + '</button>')
+        + '</div></div>';
+    }
+    h += '</div>';
+
+    h += '<h2 class="sec">Perfect release effects<small style="font-weight:400;text-transform:none;letter-spacing:0;font-family:var(--sans);font-size:12px;color:var(--muted)"> &mdash; fires when you green a shot</small></h2><div class="st-grid">';
+    for (const f of Bank.EFFECTS) {
+      const owned = Bank.ownsEffect(f.id), on = eq.effect === f.id;
+      h += '<div class="st-card' + (owned ? ' owned' : '') + (on ? ' on' : '') + '" style="border-left-color:' + (owned ? 'var(--ok)' : hex(f.colour)) + '">'
+        + '<div class="st-swatch" style="background:radial-gradient(circle at 50% 50%,' + hex(f.colour) + ',transparent 72%)"></div>'
+        + '<b>' + esc(f.name) + '</b><span class="bl">' + esc(f.blurb) + '</span>'
+        + '<div class="row2"><span class="px' + (owned ? ' have' : '') + '">' + (owned ? (on ? 'Equipped' : 'Owned') : coinFmt(f.cost)) + '</span>'
+        + (on ? '' : '<button class="btn small" data-st="effect,' + f.id + '"' + (!owned && Bank.coins < f.cost ? ' disabled' : '') + '>' + (owned ? 'Equip' : 'Buy') + '</button>')
+        + '</div></div>';
+    }
+    h += '</div>';
+
+    h += '<h2 class="sec">How you earn</h2><div class="cr-stand" style="grid-template-columns:auto 1fr;max-width:none;gap:4px 14px">';
+    const M = CONFIG.money;
+    for (const [n, label] of [[M.two, 'a two'], [M.three, 'a three'], [M.dunk, 'a dunk'], [M.block, 'a block'],
+      [M.steal, 'a steal'], [M.assist, 'an assist'], [M.perfectBonus, 'bonus for a perfect release'],
+      [M.toughBonus, 'bonus for scoring through contact'], [M.win, 'a win'], [M.loss, 'a loss']]) {
+      h += '<span class="hd">+' + n + '</span><span>' + esc(label) + '</span>';
+    }
+    h += '</div>';
+    if (Bank.log.length) {
+      h += '<h2 class="sec">Recent</h2><div class="st-log">';
+      for (const row of Bank.log.slice(0, 8)) {
+        h += '<span>' + esc(row.text) + ' ' + (row.coins >= 0 ? '<b>+' + coinFmt(row.coins) + '</b>' : '<i>' + coinFmt(row.coins) + '</i>') + '</span>';
+      }
+      h += '</div>';
+    }
+    cont.innerHTML = h;
+    const dz = cont.querySelector('#stDaily');
+    if (dz) dz.onclick = () => { const r = Bank.claimDaily(); if (r) { AudioSys.play('ui'); toast('DAILY REWARD', '+' + coinFmt(r.coins) + ' COINS \u00b7 DAY ' + r.streak); renderStore(); } };
+    cont.querySelectorAll('[data-st]').forEach((b) => b.onclick = () => {
+      const [kind, id] = b.dataset.st.split(',');
+      const owned = kind === 'ball' ? Bank.ownsBall(id) : Bank.ownsEffect(id);
+      const ok = owned ? Bank.equip(kind, id) : Bank.buy(kind, id);
+      if (ok) { AudioSys.play('ui'); renderStore(); }
+    });
+  }
+  // The MyPark tab: what the park is, and the way in. It needs your created player, so it offers to
+  // send you to MyCareer when there is not one yet.
+  function renderParkPane() {
+    const cont = el.parkBody, has = Career.exists();
+    let h = '<div class="pane-title">MyPark<small>An open lobby you walk as your MyCareer player. Six courts, team pads, and whoever is around.</small></div>';
+    if (has) {
+      const c = Career.data, t = TEAMS[c.team];
+      h += '<div class="cr-top"><div class="cr-card" data-num="' + c.player.num + '" style="background:' + hex(t.primary) + ';color:' + (t.dark ? '#f3f0e7' : '#15130a') + '">'
+        + '<div class="cr-nm">' + esc(c.player.name) + '</div>'
+        + '<div class="cr-meta">' + esc(c.player.pos) + ' \u00b7 ' + esc(Career.archOf(c.player.arch).name) + '</div>'
+        + '<div class="cr-ovr">Overall ' + Career.overallOf(c.player.cats, c.player.pos) + '</div></div>'
+        + '<div class="cr-season"><div class="cr-phase">Walk in as</div><div class="cr-next">' + esc(c.player.name) + '</div>'
+        + '<div class="cr-rec">Everything you earn out there goes to the same wallet.</div></div></div>';
+    } else {
+      h += '<div class="note" style="color:var(--accent)">MyPark uses your MyCareer build. Make a player first and the park opens up.</div>';
+    }
+    h += '<h2 class="sec">How a run starts</h2>'
+      + '<div class="cr-stand" style="grid-template-columns:auto 1fr;max-width:none;gap:6px 14px">'
+      + '<span class="hd">1</span><span>Walk to a court. Two each of 1v1, 2v2 and 3v3, colour-coded by the paint.</span>'
+      + '<span class="hd">2</span><span>Stand on a team pad and press ' + esc(Input.keyLabel(Input.binds.shoot)) + ' to claim it. Step off to drop out.</span>'
+      + '<span class="hd">3</span><span>When every pad on that court is taken it tips off right there, in the lobby.</span>'
+      + '<span class="hd">4</span><span>Not in it? Walk over and watch from the sideline. Press T any time to chat.</span>'
+      + '</div>';
+    const netBlocked = Net.active;
+    h += '<div class="cr-actions"><button class="btn primary" id="pkGo"' + (has && !netBlocked ? '' : ' disabled') + '><span class="t">Enter MyPark</span></button>'
+      + (has ? '' : '<button class="btn small" id="pkMake"><span class="t">Make a player</span></button>')
+      + (netBlocked ? '<span class="note" style="margin:0">Leave the lobby first \u2014 MyPark is single player.</span>' : '') + '</div>';
+    cont.innerHTML = h;
+    const go = cont.querySelector('#pkGo'); if (go) go.onclick = () => { AudioSys.init(); AudioSys.play('ui'); Main.enterPark(); };
+    const mk = cont.querySelector('#pkMake'); if (mk) mk.onclick = () => { AudioSys.play('ui'); show('menuCareer'); };
+  }
   function parkToast(text, sub) { toast(text, sub); }
   function parkChatDirty() { chatDirty = true; }
   function openChat() {
@@ -4572,6 +4906,21 @@ const UI = (() => {
     el.parkSub.textContent = Park.goers.length + ' here \u00b7 ' + waiting + ' on pads' + (live ? ' \u00b7 ' + live.court.label + ' running' : '');
     parkPrompt(); parkTags();
   }
+  // The coin readout rides along wherever you can actually earn: in a game, or out in the park.
+  let coinShown = -1, coinPopT = 0;
+  const WHY = { bucket: 'bucket', three: 'three', dunk: 'dunk', block: 'block', steal: 'steal', assist: 'assist', win: 'win', played: 'played' };
+  function updateCoins(dt) {
+    const on = Game.g.running || Main.inPark;
+    el.coinBar.classList.toggle('hidden', !on);
+    if (!on) return;
+    if (Bank.coins !== coinShown) { coinShown = Bank.coins; el.coinNum.textContent = coinFmt(coinShown); }
+    const feed = Bank.takeFeed();
+    if (feed.length) {
+      const last = feed[feed.length - 1];
+      el.coinPop.textContent = '+' + last.amount + ' ' + (WHY[last.why] || last.why);
+      coinPopT = 1.6;
+    } else if (coinPopT > 0) { coinPopT -= dt; if (coinPopT <= 0) el.coinPop.textContent = ''; }
+  }
   function update(dt, stats) {
     const g = Game.g;
     for (const ev of g.events) handleEvent(ev, g); g.events.length = 0;
@@ -4579,6 +4928,7 @@ const UI = (() => {
     if (Net.isHost) for (const e of b.events) Net.forwardEvent('bsfx', e);
     for (const e of b.events) { if (typeof e === 'number') { if (e < 0) AudioSys.play('dribble', U.clamp(0.6 + (-e - 1) * 0.07, 0.5, 1.1)); else AudioSys.play('bounce', e); } else if (e === 'rim') AudioSys.play('rim'); else if (e === 'board') AudioSys.play('board'); }
     b.events.length = 0;
+    updateCoins(dt);
     if (Main.inPark) updatePark();
     if (!hudVisible) return;
     const hp = PlayerSys.players[g.human]; if (hp) { Render.project(hp.x, hp.y + hp.height * 1.15, hp.z, fbPos); }
@@ -4586,7 +4936,7 @@ const UI = (() => {
     if (debugOn) updateDebug(dt, stats);
   }
   return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, openNet, openCareer, renderCareer,
-    showPark, openPark, parkToast, parkChatDirty, openChat, closeChat, get chatOpen() { return chatOpen; },
+    showPark, openPark, openStore, renderStore, parkToast, parkChatDirty, openChat, closeChat, get chatOpen() { return chatOpen; },
     wipe, update, toast, feedback, toggleDebug, clearToast, get pick() { return pick; }, get mode() { return mode; }, get debugOn() { return debugOn; } };
 })();
 // ==== END UI ====
@@ -4994,6 +5344,7 @@ const Main = (() => {
   const stats = { fps: 60, frameMs: 0, steps: 0, simMs: 0 };
   function init() {
     Render.init(document.getElementById('app'));
+    Bank.applyEquipped();
     Render.buildArena(TEAMS[0], TEAMS[1]);
     UI.init({ startGame, resume, quit, rematch, applySettings });
     applySettings();
