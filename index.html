@@ -7,122 +7,233 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2714%27 fill=%27%23e0702a%27/%3E%3Cpath d=%27M2 16h28M16 2v28%27 stroke=%27%231a0d06%27 stroke-width=%272%27/%3E%3C/svg%3E">
 <style>
   :root {
-    --bg: #07090e; --panel: rgba(12, 16, 26, 0.86); --line: rgba(255,255,255,0.08);
-    --text: #eef2f7; --muted: #8b95a7; --accent: #ffd400; --accent2: #35d0ff; --danger: #ff4d5e; --ok: #37e07a;
+    --bg: #0b0d12; --panel: #11141b; --panel2: #191d26; --panel3: #232834; --line: rgba(255,255,255,0.09);
+    --ink: #f3f0e7; --muted: #8b909a; --accent: #f2c318; --accent-ink: #15130a; --danger: #ff3b3b; --ok: #3ddc84;
+    --display: "Haettenschweiler", "Impact", "Arial Narrow", "Franklin Gothic Medium", "Helvetica Neue", Arial, sans-serif;
+    --sans: "Helvetica Neue", Helvetica, Arial, "Segoe UI", sans-serif;
     --mono: "SF Mono", Menlo, Consolas, monospace;
-    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --skew: -9deg; --unskew: 9deg;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); overflow: hidden; user-select: none; -webkit-user-select: none; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--sans); overflow: hidden; user-select: none; -webkit-user-select: none; }
   canvas { display: block; }
   #app { position: fixed; inset: 0; }
   .hidden { display: none !important; }
+  button { font: inherit; color: inherit; }
+  .dsp { font-family: var(--display); font-weight: 400; text-transform: uppercase; line-height: 0.9; letter-spacing: 0.01em; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- buttons ---------- */
+  .btn { pointer-events: auto; cursor: pointer; position: relative; border: 0; background: var(--panel3); color: var(--ink); padding: 11px 22px 9px; font-family: var(--display); text-transform: uppercase; font-size: 19px; letter-spacing: 0.04em; line-height: 1; transform: skewX(var(--skew)); transition: transform 0.12s, background-color 0.15s, color 0.15s; overflow: hidden; }
+  .btn::after { content: ""; position: absolute; inset: 0; background: var(--accent); transform: translateX(-101%); transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); z-index: 0; }
+  .btn > * { position: relative; z-index: 1; }
+  .btn:hover { color: var(--accent-ink); }
+  .btn:hover::after { transform: translateX(0); }
+  .btn:active { transform: skewX(var(--skew)) translateY(1px); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); font-size: 22px; padding: 13px 30px 11px; }
+  .btn.primary::after { background: var(--ink); }
+  .btn.primary:hover { color: var(--bg); }
+  .btn.small { font-size: 15px; padding: 7px 14px 5px; }
+  .btn.sel { background: var(--accent); color: var(--accent-ink); }
+  .btn.sel::after { display: none; }
+  .btn:disabled { opacity: 0.35; cursor: default; }
+  .btn:disabled::after { display: none; }
+  .btn.ghost { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; align-items: center; }
+  .btn span.t { display: inline-block; }
+  input, textarea { font-family: var(--sans); }
 
   /* ---------- HUD ---------- */
   #hud { position: fixed; inset: 0; pointer-events: none; }
-  #scorebug { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: stretch; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; backdrop-filter: blur(8px); overflow: hidden; font-weight: 700; letter-spacing: 0.04em; box-shadow: 0 8px 30px rgba(0,0,0,0.45); }
-  #scorebug .team { display: flex; align-items: center; gap: 10px; padding: 8px 14px; min-width: 150px; }
-  #scorebug .team.right { flex-direction: row-reverse; }
-  #scorebug .bar { width: 6px; align-self: stretch; border-radius: 3px; }
-  #scorebug .abbr { font-size: 15px; }
-  #scorebug .score { font-size: 24px; font-family: var(--mono); margin-left: auto; }
+  #scorebug { position: absolute; top: 18px; left: 28px; display: flex; align-items: stretch; height: 46px; filter: drop-shadow(0 6px 14px rgba(0,0,0,0.5)); transform: skewX(var(--skew)); transform-origin: left bottom; }
+  #scorebug > div { display: flex; align-items: center; }
+  #scorebug .team { background: var(--panel); padding: 0 14px 0 0; min-width: 150px; gap: 10px; }
+  #scorebug .team.right { flex-direction: row-reverse; padding: 0 0 0 14px; }
+  #scorebug .bar { width: 10px; align-self: stretch; }
+  #scorebug .abbr { font-family: var(--display); font-size: 22px; letter-spacing: 0.06em; }
+  #scorebug .score { font-family: var(--display); font-size: 34px; margin-left: auto; line-height: 1; }
   #scorebug .team.right .score { margin-left: 0; margin-right: auto; }
-  #scorebug .mid { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 14px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); min-width: 96px; }
-  #scorebug .period { font-size: 11px; color: var(--muted); letter-spacing: 0.15em; }
-  #scorebug .clock { font-family: var(--mono); font-size: 18px; }
-  #scorebug .fouls { font-size: 9px; color: var(--muted); letter-spacing: 0.15em; margin-top: 2px; }
+  #scorebug .score.bump { animation: bump 0.45s ease-out; }
+  @keyframes bump { 0% { transform: scale(1); } 35% { transform: scale(1.3); color: var(--accent); } 100% { transform: scale(1); } }
+  #scorebug .mid { flex-direction: column; justify-content: center; background: var(--panel3); padding: 0 16px; min-width: 104px; }
+  #scorebug .period { font-family: var(--display); font-size: 12px; color: var(--muted); letter-spacing: 0.14em; }
+  #scorebug .clock { font-family: var(--display); font-size: 22px; line-height: 1; margin-top: 1px; }
+  #scorebug .fouls { font-size: 9px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-top: 2px; }
   #scorebug .fouls b { color: var(--danger); }
-  #scorebug .score.bump { animation: bump 0.5s ease-out; }
-  @keyframes bump { 0% { transform: scale(1); color: var(--accent); } 40% { transform: scale(1.35); color: var(--accent); } 100% { transform: scale(1); } }
-  #scorebug .shot { display: flex; align-items: center; justify-content: center; padding: 6px 12px; font-family: var(--mono); font-size: 20px; color: var(--accent); min-width: 54px; border-right: 1px solid var(--line); }
-  #scorebug .shot.low { color: var(--danger); animation: pulse 0.5s infinite alternate; }
-  @keyframes pulse { from { opacity: 1; } to { opacity: 0.35; } }
+  #scorebug .shot { background: var(--accent); color: var(--accent-ink); font-family: var(--display); font-size: 30px; padding: 0 14px; min-width: 58px; justify-content: center; }
+  #scorebug .shot.low { background: var(--danger); color: #fff; animation: pulse 0.5s infinite alternate; }
+  #scorebug .shot:empty { display: none; }
+  @keyframes pulse { from { opacity: 1; } to { opacity: 0.5; } }
   #scorebug .poss { width: 0; height: 0; border: 6px solid transparent; }
   #scorebug .poss.left { border-right-color: var(--accent); }
   #scorebug .poss.right { border-left-color: var(--accent); }
+  #scorebug span, #scorebug .fouls { display: inline-block; transform: skewX(var(--unskew)); }
 
-  #playerbox { position: absolute; left: 18px; bottom: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; min-width: 220px; backdrop-filter: blur(8px); }
-  #playerbox .name { font-weight: 700; font-size: 15px; letter-spacing: 0.03em; }
-  #playerbox .sub { color: var(--muted); font-size: 11px; letter-spacing: 0.12em; margin-top: 2px; }
-  .barwrap { height: 7px; background: rgba(255,255,255,0.08); border-radius: 4px; margin-top: 8px; overflow: hidden; }
-  .barwrap > div { height: 100%; width: 100%; background: linear-gradient(90deg, var(--ok), #b6ff5c); border-radius: 4px; transition: width 0.08s linear; }
-  .barwrap > div.low { background: linear-gradient(90deg, var(--danger), #ff9a5c); }
+  #playerbox { position: absolute; left: 18px; bottom: 18px; display: flex; align-items: stretch; transform: skewX(var(--skew)); transform-origin: left bottom; filter: drop-shadow(0 6px 14px rgba(0,0,0,0.5)); }
+  #playerbox .pnum { background: var(--accent); color: var(--accent-ink); font-family: var(--display); font-size: 44px; line-height: 1; padding: 6px 16px 2px; display: flex; align-items: center; }
+  #playerbox .pinfo { background: var(--panel); padding: 8px 18px 8px 14px; min-width: 210px; }
+  #playerbox .name { font-family: var(--display); font-size: 22px; letter-spacing: 0.03em; text-transform: uppercase; line-height: 1; }
+  #playerbox .sub { color: var(--muted); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; margin-top: 3px; }
+  #playerbox .pnum > span, #playerbox .pinfo > div { display: inline-block; transform: skewX(var(--unskew)); }
+  .barwrap { height: 8px; background: rgba(255,255,255,0.08); margin-top: 8px; position: relative; overflow: hidden; }
+  .barwrap > div { height: 100%; width: 100%; background: var(--ok); transition: width 0.08s linear; }
+  .barwrap > div.low { background: var(--danger); }
+  .barwrap::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 18px, var(--panel) 18px 21px); pointer-events: none; }
 
-  #meter { position: absolute; width: 14px; height: 120px; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.25); border-radius: 7px; overflow: hidden; transform: translate(-50%, -100%); }
-  #meter .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: linear-gradient(0deg, #ffb347, #ffd400); }
-  #meter .zone { position: absolute; left: 0; right: 0; background: rgba(55, 224, 122, 0.85); }
-  #meter .good { position: absolute; left: 0; right: 0; background: rgba(255, 212, 0, 0.35); }
-  #meter .mark { position: absolute; left: 0; right: 0; height: 2px; background: #fff; }
-  #feedback { position: absolute; transform: translate(-50%, -100%); font-weight: 900; font-size: 18px; letter-spacing: 0.08em; text-shadow: 0 2px 10px rgba(0,0,0,0.8); white-space: nowrap; opacity: 0; }
-  #feedback.show { animation: feedpop 0.9s ease-out forwards; }
-  @keyframes feedpop { 0% { opacity: 0; transform: translate(-50%, -80%) scale(0.6); } 15% { opacity: 1; transform: translate(-50%, -110%) scale(1.15); } 30% { transform: translate(-50%, -110%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -150%) scale(1); } }
+  #meter { position: absolute; width: 16px; height: 130px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; transform: translate(-50%, -100%) skewX(var(--skew)); }
+  #meter .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: var(--accent); }
+  #meter .zone { position: absolute; left: 0; right: 0; background: var(--ok); }
+  #meter .good { position: absolute; left: 0; right: 0; background: rgba(242, 195, 24, 0.28); }
+  #meter .mark { position: absolute; left: 0; right: 0; height: 3px; background: var(--ink); }
+  #feedback { position: absolute; transform: translate(-50%, -100%); font-family: var(--display); font-size: 26px; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; opacity: 0; text-shadow: 0 2px 0 rgba(0,0,0,0.9), 0 0 14px rgba(0,0,0,0.6); }
+  #feedback.show { animation: feedpop 0.9s cubic-bezier(0.2, 0.9, 0.2, 1) forwards; }
+  @keyframes feedpop { 0% { opacity: 0; transform: translate(-50%, -80%) scale(0.7) skewX(var(--skew)); } 18% { opacity: 1; transform: translate(-50%, -110%) scale(1.1) skewX(var(--skew)); } 35% { transform: translate(-50%, -110%) scale(1) skewX(var(--skew)); } 100% { opacity: 0; transform: translate(-50%, -150%) scale(1) skewX(var(--skew)); } }
 
   #tags { position: absolute; inset: 0; }
-  .tag { position: absolute; transform: translate(-50%, -100%); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 6px; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.15); white-space: nowrap; }
-  .tag.me { border-color: var(--accent); box-shadow: 0 0 12px rgba(255,212,0,0.35); }
-  .tag .n { opacity: 0.7; margin-right: 4px; font-family: var(--mono); }
+  .tag { position: absolute; transform: translate(-50%, -100%) skewX(var(--skew)); font-family: var(--display); font-size: 13px; letter-spacing: 0.06em; padding: 3px 8px 2px; background: rgba(11, 13, 18, 0.82); border-left: 3px solid transparent; white-space: nowrap; text-transform: uppercase; }
+  .tag.me { background: var(--accent); color: var(--accent-ink); border-left-color: var(--accent-ink); }
+  .tag .n { opacity: 0.6; margin-right: 5px; }
 
-  #toast { position: absolute; top: 22%; left: 50%; transform: translateX(-50%); font-size: 34px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; text-shadow: 0 4px 24px rgba(0,0,0,0.9); opacity: 0; text-align: center; }
-  #toast small { display: block; font-size: 14px; letter-spacing: 0.25em; color: var(--muted); margin-top: 4px; }
-  #toast.show { animation: toastpop 1.6s ease-out forwards; }
-  @keyframes toastpop { 0% { opacity: 0; transform: translate(-50%, 10px) scale(0.9); } 10% { opacity: 1; transform: translate(-50%, 0) scale(1.05); } 20% { transform: translate(-50%, 0) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; } }
+  #toast { position: absolute; top: 17%; left: 50%; transform: translateX(-50%); opacity: 0; text-align: center; pointer-events: none; }
+  #toast .rib { display: inline-block; background: var(--accent); color: var(--accent-ink); font-family: var(--display); font-size: 40px; letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 30px 2px; transform: skewX(var(--skew)); }
+  #toast .rib > span { display: inline-block; transform: skewX(var(--unskew)); }
+  #toast small { display: block; margin-top: 6px; font-family: var(--display); font-size: 15px; letter-spacing: 0.16em; color: var(--ink); text-transform: uppercase; text-shadow: 0 2px 10px rgba(0,0,0,0.9); }
+  #toast.show { animation: toastin 1.7s cubic-bezier(0.2, 0.9, 0.2, 1) forwards; }
+  @keyframes toastin { 0% { opacity: 0; transform: translate(-56%, 0); } 12% { opacity: 1; transform: translate(-50%, 0); } 80% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-46%, 0); } }
 
-  #hint { position: absolute; right: 18px; bottom: 18px; color: var(--muted); font-size: 11px; letter-spacing: 0.1em; text-align: right; line-height: 1.6; }
-  #hint b { color: var(--text); font-family: var(--mono); background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; }
+  #hint { position: absolute; right: 18px; bottom: 18px; color: var(--muted); font-size: 11px; letter-spacing: 0.06em; text-align: right; line-height: 2; text-transform: uppercase; }
+  #hint kbd { font-family: var(--display); font-size: 12px; color: var(--ink); background: var(--panel3); padding: 2px 6px 0; margin: 0 2px 0 8px; display: inline-block; line-height: 1.3; min-width: 20px; text-align: center; }
+  #debug { position: absolute; top: 74px; left: 18px; font-family: var(--mono); font-size: 11px; line-height: 1.5; background: rgba(0,0,0,0.7); padding: 8px 10px; white-space: pre; color: #cfe3ff; }
 
-  #debug { position: absolute; top: 14px; left: 14px; font-family: var(--mono); font-size: 11px; line-height: 1.5; background: rgba(0,0,0,0.6); border: 1px solid var(--line); padding: 8px 10px; border-radius: 8px; white-space: pre; color: #cfe3ff; }
+  /* ---------- game start wipe ---------- */
+  #wipe { position: fixed; inset: -20vw 0 0 0; pointer-events: none; z-index: 30; display: none; }
+  #wipe i { position: absolute; top: 0; bottom: 0; width: 140vw; left: -20vw; transform: translateX(-140vw) skewX(-14deg); }
+  #wipe i:nth-child(1) { background: var(--accent); }
+  #wipe i:nth-child(2) { background: var(--bg); }
+  #wipe.go { display: block; }
+  #wipe.go i:nth-child(1) { animation: wipe 0.75s cubic-bezier(0.7, 0, 0.2, 1) forwards; }
+  #wipe.go i:nth-child(2) { animation: wipe 0.75s cubic-bezier(0.7, 0, 0.2, 1) 0.08s forwards; }
+  @keyframes wipe { 0% { transform: translateX(-140vw) skewX(-14deg); } 45% { transform: translateX(0) skewX(-14deg); } 55% { transform: translateX(0) skewX(-14deg); } 100% { transform: translateX(140vw) skewX(-14deg); } }
 
-  /* ---------- Menus ---------- */
-  .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 600px at 50% 0%, rgba(53, 208, 255, 0.10), transparent 60%), radial-gradient(900px 500px at 80% 100%, rgba(255, 212, 0, 0.10), transparent 60%), rgba(5, 7, 12, 0.88); backdrop-filter: blur(6px); z-index: 10; }
-  .panel { width: min(880px, 94vw); max-height: 92vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 28px 32px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
-  .title { font-size: 52px; font-weight: 900; font-style: italic; letter-spacing: -0.02em; line-height: 1; background: linear-gradient(90deg, #fff, var(--accent) 60%, #ff8a00); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .subtitle { color: var(--muted); letter-spacing: 0.3em; font-size: 12px; margin-top: 6px; text-transform: uppercase; }
-  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
-  .btn { pointer-events: auto; cursor: pointer; background: rgba(255,255,255,0.06); border: 1px solid var(--line); color: var(--text); padding: 12px 18px; border-radius: 10px; font-weight: 700; letter-spacing: 0.06em; font-size: 14px; transition: transform 0.08s, background 0.15s, border-color 0.15s; font-family: var(--sans); }
-  .btn:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.25); transform: translateY(-1px); }
-  .btn:active { transform: translateY(1px) scale(0.98); }
-  .btn.primary { background: linear-gradient(90deg, var(--accent), #ff9a00); color: #111; border: none; }
-  .btn.primary:hover { filter: brightness(1.08); }
-  .btn.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  .btn.small { padding: 7px 11px; font-size: 12px; }
-  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
-  .card { pointer-events: auto; cursor: pointer; border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: rgba(255,255,255,0.04); transition: transform 0.1s, border-color 0.15s, background 0.15s; }
-  .card:hover { border-color: var(--accent); background: rgba(255,212,0,0.06); transform: translateY(-2px); }
-  .card h3 { margin: 0 0 6px 0; font-size: 20px; letter-spacing: 0.04em; }
-  .card p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-  .card .tagline { font-size: 11px; color: var(--accent2); letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 8px; }
-  h2.sec { font-size: 13px; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); margin: 22px 0 8px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; }
-  .kv { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px dashed rgba(255,255,255,0.07); font-size: 13px; }
+  /* ---------- menus ---------- */
+  .overlay { position: fixed; inset: 0; z-index: 10; display: grid; grid-template-columns: 400px 1fr; background: linear-gradient(90deg, rgba(11,13,18,0.98) 0, rgba(11,13,18,0.98) 400px, rgba(11,13,18,0.72) 100%); }
+  .rail { position: relative; padding: 44px 36px 32px 44px; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: repeating-linear-gradient(-45deg, transparent 0 22px, rgba(255,255,255,0.018) 22px 23px); }
+  .wordmark { line-height: 0.85; margin-bottom: 40px; }
+  .wordmark .wm-top { display: block; font-family: var(--display); font-size: 30px; letter-spacing: 0.34em; text-transform: uppercase; color: var(--muted); margin-left: 4px; }
+  .wordmark .wm-main { display: inline-block; font-family: var(--display); font-size: 84px; text-transform: uppercase; background: var(--accent); color: var(--accent-ink); padding: 6px 16px 0; transform: skewX(var(--skew)); line-height: 0.95; }
+  .wordmark .wm-main > span { display: inline-block; transform: skewX(var(--unskew)); }
+  .wordmark.sm .wm-main { font-size: 56px; }
+  .menu-nav { display: flex; flex-direction: column; gap: 4px; }
+  .nav-item { pointer-events: auto; cursor: pointer; text-align: left; background: transparent; border: 0; padding: 10px 14px 8px 18px; font-family: var(--display); font-size: 30px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); position: relative; transition: color 0.15s, padding-left 0.18s; line-height: 1; }
+  .nav-item::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 8px; width: 6px; background: var(--accent); transform: scaleY(0); transition: transform 0.18s; }
+  .nav-item:hover, .nav-item.sel { color: var(--ink); padding-left: 26px; }
+  .nav-item.sel::before, .nav-item:hover::before { transform: scaleY(1); }
+  .nav-item.quiet { font-size: 22px; margin-top: 6px; }
+  .rail-foot { margin-top: auto; color: var(--muted); font-size: 12px; line-height: 1.6; max-width: 280px; }
+  .rail-foot b { color: var(--ink); font-weight: 600; }
+  .pane-wrap { padding: 44px 48px 32px; overflow: auto; min-width: 0; }
+  .pane { max-width: 760px; animation: panein 0.22s cubic-bezier(0.2, 0.9, 0.2, 1); }
+  @keyframes panein { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+  .pane-title { font-family: var(--display); font-size: 42px; text-transform: uppercase; line-height: 1; margin: 0 0 18px; }
+  .pane-title small { display: block; font-family: var(--sans); font-size: 13px; text-transform: none; color: var(--muted); letter-spacing: 0; margin-top: 6px; }
+
+  .modes { display: flex; flex-direction: column; gap: 6px; }
+  .mode { pointer-events: auto; cursor: pointer; display: grid; grid-template-columns: 118px 1fr 92px; align-items: center; gap: 18px; text-align: left; background: var(--panel); border: 0; border-left: 5px solid transparent; padding: 10px 16px 10px 18px; transition: background-color 0.15s, border-color 0.15s, transform 0.12s; }
+  .mode:hover { background: var(--panel2); }
+  .mode.sel { border-left-color: var(--accent); background: var(--panel2); }
+  .mode .mode-big { font-family: var(--display); font-size: 48px; line-height: 0.9; text-transform: uppercase; color: var(--ink); }
+  .mode.sel .mode-big { color: var(--accent); }
+  .mode .mode-body b { display: block; font-family: var(--display); font-size: 20px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 400; }
+  .mode .mode-body span { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.45; margin-top: 3px; }
+  .mode svg { width: 92px; height: 52px; opacity: 0.55; }
+  .mode.sel svg { opacity: 1; }
+  .mode.compact { grid-template-columns: 118px 1fr 92px; padding: 6px 16px 6px 18px; }
+  .mode.compact .mode-big { font-size: 26px; }
+
+  .matchup { display: grid; grid-template-columns: 1fr 64px 1fr; align-items: center; gap: 8px; margin-top: 22px; }
+  .matchup .vs { font-family: var(--display); font-size: 34px; text-align: center; color: var(--muted); }
+  .side { display: grid; grid-template-columns: 34px 1fr 34px; gap: 6px; align-items: stretch; }
+  .arrow { pointer-events: auto; cursor: pointer; border: 0; background: var(--panel3); color: var(--ink); font-family: var(--display); font-size: 22px; transition: background-color 0.15s, color 0.15s; }
+  .arrow:hover { background: var(--accent); color: var(--accent-ink); }
+  .jersey { height: 104px; padding: 12px 14px 10px; display: flex; flex-direction: column; justify-content: flex-end; transform: skewX(var(--skew)); position: relative; overflow: hidden; }
+  .jersey > * { transform: skewX(var(--unskew)); }
+  .jersey::before { content: attr(data-num); position: absolute; right: 8px; top: -14px; font-family: var(--display); font-size: 110px; opacity: 0.16; line-height: 1; }
+  .jersey .lbl { font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; opacity: 0.75; }
+  .jersey .city { font-family: var(--display); font-size: 16px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.85; margin-top: auto; }
+  .jersey .name { font-family: var(--display); font-size: 36px; line-height: 0.95; text-transform: uppercase; }
+  .tipoff { margin-top: 22px; display: flex; align-items: center; gap: 18px; }
+  .tipoff .note { margin: 0; }
+
+  h2.sec { font-family: var(--display); font-size: 16px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin: 24px 0 8px; font-weight: 400; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; }
+  .kv { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
   .kv .k { color: var(--muted); }
-  .key { font-family: var(--mono); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18); padding: 2px 8px; border-radius: 6px; font-size: 12px; min-width: 40px; text-align: center; display: inline-block; pointer-events: auto; cursor: pointer; }
-  .key.wait { border-color: var(--accent); color: var(--accent); animation: pulse 0.5s infinite alternate; }
-  .opt { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed rgba(255,255,255,0.07); font-size: 13px; }
-  .opt .choices { display: flex; gap: 6px; }
-  .teams { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 8px; }
-  .teamcard { pointer-events: auto; cursor: pointer; border: 1px solid var(--line); border-radius: 10px; padding: 10px 8px; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; }
-  .teamcard .sw { height: 6px; border-radius: 3px; margin-bottom: 6px; }
-  .teamcard.sel { border-color: var(--accent); background: rgba(255,212,0,0.08); }
-  .note { color: var(--muted); font-size: 12px; margin-top: 12px; line-height: 1.5; }
-  textarea.sig { width: 100%; height: 80px; background: rgba(0,0,0,0.4); color: var(--text); border: 1px solid var(--line); border-radius: 8px; font-family: var(--mono); font-size: 11px; padding: 8px; pointer-events: auto; resize: vertical; }
-  .status { font-family: var(--mono); font-size: 12px; color: var(--accent2); margin-top: 8px; }
-  #final table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
-  #final th, #final td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); font-family: var(--mono); }
-  #final th:first-child, #final td:first-child { text-align: left; font-family: var(--sans); }
+  .key { pointer-events: auto; cursor: pointer; font-family: var(--display); font-size: 14px; letter-spacing: 0.04em; background: var(--panel3); box-shadow: inset 0 -3px 0 rgba(0,0,0,0.45); padding: 4px 10px 3px; min-width: 44px; text-align: center; display: inline-block; text-transform: uppercase; }
+  .key.wait { background: var(--accent); color: var(--accent-ink); animation: pulse 0.5s infinite alternate; }
+  .opt { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; gap: 16px; }
+  .opt .choices { display: flex; gap: 2px; }
+  .opt .choices .btn { transform: none; }
+  .opt .choices .btn:active { transform: translateY(1px); }
+  .note { color: var(--muted); font-size: 12.5px; margin-top: 12px; line-height: 1.55; max-width: 62ch; }
+  textarea.sig { width: 100%; height: 76px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); font-family: var(--mono); font-size: 11px; padding: 8px; pointer-events: auto; resize: vertical; }
+  .status { font-family: var(--display); font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-top: 10px; }
+  .title { font-family: var(--display); font-size: 44px; text-transform: uppercase; line-height: 1; }
+  .subtitle { font-family: var(--display); font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+  input.field { pointer-events: auto; background: var(--panel); color: var(--ink); border: 1px solid var(--line); padding: 8px 12px; font-family: var(--sans); font-size: 14px; }
+  input.field:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input.code { font-family: var(--display); font-size: 22px; letter-spacing: 0.24em; text-transform: uppercase; width: 150px; padding: 6px 12px 4px; }
+
+  /* ---------- pause / first run / final ---------- */
+  #pause .rail .wordmark .wm-main { font-size: 62px; }
+  .card { position: fixed; inset: 0; z-index: 12; display: flex; align-items: center; justify-content: center; background: rgba(11, 13, 18, 0.86); }
+  .card .inner { width: min(900px, 94vw); background: var(--panel); border-top: 6px solid var(--accent); padding: 30px 36px 28px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); max-height: 92vh; overflow: auto; }
+  .howto { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 28px; margin-top: 8px; }
+  .howto h3 { font-family: var(--display); font-size: 20px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin: 14px 0 4px; font-weight: 400; }
+  .final-board { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px; margin: 6px 0 10px; }
+  .final-board .fteam { display: flex; align-items: center; gap: 14px; padding: 10px 16px; transform: skewX(var(--skew)); }
+  .final-board .fteam > * { transform: skewX(var(--unskew)); }
+  .final-board .fteam.b { flex-direction: row-reverse; text-align: right; }
+  .final-board .fname { font-family: var(--display); font-size: 26px; text-transform: uppercase; line-height: 0.95; }
+  .final-board .fname small { display: block; font-size: 13px; letter-spacing: 0.12em; opacity: 0.8; }
+  .final-board .fscore { font-family: var(--display); font-size: 64px; line-height: 1; }
+  .final-board .fmid { font-family: var(--display); font-size: 18px; letter-spacing: 0.2em; color: var(--muted); }
+  #final table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+  #final th, #final td { text-align: right; padding: 5px 6px; font-variant-numeric: tabular-nums; }
+  #final th { color: var(--muted); font-weight: 400; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; border-bottom: 1px solid var(--line); }
+  #final tr:nth-child(even) td { background: rgba(255,255,255,0.025); }
+  #final th:first-child, #final td:first-child { text-align: left; }
+  #final td:first-child { font-family: var(--display); font-size: 14px; letter-spacing: 0.04em; text-transform: uppercase; }
+
+  @media (max-width: 900px) {
+    .overlay { grid-template-columns: 1fr; grid-template-rows: auto 1fr; background: rgba(11,13,18,0.96); }
+    .rail { padding: 24px 20px 12px; border-right: 0; border-bottom: 1px solid var(--line); }
+    .wordmark { margin-bottom: 14px; } .wordmark .wm-main { font-size: 52px; }
+    .menu-nav { flex-direction: row; flex-wrap: wrap; gap: 0 10px; } .nav-item { font-size: 22px; padding-left: 16px; } .rail-foot { display: none; }
+    .pane-wrap { padding: 20px 16px; } .grid2 { grid-template-columns: 1fr; } .howto { grid-template-columns: 1fr; }
+    .mode { grid-template-columns: 80px 1fr; } .mode svg { display: none; } .mode .mode-big { font-size: 34px; }
+    .matchup { grid-template-columns: 1fr; } .matchup .vs { display: none; }
+    #scorebug { transform: skewX(var(--skew)) scale(0.85); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pane, #toast.show, #feedback.show, #scorebug .score.bump, #wipe.go i, .key.wait, #scorebug .shot.low { animation: none !important; }
+    #toast.show, #feedback.show { opacity: 1; }
+    .btn, .btn::after, .nav-item, .nav-item::before, .mode, .arrow { transition: none; }
+  }
 </style>
 </head>
 <body>
 <div id="app"></div>
+<div id="wipe"><i></i><i></i></div>
 
 <!-- ---------- HUD ---------- -->
 <div id="hud" class="hidden">
   <div id="scorebug">
-    <div class="team left"><div class="bar" id="barA"></div><span class="abbr" id="abbrA">HOME</span><span class="poss" id="possA"></span><span class="score" id="scoreA">0</span></div>
-    <div class="mid"><span class="period" id="period">Q1</span><span class="clock" id="clock">0:00</span><span class="fouls" id="fouls"></span></div>
-    <div class="shot" id="shotclock">24</div>
-    <div class="team right"><div class="bar" id="barB"></div><span class="abbr" id="abbrB">AWAY</span><span class="poss" id="possB"></span><span class="score" id="scoreB">0</span></div>
+    <div class="team left"><div class="bar" id="barA"></div><span class="abbr" id="abbrA">HOME</span><span class="poss" id="possA"></span><span class="score num" id="scoreA">0</span></div>
+    <div class="mid"><span class="period" id="period">Q1</span><span class="clock num" id="clock">0:00</span><span class="fouls" id="fouls"></span></div>
+    <div class="team right"><div class="bar" id="barB"></div><span class="abbr" id="abbrB">AWAY</span><span class="poss" id="possB"></span><span class="score num" id="scoreB">0</span></div>
+    <div class="shot num" id="shotclock">24</div>
   </div>
-  <div id="playerbox"><div class="name" id="pname">—</div><div class="sub" id="psub">—</div><div class="barwrap"><div id="stamina"></div></div></div>
+  <div id="playerbox"><div class="pnum"><span id="pnum">0</span></div><div class="pinfo"><div><div class="name" id="pname">Player</div><div class="sub" id="psub">PG</div><div class="barwrap"><div id="stamina"></div></div></div></div></div>
   <div id="meter" class="hidden"><div class="good"></div><div class="zone"></div><div class="fill"></div><div class="mark hidden"></div></div>
   <div id="feedback"></div>
   <div id="tags"></div>
@@ -133,86 +244,86 @@
 
 <!-- ---------- Main menu ---------- -->
 <div id="menu" class="overlay">
-  <div class="panel">
-    <div class="title">HARDWOOD LEGENDS</div>
-    <div class="subtitle">Arcade-sim basketball · single file · procedural everything</div>
-    <div id="menuHome">
-      <div class="cards">
-        <div class="card" data-mode="1v1"><div class="tagline">Streetball</div><h3>1 v 1</h3><p>Half court, first to 21. Break ankles, get buckets. Loser's ball.</p></div>
-        <div class="card" data-mode="3v3"><div class="tagline">Half court</div><h3>3 v 3</h3><p>First to 21 with 14-second shot clock. Clear it past the arc after a stop.</p></div>
-        <div class="card" data-mode="5v5"><div class="tagline">Full court</div><h3>5 v 5</h3><p>Four quarters, 24-second clock, inbounds, fouls, the whole broadcast.</p></div>
+  <div class="rail">
+    <div class="wordmark"><span class="wm-top">Hardwood</span><span class="wm-main"><span>Legends</span></span></div>
+    <nav class="menu-nav">
+      <button class="nav-item sel" data-nav="menuHome">Play</button>
+      <button class="nav-item" data-nav="menuNet">Multiplayer</button>
+      <button class="nav-item" data-nav="menuControls">Controls</button>
+      <button class="nav-item" data-nav="menuSettings">Settings</button>
+    </nav>
+    <div class="rail-foot"><b>One file, no assets.</b> Every court line, jersey, crowd member and sound is generated in code when the page loads.</div>
+  </div>
+  <div class="pane-wrap">
+    <div id="menuHome" class="pane">
+      <div class="modes">
+        <button class="mode" data-mode="1v1"><span class="mode-big">1v1</span><span class="mode-body"><b>Streetball</b><span>Half court, first to 21, loser's ball. Break ankles and get to the rim.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M4 26h20M88 26h-20"/><path d="M28 4v44" /><path d="M64 4v44"/><path d="M4 14h12a12 12 0 0 1 0 24H4"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/></svg></button>
+        <button class="mode" data-mode="3v3"><span class="mode-big">3v3</span><span class="mode-body"><b>Half court</b><span>Three a side with a 14-second clock. Clear it past the arc after every stop.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M46 4v44"/><path d="M4 14h12a12 12 0 0 1 0 24H4"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><circle cx="46" cy="26" r="7"/></svg></button>
+        <button class="mode sel" data-mode="5v5"><span class="mode-big">5v5</span><span class="mode-body"><b>Full court</b><span>Four quarters, 24-second clock, inbounds, fouls and free throws. The whole broadcast.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M46 4v44"/><circle cx="46" cy="26" r="7"/><path d="M4 8h22a18 18 0 0 1 0 36H4"/><path d="M88 8h-22a18 18 0 0 0 0 36h22"/><path d="M4 18h9v16H4M88 18h-9v16h9"/></svg></button>
+        <button class="mode compact" data-mode="practice"><span class="mode-big">Gym</span><span class="mode-body"><b>Practice</b><span>Empty court, unlimited shots, no clock.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><circle cx="72" cy="26" r="2.5"/></svg></button>
       </div>
-      <div class="row">
-        <button class="btn" data-mode="practice">Practice gym</button>
-        <button class="btn" id="btnControls">Controls</button>
-        <button class="btn" id="btnSettings">Settings</button>
-        <button class="btn" id="btnNet">Multiplayer</button>
+      <div class="matchup">
+        <div class="side"><button class="arrow" data-cycle="0,-1">&#9664;</button><div class="jersey" id="jerseyA"><span class="lbl">Home</span><span class="city"></span><span class="name"></span></div><button class="arrow" data-cycle="0,1">&#9654;</button></div>
+        <div class="vs">vs</div>
+        <div class="side"><button class="arrow" data-cycle="1,-1">&#9664;</button><div class="jersey" id="jerseyB"><span class="lbl">Away</span><span class="city"></span><span class="name"></span></div><button class="arrow" data-cycle="1,1">&#9654;</button></div>
       </div>
-      <h2 class="sec">Your team</h2>
-      <div class="teams" id="teamPickA"></div>
-      <h2 class="sec">Opponent</h2>
-      <div class="teams" id="teamPickB"></div>
+      <div class="tipoff"><button class="btn primary" id="btnTipoff"><span class="t">Tip off</span></button><div class="note" id="tipnote"></div></div>
     </div>
-    <div id="menuControls" class="hidden">
-      <h2 class="sec">Controls (click a key to rebind)</h2>
+    <div id="menuControls" class="pane hidden">
+      <div class="pane-title">Controls<small>Click any key to rebind it. Saved in this browser.</small></div>
       <div class="grid2" id="bindList"></div>
-      <div class="row"><button class="btn" id="btnResetBinds">Reset defaults</button><button class="btn primary" id="btnBackControls">Back</button></div>
+      <div class="row"><button class="btn small ghost" id="btnResetBinds"><span class="t">Reset defaults</span></button></div>
     </div>
-    <div id="menuSettings" class="hidden">
-      <h2 class="sec">Settings</h2>
+    <div id="menuSettings" class="pane hidden">
+      <div class="pane-title">Settings</div>
       <div id="settingsList"></div>
-      <div class="row"><button class="btn primary" id="btnBackSettings">Back</button></div>
     </div>
-    <div id="menuNet" class="hidden">
-      <h2 class="sec">Peer-to-peer multiplayer (WebRTC, no server)</h2>
+    <div id="menuNet" class="pane hidden">
+      <div class="pane-title">Multiplayer<small>Host a lobby and share the code, or join a friend's.</small></div>
       <div id="netBody"></div>
-      <div class="row"><button class="btn primary" id="btnBackNet">Back</button></div>
     </div>
   </div>
 </div>
 
 <!-- ---------- Pause menu ---------- -->
 <div id="pause" class="overlay hidden">
-  <div class="panel">
-    <div class="title" style="font-size:36px">PAUSED</div>
-    <div id="pauseHome">
-      <div class="row">
-        <button class="btn primary" id="btnResume">Resume</button>
-        <button class="btn" id="btnPauseControls">Controls</button>
-        <button class="btn" id="btnPauseSettings">Settings</button>
-        <button class="btn" id="btnSpectate">CPU plays for me: off</button>
-        <button class="btn" id="btnQuit">Quit to menu</button>
-      </div>
-    </div>
-    <div id="pauseControls" class="hidden">
-      <h2 class="sec">Controls (click a key to rebind)</h2>
+  <div class="rail">
+    <div class="wordmark"><span class="wm-top">Game</span><span class="wm-main"><span>Paused</span></span></div>
+    <nav class="menu-nav">
+      <button class="nav-item sel" id="btnResume">Resume</button>
+      <button class="nav-item" id="btnPauseControls">Controls</button>
+      <button class="nav-item" id="btnPauseSettings">Settings</button>
+      <button class="nav-item quiet" id="btnSpectate">CPU plays for me: off</button>
+      <button class="nav-item quiet" id="btnQuit">Quit to menu</button>
+    </nav>
+  </div>
+  <div class="pane-wrap">
+    <div id="pauseHome" class="pane"><div class="pane-title" id="pauseScore"></div><div class="note">Press the pause key again to get back on the floor.</div></div>
+    <div id="pauseControls" class="pane hidden">
+      <div class="pane-title">Controls<small>Click any key to rebind it.</small></div>
       <div class="grid2" id="bindList2"></div>
-      <div class="row"><button class="btn" id="btnResetBinds2">Reset defaults</button><button class="btn primary" id="btnBackPauseControls">Back</button></div>
+      <div class="row"><button class="btn small ghost" id="btnResetBinds2"><span class="t">Reset defaults</span></button></div>
     </div>
-    <div id="pauseSettings" class="hidden">
-      <h2 class="sec">Settings</h2>
-      <div id="settingsList2"></div>
-      <div class="row"><button class="btn primary" id="btnBackPauseSettings">Back</button></div>
-    </div>
+    <div id="pauseSettings" class="pane hidden"><div class="pane-title">Settings</div><div id="settingsList2"></div></div>
   </div>
 </div>
 
 <!-- ---------- First-launch controls ---------- -->
-<div id="firstrun" class="overlay hidden">
-  <div class="panel">
-    <div class="title" style="font-size:32px">HOW TO PLAY</div>
-    <div class="grid2" id="bindList3" style="margin-top:14px"></div>
-    <div class="note">Hold <b>shoot</b> to start the meter and release in the green. Sprint at the rim inside the paint and shoot to dunk. Time a crossover while the defender is mirroring you to break their ankles.</div>
-    <div class="row"><button class="btn primary" id="btnFirstOk">Let's hoop</button></div>
+<div id="firstrun" class="card hidden">
+  <div class="inner">
+    <div class="title">How to play</div>
+    <div class="howto" id="bindList3"></div>
+    <div class="note">Hold shoot to start the meter and let go in the green. Sprint at the rim inside the paint and shoot to dunk. Time a crossover while the defender is mirroring you and they hit the floor.</div>
+    <div class="row"><button class="btn primary" id="btnFirstOk"><span class="t">Let's hoop</span></button></div>
   </div>
 </div>
 
 <!-- ---------- Final score ---------- -->
-<div id="final" class="overlay hidden">
-  <div class="panel">
-    <div class="title" style="font-size:36px" id="finalTitle">FINAL</div>
+<div id="final" class="card hidden">
+  <div class="inner">
+    <div class="title" id="finalTitle">Final</div>
     <div id="finalBody"></div>
-    <div class="row"><button class="btn primary" id="btnRematch">Rematch</button><button class="btn" id="btnFinalMenu">Main menu</button></div>
+    <div class="row"><button class="btn primary" id="btnRematch"><span class="t">Rematch</span></button><button class="btn" id="btnFinalMenu"><span class="t">Main menu</span></button></div>
   </div>
 </div>
 
@@ -393,7 +504,7 @@ const Input = (() => {
   }
   function endTick() { pressed.clear(); released.clear(); }
   function keyLabel(code) {
-    if (!code) return '—';
+    if (!code) return '-';
     if (code.startsWith('Key')) return code.slice(3);
     if (code.startsWith('Digit')) return code.slice(5);
     const map = { Space: 'SPACE', ShiftLeft: 'SHIFT', ControlLeft: 'CTRL', AltLeft: 'ALT', Tab: 'TAB', Escape: 'ESC', Backquote: '`', Enter: 'ENTER', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Comma: ',', Period: '.', Slash: '/', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Minus: '-', Equal: '=', Backslash: '\\', CapsLock: 'CAPS' };
@@ -1576,8 +1687,7 @@ const Game = (() => {
     g.humanTeam = 0; g.locked = false; g.running = true; g.state = S.PLAY; g.stateT = 0;
     AI.reset(g);
     if (mode === 'practice') { const p = P[0]; const h = hoopFor(0); PlayerSys.teleport(p, h.x - h.s * 7, 0, Math.atan2(h.s, 0)); setHuman(p.id); BallSys.setHolder(p); g.possession = 0; ball.state = BS.HELD; }
-    else if (g.halfCourt) setupPossession(0);
-    else setupTip();
+    else { const tp = teamPlayers(0); setHuman(tp.length ? tp[0].id : -1, true); if (g.halfCourt) setupPossession(0); else setupTip(); }
     emit('start');
   }
   function pickSlots(roster, n) {
@@ -1594,7 +1704,7 @@ const Game = (() => {
   function setHuman(id, force) {
     if (!force && id >= 0 && P[id] && !canAutoSwitch(P[id].team)) return;
     for (const p of P) if (p.ctl === 'local' && p.id !== id) { p.ctl = null; p.human = false; p.controlled = false; clearInput(p.input); }
-    if (id >= 0 && P[id]) { const p = P[id]; p.ctl = 'local'; p.human = true; p.remote = false; p.controlled = true; p.ctlName = Net.myName; }
+    if (id >= 0 && P[id]) { const p = P[id]; p.ctl = 'local'; p.human = true; p.remote = false; p.controlled = true; p.ctlName = Net.active ? Net.myName : ''; }
     g.human = id;
   }
   // Move a team's single human controller onto player `id` (no-op for locked multi-human teams).
@@ -1644,14 +1754,16 @@ const Game = (() => {
   }
   function gameOver(winner) {
     g.state = S.OVER; g.winner = winner; emit('buzzer'); emit('cheer', { big: 1.5 });
-    const title = winner < 0 ? 'FINAL' : g.teams[winner].name.toUpperCase() + ' WIN ' + g.score[winner] + '–' + g.score[1 - winner];
+    const title = winner < 0 ? 'Final' : g.teams[winner].city + ' ' + g.teams[winner].name + ' win';
     emit('final', { title, html: boxScore() });
   }
   function boxScore() {
-    let html = '';
+    const A = g.teams[0], B = g.teams[1]; const wA = g.score[0] > g.score[1], wB = g.score[1] > g.score[0];
+    const blk = (t, sc, win, cls) => '<div class="fteam ' + cls + (win ? ' win' : '') + '" style="background:' + hex(t.primary) + ';color:' + (t.dark ? '#f3f0e7' : '#15130a') + '"><div class="fname">' + t.name + '<small>' + t.city + '</small></div><div class="fscore">' + sc + '</div></div>';
+    let html = '<div class="final-board">' + blk(A, g.score[0], wA, 'a') + '<div class="fmid">Final</div>' + blk(B, g.score[1], wB, 'b') + '</div>';
     for (let t = 0; t < 2; t++) {
-      html += '<h2 class="sec" style="color:' + hex(g.teams[t].primary) + '">' + g.teams[t].city + ' ' + g.teams[t].name + ' — ' + g.score[t] + '</h2><table><tr><th>Player</th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>FG</th><th>3P</th><th>FT</th><th>TO</th><th>PF</th></tr>';
-      for (const p of P) { if (p.team !== t) continue; const s = p.stats; html += '<tr><td>#' + p.num + ' ' + p.name + (p.human ? ' ★' : '') + '</td><td>' + s.pts + '</td><td>' + s.reb + '</td><td>' + s.ast + '</td><td>' + s.stl + '</td><td>' + s.blk + '</td><td>' + s.fgm + '/' + s.fga + '</td><td>' + s.tpm + '/' + s.tpa + '</td><td>' + s.ftm + '/' + s.fta + '</td><td>' + s.to + '</td><td>' + s.pf + '</td></tr>'; }
+      html += '<h2 class="sec">' + g.teams[t].city + ' ' + g.teams[t].name + '</h2><table><tr><th>Player</th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>FG</th><th>3P</th><th>FT</th><th>TO</th><th>PF</th></tr>';
+      for (const p of P) { if (p.team !== t) continue; const s = p.stats; html += '<tr><td>' + p.num + '  ' + (p.ctlName || p.name) + '</td><td>' + s.pts + '</td><td>' + s.reb + '</td><td>' + s.ast + '</td><td>' + s.stl + '</td><td>' + s.blk + '</td><td>' + s.fgm + '/' + s.fga + '</td><td>' + s.tpm + '/' + s.tpa + '</td><td>' + s.ftm + '/' + s.fta + '</td><td>' + s.to + '</td><td>' + s.pf + '</td></tr>'; }
       html += '</table>';
     }
     return html;
@@ -2070,7 +2182,7 @@ const Rules = {
   endQuarter(g) {
     Game.emit('buzzer'); const Q = CONFIG.game.quarters;
     if (g.quarter >= Q && g.score[0] !== g.score[1]) { Game.gameOver(g.score[0] > g.score[1] ? 0 : 1); return; }
-    Game.toast(g.quarter >= Q ? 'OVERTIME' : 'END OF ' + (g.quarter === 2 ? 'FIRST HALF' : 'Q' + g.quarter), g.teams[0].abbr + ' ' + g.score[0] + ' — ' + g.score[1] + ' ' + g.teams[1].abbr);
+    Game.toast(g.quarter >= Q ? 'OVERTIME' : 'END OF ' + (g.quarter === 2 ? 'FIRST HALF' : 'Q' + g.quarter), g.teams[0].abbr + ' ' + g.score[0] + '  ' + g.score[1] + ' ' + g.teams[1].abbr);
     g.state = Game.S.QEND; g.stateT = 0; BallSys.ball.shotLive = false; g.pendingFoul = null; g.inbound = null;
     for (const p of PlayerSys.players) clearInput(p.input);
   },
@@ -2247,68 +2359,86 @@ const Render = (() => {
 const UI = (() => {
   const $ = (id) => document.getElementById(id);
   const el = {};
-  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'teamPickA', 'teamPickB', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
-  let debugOn = false, pick = [0, 1], last = {}, tagEls = [], meterVisible = false, hudVisible = false;
+  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'jerseyA', 'jerseyB', 'pnum', 'tipnote', 'pauseScore', 'wipe', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
+  let debugOn = false, pick = U.loadLS('hw_pick', [0, 1]), last = {}, tagEls = [], meterVisible = false, hudVisible = false, mode = U.loadLS('hw_mode', '5v5');
+  if (!Array.isArray(pick) || pick.length !== 2 || pick[0] === pick[1]) pick = [0, 1];
   const _pt = { x: 0, y: 0, visible: false };
   const hooks = { startGame: null, resume: null, quit: null, rematch: null, applySettings: null };
 
   function init(h) {
     Object.assign(hooks, h);
     for (const id of ids) el[id] = $(id);
-    // menu wiring
-    document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { AudioSys.init(); AudioSys.play('ui'); hooks.startGame(b.dataset.mode, pick[0], pick[1]); }));
-    $('btnControls').onclick = () => { show('menuControls'); renderBinds(el.bindList, true); };
-    $('btnBackControls').onclick = () => show('menuHome');
-    $('btnSettings').onclick = () => { show('menuSettings'); renderSettings(el.settingsList); };
-    $('btnBackSettings').onclick = () => show('menuHome');
-    $('btnNet').onclick = () => { show('menuNet'); Net.renderPanel(el.netBody); };
-    $('btnBackNet').onclick = () => show('menuHome');
-    $('btnResetBinds').onclick = () => { Input.reset(); renderBinds(el.bindList, true); };
-    $('btnResetBinds2').onclick = () => { Input.reset(); renderBinds(el.bindList2, true); };
+    document.querySelectorAll('#menu [data-nav]').forEach((b) => b.addEventListener('click', () => { AudioSys.init(); AudioSys.play('ui'); show(b.dataset.nav); }));
+    document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { AudioSys.init(); AudioSys.play('ui'); selectMode(b.dataset.mode); }));
+    document.querySelectorAll('[data-cycle]').forEach((b) => b.addEventListener('click', () => { const [side, dir] = b.dataset.cycle.split(',').map(Number); cycleTeam(side, dir); AudioSys.play('ui'); }));
+    $('btnTipoff').onclick = () => { AudioSys.init(); AudioSys.play('ui'); hooks.startGame(mode, pick[0], pick[1]); };
+    $('btnResetBinds').onclick = () => { Input.reset(); renderBinds(el.bindList, true); updateHint(); };
+    $('btnResetBinds2').onclick = () => { Input.reset(); renderBinds(el.bindList2, true); updateHint(); };
     $('btnResume').onclick = () => hooks.resume();
     $('btnPauseControls').onclick = () => { showPauseSub('pauseControls'); renderBinds(el.bindList2, true); };
-    $('btnBackPauseControls').onclick = () => showPauseSub('pauseHome');
     $('btnPauseSettings').onclick = () => { showPauseSub('pauseSettings'); renderSettings(el.settingsList2); };
-    $('btnBackPauseSettings').onclick = () => showPauseSub('pauseHome');
     $('btnQuit').onclick = () => hooks.quit();
     $('btnSpectate').onclick = () => { const on = Game.g.humanTeam >= 0; Game.setSpectate(on); $('btnSpectate').textContent = 'CPU plays for me: ' + (on ? 'on' : 'off'); AudioSys.play('ui'); };
     $('btnFirstOk').onclick = () => { el.firstrun.classList.add('hidden'); U.saveLS('hw_seen', true); hooks.resume(); };
     $('btnRematch').onclick = () => hooks.rematch();
     $('btnFinalMenu').onclick = () => hooks.quit();
-    renderTeamPick();
+    selectMode(mode); renderMatchup();
     for (let i = 0; i < 10; i++) { const d = document.createElement('div'); d.className = 'tag hidden'; el.tags.appendChild(d); tagEls.push(d); }
     updateHint();
   }
-  function show(sub) { for (const s of ['menuHome', 'menuControls', 'menuSettings', 'menuNet']) el[s].classList.toggle('hidden', s !== sub); }
-  function showPauseSub(sub) { for (const s of ['pauseHome', 'pauseControls', 'pauseSettings']) el[s].classList.toggle('hidden', s !== sub); }
-  function showMenu() { el.menu.classList.remove('hidden'); show('menuHome'); el.pause.classList.add('hidden'); el.final.classList.add('hidden'); hideHUD(); }
+  function show(sub) {
+    for (const p of ['menuHome', 'menuControls', 'menuSettings', 'menuNet']) el[p].classList.toggle('hidden', p !== sub);
+    document.querySelectorAll('#menu [data-nav]').forEach((b) => b.classList.toggle('sel', b.dataset.nav === sub));
+    if (sub === 'menuControls') renderBinds(el.bindList, true); else if (sub === 'menuSettings') renderSettings(el.settingsList); else if (sub === 'menuNet') Net.renderPanel(el.netBody);
+  }
+  function showPauseSub(sub) {
+    for (const p of ['pauseHome', 'pauseControls', 'pauseSettings']) el[p].classList.toggle('hidden', p !== sub);
+    const map = { pauseHome: 'btnResume', pauseControls: 'btnPauseControls', pauseSettings: 'btnPauseSettings' };
+    for (const k in map) $(map[k]).classList.toggle('sel', k === sub);
+  }
+  function showMenu() { el.menu.classList.remove('hidden'); show('menuHome'); el.pause.classList.add('hidden'); el.final.classList.add('hidden'); hideHUD(); renderMatchup(); }
   function hideMenu() { el.menu.classList.add('hidden'); }
-  function showPause(on) { el.pause.classList.toggle('hidden', !on); if (on) showPauseSub('pauseHome'); }
+  function showPause(on) {
+    el.pause.classList.toggle('hidden', !on);
+    if (on) { showPauseSub('pauseHome'); const g = Game.g; el.pauseScore.textContent = g.mode === 'practice' ? 'Practice gym' : g.teams[0].name + ' ' + g.score[0] + ', ' + g.teams[1].name + ' ' + g.score[1]; }
+  }
   function showFirstRun() { renderBinds(el.bindList3, false); el.firstrun.classList.remove('hidden'); }
   function showHUD() { el.hud.classList.remove('hidden'); hudVisible = true; }
   function hideHUD() { el.hud.classList.add('hidden'); hudVisible = false; }
   function showFinal(title, html) { el.finalTitle.textContent = title; el.finalBody.innerHTML = html; el.final.classList.remove('hidden'); $('btnRematch').classList.toggle('hidden', Net.isGuest); }
-  function openNet() { showMenu(); show('menuNet'); Net.renderPanel(el.netBody); }
-
-  function renderTeamPick() {
-    for (const [side, cont] of [[0, el.teamPickA], [1, el.teamPickB]]) {
-      cont.innerHTML = '';
-      TEAMS.forEach((t, i) => {
-        const d = document.createElement('div'); d.className = 'teamcard' + (pick[side] === i ? ' sel' : '');
-        d.innerHTML = '<div class="sw" style="background:' + hex(t.primary) + '"></div>' + t.city + '<br>' + t.name.toUpperCase();
-        d.onclick = () => { pick[side] = i; if (pick[0] === pick[1]) pick[1 - side] = (i + 1) % TEAMS.length; renderTeamPick(); AudioSys.play('ui'); };
-        cont.appendChild(d);
-      });
-    }
+  function openNet() { showMenu(); show('menuNet'); }
+  // Game-start wipe: two slanted slabs cross the screen; the scene swaps while they cover it.
+  function wipe(cb) {
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { cb(); return; }
+    el.wipe.classList.remove('go'); void el.wipe.offsetWidth; el.wipe.classList.add('go');
+    setTimeout(cb, 360); setTimeout(() => el.wipe.classList.remove('go'), 900);
   }
+  const MODE_NOTES = { '1v1': 'Half court to 21', '3v3': 'Half court to 21, 14-second clock', '5v5': 'Four quarters', practice: 'No clock, no defense' };
+  function selectMode(m) { mode = m; U.saveLS('hw_mode', m); document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('sel', b.dataset.mode === m)); renderMatchup(); }
+  function cycleTeam(side, dir) { let v = (pick[side] + dir + TEAMS.length) % TEAMS.length; if (v === pick[1 - side]) v = (v + dir + TEAMS.length) % TEAMS.length; pick[side] = v; U.saveLS('hw_pick', pick); renderMatchup(); }
+  function renderMatchup() {
+    for (const [side, jer] of [[0, el.jerseyA], [1, el.jerseyB]]) {
+      const t = TEAMS[pick[side]]; jer.style.background = hex(t.primary); jer.style.color = t.dark ? '#f3f0e7' : '#15130a';
+      jer.querySelector('.city').textContent = t.city; jer.querySelector('.name').textContent = t.name; jer.dataset.num = String(side === 0 ? 1 : 2);
+    }
+    const A = TEAMS[pick[0]], B = TEAMS[pick[1]];
+    el.tipnote.textContent = mode === 'practice' ? 'Shootaround in the ' + A.name + ' gym. ' + MODE_NOTES.practice + '.' : A.name + ' vs ' + B.name + '. ' + MODE_NOTES[mode] + (mode === '5v5' ? ' of ' + U.fmtClock(Game.settings.quarterLen) + '.' : '.');
+  }
+  const BIND_GROUPS = [['Move', ['up', 'down', 'left', 'right', 'sprint']], ['Offense', ['shoot', 'pass', 'crossover', 'sidestep', 'stepback', 'spin', 'hesi', 'pump']], ['Defense and game', ['steal', 'switch', 'pause', 'debug']]];
   function renderBinds(cont, editable) {
     cont.innerHTML = '';
-    for (const a in Input.LABELS) {
-      const row = document.createElement('div'); row.className = 'kv';
-      const k = document.createElement('span'); k.className = 'k'; k.textContent = Input.LABELS[a];
-      const key = document.createElement('span'); key.className = 'key'; key.textContent = Input.keyLabel(Input.binds[a]);
-      if (editable) key.onclick = () => { key.textContent = 'press…'; key.classList.add('wait'); Input.startRemap(a, () => { renderBinds(cont, true); updateHint(); }); };
-      row.appendChild(k); row.appendChild(key); cont.appendChild(row);
+    for (const [title, actions] of BIND_GROUPS) {
+      const col = document.createElement('div'); const h = document.createElement('h3'); h.textContent = title; col.appendChild(h);
+      if (editable) { cont.appendChild(h); h.className = 'sec'; h.style.gridColumn = '1 / -1'; }
+      for (const a of actions) {
+        const row = document.createElement('div'); row.className = 'kv';
+        const k = document.createElement('span'); k.className = 'k'; k.textContent = Input.LABELS[a];
+        const key = document.createElement('span'); key.className = 'key'; key.textContent = Input.keyLabel(Input.binds[a]);
+        if (editable) key.onclick = () => { key.textContent = 'press'; key.classList.add('wait'); Input.startRemap(a, () => { renderBinds(cont, true); updateHint(); }); };
+        row.appendChild(k); row.appendChild(key); (editable ? cont : col).appendChild(row);
+      }
+      if (!editable) cont.appendChild(col);
     }
   }
   const SETTINGS_DEF = [
@@ -2332,12 +2462,12 @@ const UI = (() => {
     }
   }
   function updateHint() {
-    const b = Input.binds, L = Input.keyLabel;
-    el.hint.innerHTML = '<b>' + L(b.shoot) + '</b> shoot/jump · <b>' + L(b.sprint) + '</b> sprint · <b>' + L(b.pass) + '</b> pass · <b>' + L(b.steal) + '</b> steal · <b>' + L(b.switch) + '</b> switch<br>' +
-      '<b>' + L(b.sidestep) + '</b> sidestep · <b>' + L(b.crossover) + '</b> crossover · <b>' + L(b.stepback) + '</b> stepback · <b>' + L(b.spin) + '</b> spin · <b>' + L(b.hesi) + '</b> hesi · <b>' + L(b.pump) + '</b> pump · <b>' + L(b.pause) + '</b> pause';
+    const b = Input.binds, L = Input.keyLabel; const k = (a) => '<kbd>' + L(b[a]) + '</kbd>';
+    el.hint.innerHTML = k('shoot') + 'shoot ' + k('sprint') + 'sprint ' + k('pass') + 'pass ' + k('steal') + 'steal ' + k('switch') + 'switch<br>' +
+      k('sidestep') + 'sidestep ' + k('crossover') + 'cross ' + k('stepback') + 'stepback ' + k('spin') + 'spin ' + k('hesi') + 'hesi ' + k('pump') + 'pump ' + k('pause') + 'pause';
   }
   function setText(id, v) { if (last[id] !== v) { last[id] = v; if (id === 'fouls') el[id].innerHTML = v; else el[id].textContent = v; } }
-  function toast(text, sub) { el.toast.innerHTML = text + (sub ? '<small>' + sub + '</small>' : ''); el.toast.classList.remove('show'); void el.toast.offsetWidth; el.toast.classList.add('show'); }
+  function toast(text, sub) { el.toast.innerHTML = '<span class="rib"><span>' + text + '</span></span>' + (sub ? '<small>' + sub + '</small>' : ''); el.toast.classList.remove('show'); void el.toast.offsetWidth; el.toast.classList.add('show'); }
   const fbPos = { x: 0, y: 0, visible: false };
   function feedback(text, color) { el.feedback.style.left = fbPos.x + 'px'; el.feedback.style.top = fbPos.y + 'px'; el.feedback.textContent = text; el.feedback.style.color = color; el.feedback.classList.remove('show'); void el.feedback.offsetWidth; el.feedback.classList.add('show'); }
   function toggleDebug() { debugOn = !debugOn; el.debug.classList.toggle('hidden', !debugOn); }
@@ -2349,16 +2479,16 @@ const UI = (() => {
     if (last.scoreA !== undefined && last.scoreA !== String(g.score[0])) { el.scoreA.classList.remove('bump'); void el.scoreA.offsetWidth; el.scoreA.classList.add('bump'); }
     if (last.scoreB !== undefined && last.scoreB !== String(g.score[1])) { el.scoreB.classList.remove('bump'); void el.scoreB.offsetWidth; el.scoreB.classList.add('bump'); }
     setText('scoreA', String(g.score[0])); setText('scoreB', String(g.score[1]));
-    if (g.mode === '5v5') setText('fouls', 'FOULS ' + (g.teamFouls[0] >= 5 ? '<b>' : '') + g.teamFouls[0] + ' · ' + g.teamFouls[1] + (g.teamFouls[1] >= 5 ? ' BONUS' : g.teamFouls[0] >= 5 ? ' BONUS' : '')); else setText('fouls', '');
+    if (g.mode === '5v5') setText('fouls', 'Fouls ' + g.teamFouls[0] + ' ' + g.teamFouls[1] + (g.teamFouls[0] >= 5 || g.teamFouls[1] >= 5 ? ' <b>Bonus</b>' : '')); else setText('fouls', '');
     if (g.mode === '5v5') { setText('period', g.quarter <= CONFIG.game.quarters ? 'Q' + g.quarter : 'OT' + (g.quarter - CONFIG.game.quarters)); setText('clock', U.fmtClock(g.clock)); }
     else if (g.mode === 'practice') { setText('period', 'GYM'); setText('clock', U.fmtClock(g.time)); }
-    else { setText('period', 'TO ' + CONFIG.game.halfCourtTarget); setText('clock', U.fmtClock(g.time)); }
+    else { setText('period', 'FIRST TO ' + CONFIG.game.halfCourtTarget); setText('clock', U.fmtClock(g.time)); }
     const sc = g.mode === 'practice' ? '' : String(Math.ceil(g.shotClock));
     setText('shotclock', sc); el.shotclock.classList.toggle('low', g.shotClock <= 5 && g.mode !== 'practice');
     el.possA.className = 'poss' + (g.possession === 0 && g.mode !== 'practice' ? ' left' : ''); el.possB.className = 'poss' + (g.possession === 1 && g.mode !== 'practice' ? ' right' : '');
     const p = PlayerSys.players[g.human];
     el.playerbox.classList.toggle('hidden', !p);
-    if (p) { setText('pname', '#' + p.num + ' ' + p.name); setText('psub', p.pos + ' · OVR ' + p.ovr + ' · ' + g.teams[p.team].name.toUpperCase()); const st = p.stamina / CONFIG.player.staminaMax; el.stamina.style.width = (st * 100).toFixed(1) + '%'; el.stamina.classList.toggle('low', p.winded || st < 0.25); }
+    if (p) { setText('pnum', String(p.num)); setText('pname', p.ctlName || p.name); setText('psub', p.pos + '  ' + p.ovr + ' OVR  ' + g.teams[p.team].name); const st = p.stamina / CONFIG.player.staminaMax; el.stamina.style.width = (st * 100).toFixed(1) + '%'; el.stamina.classList.toggle('low', p.winded || st < 0.25); }
   }
   function updateMeter(g) {
     const p = PlayerSys.players[g.human];
@@ -2427,7 +2557,7 @@ const UI = (() => {
     updateHUD(g); updateMeter(g); updateTags(g);
     if (debugOn) updateDebug(dt, stats);
   }
-  return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, openNet, update, toast, feedback, toggleDebug, clearToast, renderTeamPick, get pick() { return pick; }, get debugOn() { return debugOn; } };
+  return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, openNet, wipe, update, toast, feedback, toggleDebug, clearToast, get pick() { return pick; }, get mode() { return mode; }, get debugOn() { return debugOn; } };
 })();
 // ==== END UI ====
 
@@ -2738,25 +2868,25 @@ const Net = (() => {
   function renderPanel(cont) {
     panel = cont;
     const view = role === 'host' ? lobbyMsg() : lobbyView;
-    let html = '<div class="opt"><span>Your name</span><input id="netNameIn" maxlength="14" value="' + myName.replace(/"/g, '') + '" style="pointer-events:auto;background:rgba(0,0,0,0.4);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-family:var(--sans)"></div>';
+    let html = '<div class="opt"><span>Your name</span><input class="field" id="netNameIn" maxlength="14" value="' + myName.replace(/"/g, '') + '"></div>';
     html += '<div class="status">status: ' + status + (err ? ' · ' + err : '') + '</div>';
     if (role === 'none') {
-      html += '<div class="note">One join code per lobby. Up to ' + NC.maxPerTeam + ' humans per team; switch sides freely; CPU fills the empty slots. Signaling goes through the free PeerJS cloud, game traffic is peer-to-peer.</div>';
-      html += '<div class="row"><button class="btn primary" id="netCreate">Create lobby</button><input id="netCodeIn" placeholder="CODE" maxlength="6" style="pointer-events:auto;width:110px;text-transform:uppercase;letter-spacing:0.2em;background:rgba(0,0,0,0.4);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font-family:var(--mono);font-weight:700"><button class="btn" id="netJoin">Join lobby</button></div>';
-      html += '<h2 class="sec">No signaling server? Direct connect (2 players)</h2>';
+      html += '<div class="note">One code per lobby. Up to ' + NC.maxPerTeam + ' humans per team, switch sides whenever you like, the CPU fills empty slots. Game traffic is peer-to-peer.</div>';
+      html += '<div class="row"><button class="btn primary" id="netCreate">Create lobby</button><input class="field code" id="netCodeIn" placeholder="CODE" maxlength="6"><button class="btn" id="netJoin">Join lobby</button></div>';
+      html += '<h2 class="sec">Direct connect, two players, no server</h2>';
       html += '<div class="row"><button class="btn small" id="netDirectHost">Create offer</button><button class="btn small" id="netDirectJoin">I have an offer</button></div>';
     } else if (transport === 'direct' && !(role === 'host' ? guests.size : hostConn)) {
       if (directMode === 'host') { html += '<h2 class="sec">1. Send this offer to your friend</h2><textarea class="sig" id="netOffer" readonly>' + directOffer + '</textarea><div class="row"><button class="btn small" id="netCopyOffer">Copy</button></div><h2 class="sec">2. Paste their answer</h2><textarea class="sig" id="netAnswerIn" placeholder="paste answer here"></textarea><div class="row"><button class="btn primary" id="netConnect">Connect</button><button class="btn" id="netCancel">Cancel</button></div>'; }
       else { html += '<h2 class="sec">1. Paste the host\'s offer</h2><textarea class="sig" id="netOfferIn" placeholder="paste offer here"></textarea><div class="row"><button class="btn primary" id="netMakeAnswer">Create answer</button><button class="btn" id="netCancel">Cancel</button></div>'; if (directAnswer) html += '<h2 class="sec">2. Send this answer back to the host</h2><textarea class="sig" id="netAnswer" readonly>' + directAnswer + '</textarea><div class="row"><button class="btn small" id="netCopyAnswer">Copy</button></div><div class="note">Waiting for the host to connect…</div>'; }
     } else if (view) {
       const teams = view.teams || UI.pick; const capN = view.mode === '5v5' ? 5 : view.mode === '3v3' ? 3 : 1; const me = role === 'host' ? 'host' : myPid;
-      html += '<div class="row" style="align-items:center"><span class="subtitle" style="margin:0">Lobby code</span><span class="title" style="font-size:34px;letter-spacing:0.18em">' + view.code + '</span>' + (transport === 'peerjs' ? '<button class="btn small" id="netCopyCode">Copy</button>' : '') + '</div>';
-      if (role === 'host') { html += '<div class="row"><span class="subtitle" style="margin:0;align-self:center">Mode</span>'; for (const m of ['1v1', '3v3', '5v5']) html += '<button class="btn small' + (view.mode === m ? ' sel' : '') + '" data-netmode="' + m + '">' + m + '</button>'; html += '<span class="note" style="margin:0;align-self:center">Teams and quarter length come from the main menu settings.</span></div>'; }
+      html += '<div class="row" style="align-items:center"><span class="subtitle">Lobby code</span><span class="title" style="font-size:40px;letter-spacing:0.16em;background:var(--accent);color:var(--accent-ink);padding:4px 14px 0;transform:skewX(var(--skew))">' + view.code + '</span>' + (transport === 'peerjs' ? '<button class="btn small" id="netCopyCode">Copy</button>' : '') + '</div>';
+      if (role === 'host') { html += '<div class="row"><span class="subtitle" style="margin:0;align-self:center">Mode</span>'; for (const m of ['1v1', '3v3', '5v5']) html += '<button class="btn small' + (view.mode === m ? ' sel' : '') + '" data-netmode="' + m + '">' + m + '</button>'; html += '<span class="note" style="margin:0;align-self:center">Teams come from the Play screen, quarter length from Settings.</span></div>'; }
       else html += '<div class="note">Mode: ' + view.mode + ' · the host starts the game.</div>';
       html += '<div class="grid2" style="margin-top:12px">';
       for (let t = 0; t < 2; t++) {
         const team = TEAMS[teams[t]]; const mem = view.members.filter((m) => m.team === t);
-        html += '<div><div class="kv" style="border-bottom:2px solid ' + hex(team.primary) + '"><b>' + team.city + ' ' + team.name + '</b><span class="k">' + mem.length + '/' + capN + '</span></div>';
+        html += '<div><div class="kv" style="border-bottom:3px solid ' + hex(team.primary) + '"><b class="dsp" style="font-size:18px">' + team.city + ' ' + team.name + '</b><span class="k">' + mem.length + '/' + capN + '</span></div>';
         for (let i = 0; i < capN; i++) { const m = mem[i]; html += '<div class="kv"><span' + (m && m.pid === me ? ' style="color:var(--accent)"' : (m ? '' : ' class="k"')) + '>' + (m ? (m.name + (m.isHost ? ' ★' : '')) : 'CPU') + '</span><span class="k">' + POSITIONS[i] + '</span></div>'; }
         const mine = view.members.find((m) => m.pid === me); const here = mine && mine.team === t;
         html += '<div class="row"><button class="btn small' + (here ? ' sel' : '') + '" data-jointeam="' + t + '"' + (here || mem.length >= capN ? ' disabled' : '') + '>' + (here ? 'You are here' : 'Join') + '</button></div></div>';
@@ -2822,12 +2952,15 @@ const Main = (() => {
     if (key === 'difficulty') Game.g.aiDiff = s.difficulty;
   }
   function startGame(mode, a, b) {
-    lastMode = mode; Render.buildArena(TEAMS[a], TEAMS[b]); Game.start(mode, a, b); Render.buildPlayers(Game.g.teams); Render.setShadows(Game.settings.shadows);
-    document.getElementById('final').classList.add('hidden');
-    if (Net.isHost) Net.hostStart(mode, a, b); else if (Net.isGuest) Net.enterGuest();
-    UI.hideMenu(); UI.showHUD(); UI.clearToast(); const ball = BallSys.ball; CameraSys.snap(ball.x, ball.z); acc = 0; paused = false;
-    const sb = document.getElementById('btnSpectate'); if (sb) sb.textContent = 'CPU plays for me: off';
-    if (!U.loadLS('hw_seen', false)) { pause(true); UI.showFirstRun(); }
+    lastMode = mode;
+    UI.wipe(() => {
+      Render.buildArena(TEAMS[a], TEAMS[b]); Game.start(mode, a, b); Render.buildPlayers(Game.g.teams); Render.setShadows(Game.settings.shadows);
+      document.getElementById('final').classList.add('hidden');
+      if (Net.isHost) Net.hostStart(mode, a, b); else if (Net.isGuest) Net.enterGuest();
+      UI.hideMenu(); UI.showHUD(); UI.clearToast(); const ball = BallSys.ball; CameraSys.snap(ball.x, ball.z); acc = 0; paused = false;
+      const sb = document.getElementById('btnSpectate'); if (sb) sb.textContent = 'CPU plays for me: off';
+      if (!U.loadLS('hw_seen', false)) { pause(true); UI.showFirstRun(); }
+    });
   }
   function pause(silent) { paused = true; if (!silent) UI.showPause(true); }
   function resume() { paused = false; UI.showPause(false); last = performance.now(); acc = 0; }
