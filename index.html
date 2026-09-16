@@ -732,7 +732,7 @@ const PlayerSys = (() => {
       id: players.length, team, slot, name: def.name, num: def.num, pos: def.pos, height: def.height, ratings: def.ratings, skin: def.skin, ovr: overall(def.ratings),
       x: 0, y: 0, z: 0, px: 0, py: 0, pz: 0, vx: 0, vy: 0, vz: 0, facing: 0, pfacing: 0, speed: 0,
       state: ST.IDLE, stateT: 0, stateDur: 0, hasBall: false, hand: 1, handFrom: 1, dribblePhase: 0, dribbleH: 0.85,
-      stamina: PC.staminaMax, winded: false, sprinting: false, comboCount: 0, lastMoveEnd: -9, cd: { move: 0, steal: 0, jump: 0, pump: 0, pass: 0 },
+      stamina: PC.staminaMax, winded: false, sprinting: false, comboCount: 0, lastMoveEnd: -9, cd: { move: 0, steal: 0, jump: 0, pump: 0, pass: 0, contest: 0 },
       airborne: false, input: makeInput(), human: false, remote: false, controlled: false, moveDir: { x: 0, z: 0 }, moveKind: '', stumbleT: 0, bumped: 0,
       shot: { meterT: 0, released: false, dur: 1, timing: 0, quality: 0, green: false, fake: false, setShot: false, moving: 0 },
       dunk: { kind: '', t: 0, dur: 0, slamAt: 0, released: false, tx: 0, tz: 0, contact: false },
@@ -857,7 +857,7 @@ const PlayerSys = (() => {
     p.mesh = { group: g, torso, head, armL, armR, legL, legR, shadow, ring, legPhase: 0, armSwing: 0, sc };
     return p.mesh;
   }
-  function destroyMeshes(scene) { for (const p of players) { if (!p.mesh) continue; scene.remove(p.mesh.group); scene.remove(p.mesh.shadow); scene.remove(p.mesh.ring); p.mesh = null; } }
+  function destroyMeshes(scene) { for (const p of players) { if (!p.mesh) continue; p.mesh.group.traverse((o) => { if (o.material && o.material.map && o.geometry === GEO.numPlane) { o.material.map.dispose(); o.material.dispose(); } }); scene.remove(p.mesh.group); scene.remove(p.mesh.shadow); scene.remove(p.mesh.ring); p.mesh = null; } }
   return { ST, STATE_NAMES, players, genRoster, overall, create, clear, setState, teleport, controlFactor, updateMovement, updateVertical, jump, pushHistory, delayedPos, faceToward, faceVelocity, costStamina, reachHeight, speedMul, fatigueMul, buildMesh, destroyMeshes, matsFor };
 })();
 // ==== END PLAYER ====
@@ -1208,7 +1208,7 @@ const Shooting = (() => {
     }
     Game.emit('sound', { name: 'catchBall' });
   }
-  return { start, update, release, isShooting, evaluate, solveLaunch, zoneFor, ratingFor, contest };
+  return { start, update, release, isShooting, evaluate, solveLaunch, zoneFor, ratingFor, contest, meterDuration };
 })();
 // ==== END SHOOTING ====
 
@@ -1305,7 +1305,7 @@ const Dunks = (() => {
           const hh = p.height / 1.93, fx = Math.sin(p.facing), fz = Math.cos(p.facing);
           BallSys.place(p.x + fx * 0.3, p.y + hh * 2.1, p.z + fz * 0.3);
           BallSys.release(-fx * 3.5 + (RNG.next() - 0.5) * 3, 2 + RNG.next() * 1.5, -fz * 3.5 + (RNG.next() - 0.5) * 3, BS.LOOSE);
-          ball.blockedBy = d.id; d.stats.blk++; d.cd.jump = 0.4;
+          ball.blockedBy = d.id; ball.lastTouch = d.id; ball.lastTeam = d.team; d.stats.blk++; d.cd.jump = 0.4;
           Game.emit('sound', { name: 'block' }); Game.emit('feedback', { text: 'BLOCKED', color: '#ff4d5e' }); Game.toast('REJECTED', d.name.toUpperCase() + (isDunk ? ' · MET AT THE RIM' : '')); Game.emit('cheer', { big: 0.9 });
           Rules.onBlock(d, p, g);
           return true;
@@ -1332,7 +1332,7 @@ const Dunks = (() => {
       if (!RNG.chance(SC.blockChanceBase * (0.5 + 0.7 * d.ratings.block / 99) * (1 - dist / SC.blockReach * 0.5))) continue;
       const h = Court.hoops[ball.shot.hoop]; let ax = ball.x - h.x, az = ball.z - h.z; const al = Math.sqrt(ax * ax + az * az) || 1; ax /= al; az /= al;
       ball.vx = ax * 3 + (RNG.next() - 0.5) * 4; ball.vz = az * 3 + (RNG.next() - 0.5) * 4; ball.vy = 0.5 + RNG.next() * 2;
-      ball.state = BS.LOOSE; ball.blockedBy = d.id; d.stats.blk++;
+      ball.state = BS.LOOSE; ball.blockedBy = d.id; ball.lastTouch = d.id; ball.lastTeam = d.team; d.stats.blk++;
       Game.emit('sound', { name: 'block' }); Game.emit('feedback', { text: 'BLOCKED', color: '#ff4d5e' }); Game.toast('BLOCKED', d.name.toUpperCase()); Game.emit('cheer', { big: 0.8 });
       Rules.onBlock(d, shooter, g);
       return;
@@ -1420,7 +1420,6 @@ const AI = (() => {
       else if (d > 4 && d < 7.6 && rating >= 58 && RNG.chance(0.4)) kind = 'stepback';
       else kind = RNG.chance(0.5) ? 'sidestep' : 'crossover';
       if (kind === 'sidestep' || kind === 'spin') { inp.mx = lx * side * 0.8 + ax / al * 0.5; inp.mz = lz * side * 0.8 + az / al * 0.5; }
-      if (kind === 'crossover') { const want = side; if (Math.sign(-p.hand) !== want) { /* crossover flips the hand: only cross if it sends us the wanted way */ } }
       inp[kind] = true; a.lastMove = g.time; return;
     }
     // probe: shift laterally to move the defender, keep 4.5-7.5 m from the rim
@@ -1481,11 +1480,11 @@ const AI = (() => {
     moveTo(p, tx, tz, distT > 2.0);
     const dist = U.dist(p.x, p.z, m.x, m.z);
     p.armsUp = !p.airborne && dist < 2.2 && (m.state === ST.SHOOT || m.state === ST.PUMP);
-    if (p.airborne || p.cd.jump > 0) return;
+    if (p.airborne || p.cd.contest > 0) return;
     const c = diff.contest;
-    if (m.state === ST.SHOOT && !m.shot.released && m.stateT < 0.3 && dist < 2.3) { if (RNG.chance(c * (0.45 + 0.55 * p.ratings.perimD / 99))) { inp.shootPressed = true; p.cd.jump = 0.8; } return; }
-    if (m.state === ST.PUMP && m.stateT < 0.16 && dist < 2.0 && RNG.chance(0.45 * (1.3 - p.ratings.perimD / 99) * c)) { inp.shootPressed = true; p.cd.jump = 0.8; return; }
-    if ((m.state === ST.DUNK || m.state === ST.LAYUP) && !m.dunk.released && dist < 1.9 && RNG.chance(c * (0.35 + 0.6 * p.ratings.block / 99))) { inp.shootPressed = true; p.cd.jump = 0.8; return; }
+    if (m.state === ST.SHOOT && !m.shot.released && m.stateT < 0.3 && dist < 2.3) { if (RNG.chance(c * (0.45 + 0.55 * p.ratings.perimD / 99))) { inp.shootPressed = true; p.cd.contest = 0.8; } return; }
+    if (m.state === ST.PUMP && m.stateT < 0.16 && dist < 2.0 && RNG.chance(0.45 * (1.3 - p.ratings.perimD / 99) * c)) { inp.shootPressed = true; p.cd.contest = 0.8; return; }
+    if ((m.state === ST.DUNK || m.state === ST.LAYUP) && !m.dunk.released && dist < 1.9 && RNG.chance(c * (0.35 + 0.6 * p.ratings.block / 99))) { inp.shootPressed = true; p.cd.contest = 0.8; return; }
     if (dist < 1.45 && p.cd.steal <= 0 && (m.state === ST.IDLE || m.state === ST.MOVE || m.state === ST.STUMBLE) && RNG.chance(diff.stealRate * 0.07 * (0.4 + 0.8 * p.ratings.steal / 99) * (m.state === ST.STUMBLE ? 3 : 1))) inp.steal = true;
   }
   function offBall(p, m, handler, h, g) {
@@ -1498,7 +1497,7 @@ const AI = (() => {
     const driving = hd < 4.2 && (handler.vx * (h.x - handler.x) + handler.vz * (h.z - handler.z)) > 1.5;
     if (driving && RNG.chance(diff.help)) {
       let nearest = null, nd = 1e9; for (const q of P) { if (q.team !== p.team) continue; const mm = P[q.matchup]; if (mm && mm.hasBall) continue; const dd = U.dist(q.x, q.z, h.x, h.z); if (dd < nd) { nd = dd; nearest = q; } }
-      if (nearest === p) { const ax = h.x - handler.x, az = h.z - handler.z; const al = Math.sqrt(ax * ax + az * az) || 1; moveTo(p, handler.x + ax / al * 1.4, handler.z + az / al * 1.4, true); p.ai.helping = true; if (hd < 2.6 && U.dist(p.x, p.z, handler.x, handler.z) < 1.8 && !p.airborne && p.cd.jump <= 0 && RNG.chance(diff.contest * 0.5)) { inp.shootPressed = true; p.cd.jump = 0.8; } return; }
+      if (nearest === p) { const ax = h.x - handler.x, az = h.z - handler.z; const al = Math.sqrt(ax * ax + az * az) || 1; moveTo(p, handler.x + ax / al * 1.4, handler.z + az / al * 1.4, true); p.ai.helping = true; if (hd < 2.6 && U.dist(p.x, p.z, handler.x, handler.z) < 1.8 && !p.airborne && p.cd.contest <= 0 && RNG.chance(diff.contest * 0.5)) { inp.shootPressed = true; p.cd.contest = 0.8; } return; }
     }
     p.ai.helping = false;
     // ball-you-man: sit on the line between my man and the ball, sag toward the paint when far from the ball
@@ -1521,7 +1520,7 @@ const AI = (() => {
     const dist = U.dist(p.x, p.z, ball.x, ball.z);
     if (dist > 11) { stop(p); return; }
     moveTo(p, tx, tz, true);
-    if (dist < 1.15 && ball.y > 1.7 && ball.y < 3.3 && ball.vy < 0.8 && !p.airborne && p.cd.jump <= 0 && RNG.chance(0.45 + p.ratings.rebound / 200)) { inp.shootPressed = true; p.cd.jump = 0.7; }
+    if (dist < 1.15 && ball.y > 1.7 && ball.y < 3.3 && ball.vy < 0.8 && !p.airborne && p.cd.contest <= 0 && RNG.chance(0.45 + p.ratings.rebound / 200)) { inp.shootPressed = true; p.cd.contest = 0.7; }
   }
   function inboundLogic(p, g) {
     const ib = g.inbound; if (!ib) { stop(p); return; }
@@ -1641,7 +1640,7 @@ const Game = (() => {
   // ---------- per-tick input handling (human & AI share this) ----------
   function applyInput(p, dt) {
     const inp = p.input;
-    if (g.state === S.INBOUND) { if (inp.pass && p.id === g.inbounder) Passing.inboundPass(p, g); return; }
+    if (g.state === S.INBOUND) { if (inp.pass && g.inbound && p.id === g.inbound.inbounder) Passing.inboundPass(p, g); return; }
     if (g.state === S.FREETHROW) { if (p.id === g.ftShooter && p.hasBall) { if (inp.shootPressed && p.state === ST.IDLE) Shooting.start(p, g); if (p.state === ST.SHOOT) Shooting.update(p, dt, g); } return; }
     if (p.hasBall) {
       if (inp.shootPressed && (p.state === ST.IDLE || p.state === ST.MOVE || p.state === ST.LAND)) { if (!Dunks.tryStart(p, g)) Shooting.start(p, g); }
@@ -1728,6 +1727,7 @@ const Game = (() => {
     if (Net.isHost) Net.hostApplyInputs();
     const live = g.state === S.PLAY || g.state === S.INBOUND || g.state === S.FREETHROW;
     for (const p of P) if (live) applyInput(p, dt);
+    if (g.state === S.FREETHROW) for (const p of P) if (p.id !== g.ftShooter) { p.input.mx = 0; p.input.mz = 0; p.input.sprint = false; }
     for (const p of P) { p.stateT += dt; for (const k in p.cd) if (p.cd[k] > 0) p.cd[k] -= dt; PlayerSys.updateVertical(p, dt, onLand); updateTimedStates(p, dt); PlayerSys.updateMovement(p, dt); updateFacing(p, dt); PlayerSys.pushHistory(p); }
     collidePlayers();
     BallSys.update(dt, Rules.onScore);
@@ -2133,8 +2133,15 @@ const Render = (() => {
     ballMesh.castShadow = CONFIG.render.shadows; scene.add(ballMesh);
     ballShadow = new THREE.Mesh(new THREE.CircleGeometry(0.14, 12), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false })); ballShadow.rotation.x = -Math.PI / 2; ballShadow.position.y = 0.011; scene.add(ballShadow);
   }
+  function disposeObject(root) {
+    root.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      for (const m of mats) { if (m.map) m.map.dispose(); m.dispose(); }
+    });
+  }
   function buildArena(teamA, teamB) {
-    if (Court.group) scene.remove(Court.group);
+    if (Court.group) { scene.remove(Court.group); disposeObject(Court.group); }
     Court.build(scene, teamA, teamB);
   }
   function buildPlayers(teams) { PlayerSys.destroyMeshes(scene); for (const p of PlayerSys.players) PlayerSys.buildMesh(p, teams[p.team], scene); }
@@ -2159,7 +2166,7 @@ const Render = (() => {
       const arm = -(0.55 + 0.5 * (1 - bh)); if (p.hand > 0) { aR = arm; azR = 0.35; } else { aL = arm; azL = -0.35; }
     }
     switch (s) {
-      case ST.CROSSOVER: { const arm = -(0.6 + 0.4 * Math.sin(k * Math.PI)); aL = arm * (p.hand < 0 ? 1 : 0.5); aR = arm * (p.hand > 0 ? 1 : 0.5); leanZ = -p.hand * 0.18 * Math.sin(k * Math.PI); break; }
+      case ST.CROSSOVER: { const arm = -(0.6 + 0.4 * Math.sin(k * Math.PI)); aL = arm * (p.hand < 0 ? 1 : 0.5); aR = arm * (p.hand > 0 ? 1 : 0.5); leanZ = p.hand * 0.18 * Math.sin(k * Math.PI); break; }
       case ST.SIDESTEP: leanZ = -Math.sign(p.moveDir.x * Math.cos(fac) - p.moveDir.z * Math.sin(fac) || 1) * 0.22 * Math.sin(k * Math.PI); break;
       case ST.STEPBACK: leanX = -0.25 * Math.sin(k * Math.PI); break;
       case ST.SPIN: yaw = fac + p.hand * Math.PI * 2 * (k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k)); aL = -1.0; aR = -1.0; break;
@@ -2417,7 +2424,8 @@ const Net = (() => {
   let pc = null, chFast = null, chRel = null, role = 'none', connected = false, status = 'offline', panel = null, err = '';
   let seq = 0, sendAcc = 0, snapAcc = 0, edgeBits = 0, recvSnaps = 0;
   const localInput = makeInput();
-  const remote = { input: makeInput(), bits: 0, held: 0, seq: -1 };
+  const remote = { input: makeInput(), bits: 0, held: 0, seq: -1, rel: null };
+  let pressT = 0, pressDur = 1, relPending = null;
   const snaps = [];
   const r3 = (v) => Math.round(v * 1000) / 1000;
   function packBits(inp) { let b = 0; for (let i = 0; i < BITS.length; i++) if (inp[BITS[i]]) b |= 1 << i; return b; }
@@ -2459,7 +2467,7 @@ const Net = (() => {
   function forwardEvent(name, data) { if (role !== 'host' || !connected) return; if (name === 'start') return; send(chRel, { t: 'ev', name, data }); }
   function onMessage(data) {
     let m; try { m = JSON.parse(data); } catch (e) { return; }
-    if (role === 'host') { if (m.t === 'in' && m.seq > remote.seq) { remote.seq = m.seq; remote.input.mx = m.mx; remote.input.mz = m.mz; remote.held = m.h; remote.bits |= m.b; } else if (m.t === 'quit') onDisconnect(); return; }
+    if (role === 'host') { if (m.t === 'in' && m.seq > remote.seq) { remote.seq = m.seq; remote.input.mx = m.mx; remote.input.mz = m.mz; remote.held = m.h; remote.bits |= m.b; if (m.rel != null) remote.rel = m.rel; } else if (m.t === 'quit') onDisconnect(); return; }
     if (m.t === 'start') { Game.settings.quarterLen = m.quarterLen; Game.settings.makeItTakeIt = m.makeItTakeIt; Game.settings.difficulty = m.difficulty; Main.startGame(m.mode, m.a, m.b); }
     else if (m.t === 'snap') { m.rt = performance.now() / 1000; snaps.push(m); recvSnaps++; if (snaps.length > 6) snaps.shift(); }
     else if (m.t === 'ev') { if (m.name === 'bsfx') BallSys.ball.events.push(m.data); else Game.g.events.push({ name: m.name, data: m.data }); }
@@ -2472,6 +2480,8 @@ const Net = (() => {
     const inp = p.input; clearInputEdges(inp);
     inp.mx = remote.input.mx; inp.mz = remote.input.mz; inp.sprint = !!(remote.held & 1); inp.shoot = !!(remote.held & 2);
     if (remote.bits) { unpackBits(remote.bits & EDGE_MASK, inp); inp.sprint = !!(remote.held & 1); inp.shoot = !!(remote.held & 2); remote.bits = 0; }
+    // trust the guest's own meter reading for release timing so latency does not make every shot late
+    if (inp.shootReleased && remote.rel != null) { if (p.state === PlayerSys.ST.SHOOT && !p.shot.released) p.shot.meterT = U.clamp(remote.rel, 0, 1); remote.rel = null; }
   }
   function buildSnap() {
     const P = PlayerSys.players, b = BallSys.ball, g = Game.g;
@@ -2486,8 +2496,11 @@ const Net = (() => {
     const g = Game.g; const ST = PlayerSys.ST;
     Input.sample(localInput, CameraSys.basis);
     edgeBits |= packBits(localInput) & EDGE_MASK;
+    const meP = PlayerSys.players[g.human]; const nowS = performance.now() / 1000;
+    if (localInput.shootPressed && meP && meP.hasBall) { pressT = nowS; pressDur = Shooting.meterDuration(meP, g.state === Game.S.FREETHROW ? 'ft' : Shooting.zoneFor(meP, Game.hoopFor(meP.team))); }
+    if (localInput.shootReleased && pressT > 0) { relPending = r3(U.clamp((nowS - pressT) / pressDur, 0, 1)); pressT = 0; }
     sendAcc += dt;
-    if (sendAcc >= 1 / INPUT_HZ) { sendAcc = 0; send(chFast, { t: 'in', seq: ++seq, mx: r3(localInput.mx), mz: r3(localInput.mz), h: packBits(localInput) & HELD_MASK, b: edgeBits }); edgeBits = 0; }
+    if (sendAcc >= 1 / INPUT_HZ) { sendAcc = 0; const pkt = { t: 'in', seq: ++seq, mx: r3(localInput.mx), mz: r3(localInput.mz), h: packBits(localInput) & HELD_MASK, b: edgeBits }; if (relPending != null) { pkt.rel = relPending; relPending = null; } send(chFast, pkt); edgeBits = 0; }
     g.time += dt;
     if (!snaps.length) return;
     let A = snaps[0], B = snaps[0];
@@ -2495,6 +2508,7 @@ const Net = (() => {
     const f = B.rt > A.rt ? U.clamp((performance.now() / 1000 - INTERP_DELAY - A.rt) / (B.rt - A.rt), 0, 1) : 1;
     applySnap(A, B, f);
     const me = PlayerSys.players[g.human];
+    if (me && me.state === ST.SHOOT && !me.shot.released && pressT > 0) { me.shot.meterT = U.clamp((nowS - pressT) / pressDur, 0, 1); me.shot.dur = pressDur; }
     if (me && (me.state === ST.IDLE || me.state === ST.MOVE) && !me.airborne) {
       me.input.mx = localInput.mx; me.input.mz = localInput.mz; me.input.sprint = localInput.sprint;
       PlayerSys.updateMovement(me, dt);
