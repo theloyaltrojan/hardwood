@@ -156,6 +156,16 @@
   .side { display: grid; grid-template-columns: 34px 1fr 34px; gap: 6px; align-items: stretch; }
   .arrow { pointer-events: auto; cursor: pointer; border: 0; background: var(--panel3); color: var(--ink); font-family: var(--display); font-size: 22px; transition: background-color 0.15s, color 0.15s; }
   .arrow:hover { background: var(--accent); color: var(--accent-ink); }
+  .jersey { cursor: pointer; pointer-events: auto; }
+  #teamGrid { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  #teamGrid .tg-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+  #teamGrid .tg-conf { font-family: var(--display); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin: 10px 0 4px; }
+  #teamGrid .tg-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 4px; }
+  #teamGrid .tg-t { pointer-events: auto; cursor: pointer; text-align: left; background: var(--panel2); color: var(--ink); border: 0; border-left: 5px solid; padding: 5px 8px; font-family: var(--display); font-size: 14px; letter-spacing: 0.04em; text-transform: uppercase; }
+  #teamGrid .tg-t:hover { background: var(--panel3); }
+  #teamGrid .tg-t.sel { background: var(--accent); color: var(--accent-ink); }
+  #teamGrid .tg-t.taken { opacity: 0.35; cursor: not-allowed; }
+  #teamGrid .tg-t small { display: block; font-family: var(--sans); font-size: 10px; letter-spacing: 0.1em; opacity: 0.7; }
   .jersey { height: 104px; padding: 12px 14px 10px; display: flex; flex-direction: column; justify-content: flex-end; transform: skewX(var(--skew)); position: relative; overflow: hidden; }
   .jersey > * { transform: skewX(var(--unskew)); }
   .jersey::before { content: attr(data-num); position: absolute; right: 8px; top: -14px; font-family: var(--display); font-size: 110px; opacity: 0.16; line-height: 1; }
@@ -198,6 +208,56 @@
   .final-board .fname small { display: block; font-size: 13px; letter-spacing: 0.12em; opacity: 0.8; }
   .final-board .fscore { font-family: var(--display); font-size: 64px; line-height: 1; }
   .final-board .fmid { font-family: var(--display); font-size: 18px; letter-spacing: 0.2em; color: var(--muted); }
+
+  /* ---------- MyCareer ---------- */
+  .careercard { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 18px; background: var(--panel2); border-left: 6px solid var(--accent); padding: 12px 18px; margin: 4px 0 10px; }
+  .careercard .cc-grade, .careercard .cc-xp { text-align: center; line-height: 1; }
+  .careercard .cc-grade b { font-family: var(--display); font-size: 46px; color: var(--accent); }
+  .careercard .cc-xp b { font-family: var(--display); font-size: 34px; color: var(--ok); }
+  .careercard small { display: block; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+  .cc-name { font-family: var(--display); font-size: 24px; text-transform: uppercase; line-height: 1; }
+  .cc-name span { font-family: var(--sans); font-size: 12px; letter-spacing: 0.1em; color: var(--muted); margin-left: 10px; text-transform: none; }
+  .cc-line { font-size: 14px; margin-top: 6px; }
+  .cc-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .cc-next { font-size: 12.5px; color: var(--accent); letter-spacing: 0.06em; margin-bottom: 12px; }
+
+  .cr-top { display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: stretch; margin-bottom: 4px; }
+  .cr-card { position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-width: 236px; padding: 14px 18px 12px; transform: skewX(var(--skew)); overflow: hidden; }
+  .cr-card > * { transform: skewX(var(--unskew)); }
+  .cr-card::before { content: attr(data-num); position: absolute; right: 6px; top: -18px; font-family: var(--display); font-size: 118px; opacity: 0.16; line-height: 1; }
+  .cr-card .cr-nm { font-family: var(--display); font-size: 30px; text-transform: uppercase; line-height: 0.95; }
+  .cr-card .cr-meta { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.85; margin-top: 4px; }
+  .cr-card .cr-ovr { font-family: var(--display); font-size: 15px; letter-spacing: 0.1em; margin-top: 8px; }
+  .cr-season { display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+  .cr-phase { font-family: var(--display); font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+  .cr-next { font-family: var(--display); font-size: 30px; text-transform: uppercase; line-height: 1; }
+  .cr-rec { font-size: 13px; color: var(--muted); }
+  .cr-xpbar { display: flex; align-items: baseline; gap: 10px; margin: 2px 0 6px; }
+  .cr-xpbar b { font-family: var(--display); font-size: 30px; color: var(--ok); line-height: 1; }
+  .cr-attr { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .cr-attr .nm { width: 110px; font-size: 13px; }
+  .cr-attr .bar { position: relative; flex: 1; height: 10px; background: var(--panel3); }
+  .cr-attr .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); }
+  .cr-attr .bar u { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--danger); opacity: 0.8; }
+  .cr-attr .val { font-family: var(--display); font-size: 20px; min-width: 34px; text-align: right; line-height: 1; }
+  .cr-attr .cost { font-size: 11px; color: var(--muted); min-width: 66px; text-align: right; }
+  .cr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+  .cr-pick { pointer-events: auto; cursor: pointer; text-align: left; border: 1px solid var(--line); background: var(--panel2); color: var(--ink); padding: 8px 10px; font-family: var(--sans); font-size: 12px; border-left: 5px solid; }
+  .cr-pick:hover { background: var(--panel3); }
+  .cr-pick.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .cr-pick b { display: block; font-family: var(--display); font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .cr-pick span { color: var(--muted); font-size: 11px; }
+  .cr-arch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .cr-stand { display: grid; grid-template-columns: 22px 1fr 28px 28px; gap: 2px 10px; font-size: 12.5px; align-items: center; max-width: 380px; }
+  .cr-stand .hd { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+  .cr-stand .cut { border-bottom: 1px dashed var(--line); padding-bottom: 4px; }
+  .cr-stand i { font-style: normal; color: var(--muted); }
+  .cr-hist { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .cr-hist th { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); text-align: right; font-weight: 400; padding: 4px 0; }
+  .cr-hist th:first-child, .cr-hist td:first-child { text-align: left; }
+  .cr-hist td { text-align: right; padding: 4px 0; border-top: 1px solid var(--line); }
+  .cr-hist td.ring { color: var(--accent); }
+  .cr-actions { display: flex; align-items: center; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
   #final table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
   #final th, #final td { text-align: right; padding: 5px 6px; font-variant-numeric: tabular-nums; }
   #final th { color: var(--muted); font-weight: 400; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; border-bottom: 1px solid var(--line); }
@@ -249,6 +309,7 @@
     <div class="wordmark"><span class="wm-top">Hardwood</span><span class="wm-main"><span>Legends</span></span></div>
     <nav class="menu-nav">
       <button class="nav-item sel" data-nav="menuHome">Play</button>
+      <button class="nav-item" data-nav="menuCareer">MyCareer</button>
       <button class="nav-item" data-nav="menuNet">Multiplayer</button>
       <button class="nav-item" data-nav="menuControls">Controls</button>
       <button class="nav-item" data-nav="menuSettings">Settings</button>
@@ -268,6 +329,7 @@
         <div class="vs">vs</div>
         <div class="side"><button class="arrow" data-cycle="1,-1">&#9664;</button><div class="jersey" id="jerseyB"><span class="lbl">Away</span><span class="city"></span><span class="name"></span></div><button class="arrow" data-cycle="1,1">&#9654;</button></div>
       </div>
+      <div id="teamGrid" class="hidden"></div>
       <div class="tipoff"><button class="btn primary" id="btnTipoff"><span class="t">Tip off</span></button><div class="note" id="tipnote"></div></div>
     </div>
     <div id="menuControls" class="pane hidden">
@@ -278,6 +340,9 @@
     <div id="menuSettings" class="pane hidden">
       <div class="pane-title">Settings</div>
       <div id="settingsList"></div>
+    </div>
+    <div id="menuCareer" class="pane hidden">
+      <div id="careerBody"></div>
     </div>
     <div id="menuNet" class="pane hidden">
       <div class="pane-title">Multiplayer<small>Host a lobby and share the code, or join a friend's.</small></div>
@@ -617,15 +682,58 @@ const AudioSys = (() => {
 // ==== END AUDIO ====
 
 // ==== BEGIN DATA ====
-// Original teams. Invented cities, names and colorways: no real-league marks.
+// The league. Invented cities, names and colorways: no real-league marks anywhere.
+// `conf` splits the league in two for standings and the playoff bracket; `dark` means the primary colour
+// is dark enough that jersey text has to be light.
 const TEAMS = [
-  { id: 'voltage',   city: 'Neon City', name: 'Voltage',   abbr: 'NCV', primary: 0xffd400, secondary: 0x15161a, dark: false },
-  { id: 'anchors',   city: 'Ironport',  name: 'Anchors',   abbr: 'IPA', primary: 0x1f3f8f, secondary: 0xf2f4f8, dark: true },
-  { id: 'coyotes',   city: 'Sundown',   name: 'Coyotes',   abbr: 'SDC', primary: 0xff6a00, secondary: 0x3b1f0e, dark: false },
-  { id: 'comets',    city: 'Orbital',   name: 'Comets',    abbr: 'ORB', primary: 0x6a2cff, secondary: 0x35d0ff, dark: true },
-  { id: 'sentinels', city: 'Nullsec',   name: 'Sentinels', abbr: 'NSS', primary: 0x18e37a, secondary: 0x0b0f0c, dark: false },
-  { id: 'cinders',   city: 'Ashfall',   name: 'Cinders',   abbr: 'ASH', primary: 0xd1202a, secondary: 0x2a2a2e, dark: true },
+  // ---- East ----
+  { id: 'voltage',    city: 'Neon City',   name: 'Voltage',     abbr: 'NCV', primary: 0xffd400, secondary: 0x15161a, dark: false, conf: 0 },
+  { id: 'anchors',    city: 'Ironport',    name: 'Anchors',     abbr: 'IPA', primary: 0x1f3f8f, secondary: 0xf2f4f8, dark: true,  conf: 0 },
+  { id: 'comets',     city: 'Orbital',     name: 'Comets',      abbr: 'ORB', primary: 0x6a2cff, secondary: 0x35d0ff, dark: true,  conf: 0 },
+  { id: 'cinders',    city: 'Ashfall',     name: 'Cinders',     abbr: 'ASH', primary: 0xd1202a, secondary: 0x2a2a2e, dark: true,  conf: 0 },
+  { id: 'gulls',      city: 'Harbor Row',  name: 'Gulls',       abbr: 'HRG', primary: 0x16b5b0, secondary: 0xf4f7f6, dark: false, conf: 0 },
+  { id: 'regents',    city: 'Kingsbridge', name: 'Regents',     abbr: 'KBR', primary: 0x4b2a8f, secondary: 0xe8c65a, dark: true,  conf: 0 },
+  { id: 'current',    city: 'Cobalt Falls',name: 'Current',     abbr: 'CFC', primary: 0x1878e8, secondary: 0xd8ecff, dark: true,  conf: 0 },
+  { id: 'herons',     city: 'Saltmarsh',   name: 'Herons',      abbr: 'SMH', primary: 0x5b6a78, secondary: 0xf2f4f6, dark: true,  conf: 0 },
+  { id: 'foundry',    city: 'Gearhaven',   name: 'Foundry',     abbr: 'GHF', primary: 0xe2661c, secondary: 0x2b2f36, dark: false, conf: 0 },
+  { id: 'stags',      city: 'Elmwood',     name: 'Stags',       abbr: 'EWS', primary: 0x1c6b3a, secondary: 0xe4dcc4, dark: true,  conf: 0 },
+  { id: 'kilns',      city: 'Brickyard',   name: 'Kilns',       abbr: 'BYK', primary: 0xa8442c, secondary: 0xf0d9b8, dark: true,  conf: 0 },
+  { id: 'timberjacks',city: 'Northgate',   name: 'Timberjacks', abbr: 'NGT', primary: 0x3a4149, secondary: 0xc8452f, dark: true,  conf: 0 },
+  // ---- West ----
+  { id: 'coyotes',    city: 'Sundown',     name: 'Coyotes',     abbr: 'SDC', primary: 0xff6a00, secondary: 0x3b1f0e, dark: false, conf: 1 },
+  { id: 'sentinels',  city: 'Nullsec',     name: 'Sentinels',   abbr: 'NSS', primary: 0x18e37a, secondary: 0x0b0f0c, dark: false, conf: 1 },
+  { id: 'drifters',   city: 'Dust Bowl',   name: 'Drifters',    abbr: 'DBD', primary: 0xc9a227, secondary: 0x43301a, dark: false, conf: 1 },
+  { id: 'pumas',      city: 'Mesa Verde',  name: 'Pumas',       abbr: 'MVP', primary: 0x7a8a3c, secondary: 0xf1e7cf, dark: true,  conf: 1 },
+  { id: 'undertow',   city: 'Pacifica',    name: 'Undertow',    abbr: 'PCU', primary: 0x0f9bb5, secondary: 0x06303a, dark: true,  conf: 1 },
+  { id: 'prospectors',city: 'Gold Rush',   name: 'Prospectors', abbr: 'GRP', primary: 0xe0a21a, secondary: 0x4a2f12, dark: false, conf: 1 },
+  { id: 'alpine',     city: 'Summit Peak', name: 'Alpine',      abbr: 'SPA', primary: 0xe9eef4, secondary: 0x1b4f8a, dark: false, conf: 1 },
+  { id: 'condors',    city: 'Redrock',     name: 'Condors',     abbr: 'RRC', primary: 0x9c3b1b, secondary: 0x1a1512, dark: true,  conf: 1 },
+  { id: 'smelters',   city: 'Silver Lake', name: 'Smelters',    abbr: 'SLS', primary: 0xaab3bd, secondary: 0x23262b, dark: false, conf: 1 },
+  { id: 'lumen',      city: 'Cascade',     name: 'Lumen',       abbr: 'CSL', primary: 0x0d5c4a, secondary: 0x9fe8c4, dark: true,  conf: 1 },
+  { id: 'navigators', city: 'Vanguard Bay',name: 'Navigators',  abbr: 'VBN', primary: 0x16294d, secondary: 0xd9a441, dark: true,  conf: 1 },
+  { id: 'blaze',      city: 'Solano',      name: 'Blaze',       abbr: 'SLB', primary: 0xe23a1e, secondary: 0xffc93c, dark: true,  conf: 1 },
 ];
+const CONF_NAMES = ['East', 'West'];
+const teamIndexById = (id) => { for (let i = 0; i < TEAMS.length; i++) if (TEAMS[i].id === id) return i; return 0; };
+// Change strips. In a 24-team league two clubs will sooner or later meet in near-identical colours, and
+// the court is unreadable when they do, so the away side switches to something that separates: its own
+// secondary if that is far enough away, otherwise a neutral light or dark kit.
+const ALT_LIGHT = 0xeceff3, ALT_DARK = 0x1b1e24, KIT_GAP = 300;
+function colourGap(a, b) {
+  const dr = ((a >> 16) & 255) - ((b >> 16) & 255), dg = ((a >> 8) & 255) - ((b >> 8) & 255), db = (a & 255) - (b & 255);
+  return Math.sqrt(3 * dr * dr + 4 * dg * dg + 2 * db * db);   // green dominates, blue barely registers
+}
+const isDarkColour = (c) => (0.2126 * ((c >> 16) & 255) + 0.7152 * ((c >> 8) & 255) + 0.0722 * (c & 255)) < 140;
+function kitsFor(homeIdx, awayIdx) {
+  const home = TEAMS[homeIdx], away = TEAMS[awayIdx];
+  if (colourGap(home.primary, away.primary) >= KIT_GAP) return [home, away];
+  let primary = away.secondary;
+  if (colourGap(home.primary, primary) < KIT_GAP) {
+    primary = colourGap(home.primary, ALT_LIGHT) > colourGap(home.primary, ALT_DARK) ? ALT_LIGHT : ALT_DARK;
+  }
+  const alt = Object.assign({}, away, { id: away.id + '~alt', primary, secondary: away.primary, dark: isDarkColour(primary) });
+  return [home, alt];
+}
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const FIRST_NAMES = ['Jaxon', 'Deshawn', 'Malik', 'Trey', 'Kobi', 'Andre', 'Tyrese', 'Marcus', 'Elijah', 'Cam', 'Zion', 'Darius', 'Lamar', 'Rasheed', 'Isaiah', 'Terrence', 'Kwame', 'Devin', 'Jalen', 'Bryce', 'Omar', 'Luka', 'Nico', 'Matteo', 'Reggie', 'Jamal', 'Cedric', 'Tobias', 'Xavier', 'Quincy', 'Amari', 'Dante'];
@@ -980,7 +1088,7 @@ const PlayerSys = (() => {
       moveVel: { x: 0, z: 0, t: 0, r: 26 }, faceT: null, hold: { lat: 0, fwd: 0, y: 0, amp: 0, set: false },
       shot: { meterT: 0, released: false, dur: 1, timing: 0, quality: 0, green: false, fake: false, setShot: false, moving: 0 },
       dunk: { kind: '', t: 0, dur: 0, slamAt: 0, released: false, tx: 0, tz: 0, contact: false },
-      matchup: -1, spot: -1, ai: { t: 0, phase: Math.random() * 100, intent: 0, target: { x: 0, z: 0 }, wantShoot: false, releaseAt: 0.7, cutT: 0, screenT: 0, role: 'spot', holdT: 0, lastDecision: 0, aggression: 0.5, driveT: 0, helping: false, helpUntil: 0, dribbleT: 0, hesiT: 0 },
+      career: !!def.career, matchup: -1, spot: -1, ai: { t: 0, phase: Math.random() * 100, intent: 0, target: { x: 0, z: 0 }, wantShoot: false, releaseAt: 0.7, cutT: 0, screenT: 0, role: 'spot', holdT: 0, lastDecision: 0, aggression: 0.5, driveT: 0, helping: false, helpUntil: 0, dribbleT: 0, hesiT: 0 },
       hist: new Float32Array(PC.historyLen * 2), histI: 0, histN: 0,
       armsUp: false, jumpT: 0, setShotT: 0, lastPassT: -9, fouls: 0, catchT: -9, contactT: -9, buf: '', bufT: 0, bufPress: 0, bufRelease: -1,
       stats: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, fga: 0, fgm: 0, tpa: 0, tpm: 0, fta: 0, ftm: 0, to: 0, pf: 0 },
@@ -1246,9 +1354,276 @@ const PlayerSys = (() => {
     liveMeshes.length = 0;
     for (const p of players) p.mesh = null;
   }
-  return { ST, STATE_NAMES, players, genRoster, overall, create, clear, setState, teleport, controlFactor, updateMovement, updateVertical, jump, pushHistory, delayedPos, faceToward, faceVelocity, costStamina, reachHeight, speedMul, fatigueMul, buildMesh, destroyMeshes, matsFor };
+  return { ST, STATE_NAMES, SKINS, players, genRoster, overall, create, clear, setState, teleport, controlFactor, updateMovement, updateVertical, jump, pushHistory, delayedPos, faceToward, faceVelocity, costStamina, reachHeight, speedMul, fatigueMul, buildMesh, destroyMeshes, matsFor };
 })();
 // ==== END PLAYER ====
+
+// ==== BEGIN CAREER ====
+// MyCareer: build a player, get picked by a team, play a season, earn XP and spend it on your build.
+// The whole career lives in one plain object saved to localStorage, so closing the tab loses nothing.
+const Career = (() => {
+  const KEY = 'hw_career', VERSION = 2;
+  const GAMES = 12;                 // regular season length
+  const CREATE_BASE = 50, CREATE_POOL = 110, CREATE_CAP = 82;   // a rookie lands a little under the league's starters
+  // Six categories the player actually sets, each expanding into the sim's real ratings.
+  const CATS = [
+    { id: 'finishing',  name: 'Finishing',   blurb: 'Layups, dunks, everything at the rim', keys: ['layup', 'dunk', 'closeShot'] },
+    { id: 'shooting',   name: 'Shooting',    blurb: 'Range from mid and from deep',         keys: ['threePt', 'midRange'] },
+    { id: 'playmaking', name: 'Playmaking',  blurb: 'Handle, dribble moves and passing',    keys: ['handling', 'pass'] },
+    { id: 'defense',    name: 'Defense',     blurb: 'On the ball, off it, and at the rim',  keys: ['perimD', 'interiorD', 'steal', 'block'] },
+    { id: 'rebounding', name: 'Rebounding',  blurb: 'Boards and body strength',             keys: ['rebound', 'strength'] },
+    { id: 'athletic',   name: 'Athleticism', blurb: 'Speed, first step and hops',           keys: ['speed', 'accel', 'vertical'] },
+  ];
+  const ARCHETYPES = [
+    { id: 'slasher',  name: 'Slasher',       blurb: 'Get downhill and finish through contact.', caps: { finishing: 99, shooting: 84, playmaking: 92, defense: 86, rebounding: 74, athletic: 99 } },
+    { id: 'sharp',    name: 'Sharpshooter',  blurb: 'Pull up from anywhere past the arc.',      caps: { finishing: 82, shooting: 99, playmaking: 88, defense: 82, rebounding: 72, athletic: 88 } },
+    { id: 'general',  name: 'Floor General', blurb: 'Run the offence and set everyone up.',     caps: { finishing: 86, shooting: 90, playmaking: 99, defense: 88, rebounding: 72, athletic: 90 } },
+    { id: 'lockdown', name: 'Lockdown',      blurb: 'Take the other team’s best scorer.',  caps: { finishing: 86, shooting: 84, playmaking: 82, defense: 99, rebounding: 88, athletic: 95 } },
+    { id: 'glass',    name: 'Glass Cleaner', blurb: 'Own the paint at both ends.',              caps: { finishing: 96, shooting: 76, playmaking: 74, defense: 94, rebounding: 99, athletic: 84 } },
+    { id: 'twoway',   name: 'Two-Way Wing',  blurb: 'No weaknesses, no single superpower.',     caps: { finishing: 92, shooting: 92, playmaking: 86, defense: 92, rebounding: 84, athletic: 92 } },
+  ];
+  const archOf = (id) => ARCHETYPES.find((a) => a.id === id) || ARCHETYPES[0];
+  const catOf = (id) => CATS.find((c) => c.id === id);
+  const HEIGHTS = { PG: [1.78, 1.96], SG: [1.85, 2.01], SF: [1.93, 2.08], PF: [1.98, 2.13], C: [2.03, 2.21] };
+
+  let c = null;   // the live career, or null when there isn't one
+  const rnd = () => Math.random();
+
+  // ---------- build maths ----------
+  // The six categories are the build; the position template only tilts each rating a few points, so a
+  // centre still blocks a little better than a guard who spent exactly the same points.
+  function ratingsFrom(cats, pos) {
+    const t = POS_TEMPLATE[pos] || POS_TEMPLATE.SF, out = {};
+    for (const cat of CATS) for (const k of cat.keys) out[k] = U.clamp(Math.round(cats[cat.id] + (t[k] - 70) * 0.18), 25, 99);
+    return out;
+  }
+  function overallOf(cats, pos) { const r = ratingsFrom(cats, pos); let s = 0, n = 0; for (const k in r) { s += r[k]; n++; } return Math.round(s / n); }
+  // Upgrades get steeply more expensive, so the last few points of a maxed category are a season's work.
+  function upgradeCost(v) { return Math.round(14 + Math.pow(Math.max(0, v - 38), 1.36)); }
+  function capFor(catId) { return archOf(c.player.arch).caps[catId]; }
+
+  // ---------- league strength (for simming everyone else's games) ----------
+  const _strength = [];
+  function strength(idx) {
+    if (_strength[idx] != null) return _strength[idx];
+    const roster = PlayerSys.genRoster(idx); let s = 0;
+    for (const r of roster) s += PlayerSys.overall(r.ratings);
+    return (_strength[idx] = s / roster.length);
+  }
+  function simGame(a, b) {   // a is home; returns true when a wins
+    const d = (strength(a) + 2.2) - strength(b);
+    return rnd() < 1 / (1 + Math.pow(10, -d / 11));
+  }
+  const ZERO = [0, 0];
+  const rec = (idx) => c.standings[idx] || (c.standings[idx] = [0, 0]);   // for writes
+  const recOf = (idx) => c.standings[idx] || ZERO;                        // for reads
+  function award(win, lose) { rec(win)[0]++; rec(lose)[1]++; }
+
+  // ---------- creation ----------
+  function blankBuild(archId, pos) {
+    const cats = {}; for (const cat of CATS) cats[cat.id] = CREATE_BASE;
+    return { name: '', pos: pos || 'SG', arch: archId || 'twoway', height: HEIGHTS[pos || 'SG'][0] + 0.09,
+      num: 7, skin: 1, hair: 0, cats, spent: 0 };
+  }
+  function createCost(cats) { let n = 0; for (const cat of CATS) n += cats[cat.id] - CREATE_BASE; return n; }
+  function poolLeft(cats) { return CREATE_POOL - createCost(cats); }
+  // Three clubs want you. Weighted toward teams whose starter at your position is weakest, so the pick
+  // is a real choice between a contender and minutes.
+  function draftOffers(pos) {
+    const slot = POSITIONS.indexOf(pos), scored = [];
+    for (let i = 0; i < TEAMS.length; i++) { const r = PlayerSys.genRoster(i); scored.push({ i, need: 99 - PlayerSys.overall(r[slot].ratings), str: strength(i) }); }
+    scored.sort((a, b) => b.need - a.need);
+    const pool = scored.slice(0, 10);
+    const out = [];
+    while (out.length < 3 && pool.length) out.push(pool.splice((rnd() * pool.length) | 0, 1)[0].i);
+    return out;
+  }
+
+  function begin(build, teamIdx) {
+    const pos = build.pos;
+    c = {
+      v: VERSION, created: Date.now(),
+      player: { name: (build.name || 'Rook').slice(0, 18), pos, arch: build.arch, height: build.height,
+        num: build.num, skin: build.skin, hair: build.hair, cats: Object.assign({}, build.cats) },
+      team: teamIdx, season: 1, gameNo: 0, phase: 'regular', xp: 0, xpTotal: 0,
+      record: [0, 0], standings: {}, schedule: [], bracket: null, playoffRound: 0, lastGame: null, note: '',
+      totals: blankTotals(), seasonTotals: blankTotals(), history: [], rings: 0,
+    };
+    newSchedule();
+    save(); return c;
+  }
+  function blankTotals() { return { gp: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, ftm: 0, fta: 0, to: 0, w: 0, l: 0 }; }
+  function newSchedule() {
+    c.schedule = []; c.standings = {};
+    const others = []; for (let i = 0; i < TEAMS.length; i++) if (i !== c.team) others.push(i);
+    for (let i = 0; i < GAMES; i++) {
+      if (!others.length) for (let k = 0; k < TEAMS.length; k++) if (k !== c.team) others.push(k);
+      const pick = others.splice((rnd() * others.length) | 0, 1)[0];
+      c.schedule.push({ opp: pick, home: i % 2 === 0 });
+    }
+  }
+
+  // ---------- the season ----------
+  function nextGame() { return c && c.phase === 'regular' && c.gameNo < c.schedule.length ? c.schedule[c.gameNo] : null; }
+  function playoffGame() { return c && c.phase === 'playoffs' && c.bracket ? c.bracket.next : null; }
+  function upcoming() { return playoffGame() || nextGame(); }
+  // Everyone else plays the same night, so the standings the player is chasing are real games.
+  function simLeagueNight(skipA, skipB) {
+    const ids = []; for (let i = 0; i < TEAMS.length; i++) if (i !== skipA && i !== skipB) ids.push(i);
+    for (let i = ids.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; const t = ids[i]; ids[i] = ids[j]; ids[j] = t; }
+    for (let i = 0; i + 1 < ids.length; i += 2) { const a = ids[i], b = ids[i + 1]; if (simGame(a, b)) award(a, b); else award(b, a); }
+  }
+  function seedsFor(conf) {
+    const list = [];
+    for (let i = 0; i < TEAMS.length; i++) if (TEAMS[i].conf === conf) list.push(i);
+    list.sort((a, b) => (recOf(b)[0] - recOf(a)[0]) || (strength(b) - strength(a)));
+    return list;
+  }
+  function startPlayoffs() {
+    const east = seedsFor(0).slice(0, 8), west = seedsFor(1).slice(0, 8);
+    const mine = TEAMS[c.team].conf;
+    const inIt = (mine === 0 ? east : west).indexOf(c.team) >= 0;
+    if (!inIt) { c.note = 'Missed the playoffs at ' + c.record[0] + '\u2013' + c.record[1] + '.'; endSeason(false); return; }
+    c.phase = 'playoffs'; c.playoffRound = 0; c.bracket = { east, west, next: null };
+    setPlayoffMatchup();
+  }
+  // One game per round: the player plays theirs, every other pairing is simmed.
+  const ROUND_NAMES = ['First round', 'Conference semis', 'Conference finals', 'The Finals'];
+  function playoffRounds() { return ROUND_NAMES; }
+  function setPlayoffMatchup() {
+    const b = c.bracket, mine = TEAMS[c.team].conf;
+    const side = mine === 0 ? b.east : b.west;
+    if (side.length > 1) {
+      const i = side.indexOf(c.team), opp = side[side.length - 1 - i];
+      b.next = { opp, home: i < side.length / 2, playoff: true, round: c.playoffRound };
+    } else {                                   // conference winner: the Finals
+      const other = mine === 0 ? b.west : b.east;
+      b.next = { opp: other[0], home: strength(c.team) >= strength(other[0]), playoff: true, round: 3 };
+    }
+  }
+  function advanceBracket(playerWon) {
+    const b = c.bracket, mine = TEAMS[c.team].conf;
+    const side = mine === 0 ? b.east : b.west, other = mine === 0 ? b.west : b.east;
+    if (side.length === 1) {                   // that was the Finals
+      if (playerWon) c.rings++;
+      c.note = playerWon ? 'Champions. You won the Finals with the ' + TEAMS[c.team].name + '.' : 'Lost the Finals.';
+      endSeason(playerWon); return;
+    }
+    const nextSide = [], n = side.length;
+    for (let i = 0; i < n / 2; i++) {
+      const a = side[i], z = side[n - 1 - i];
+      if (a === c.team || z === c.team) nextSide.push(playerWon ? c.team : (a === c.team ? z : a));
+      else nextSide.push(simGame(a, z) ? a : z);
+    }
+    const nextOther = [];
+    for (let i = 0; i < other.length / 2; i++) { const a = other[i], z = other[other.length - 1 - i]; nextOther.push(simGame(a, z) ? a : z); }
+    if (mine === 0) { b.east = nextSide; b.west = other.length > 1 ? nextOther : other; }
+    else { b.west = nextSide; b.east = other.length > 1 ? nextOther : other; }
+    if (!playerWon) { c.note = 'Knocked out in the ' + playoffRounds()[c.playoffRound].toLowerCase() + '.'; endSeason(false); return; }
+    c.playoffRound++; setPlayoffMatchup(); save();
+  }
+  function endSeason(won) {
+    const t = c.seasonTotals, gp = Math.max(1, t.gp);
+    c.history.push({ season: c.season, team: TEAMS[c.team].id, gp: t.gp, w: t.w, l: t.l,
+      ppg: +(t.pts / gp).toFixed(1), rpg: +(t.reb / gp).toFixed(1), apg: +(t.ast / gp).toFixed(1),
+      ovr: overallOf(c.player.cats, c.player.pos), champ: !!won });
+    c.season++; c.gameNo = 0; c.phase = 'regular'; c.bracket = null; c.playoffRound = 0;
+    c.record = [0, 0]; c.seasonTotals = blankTotals();
+    c.xp += 600;  c.xpTotal += 600;            // offseason training
+    newSchedule(); save();
+  }
+
+  // ---------- after a game ----------
+  function gradeXp(s, won) {
+    const raw = s.pts * 10 + s.reb * 12 + s.ast * 15 + s.stl * 24 + s.blk * 24 + s.fgm * 6 - s.to * 16
+      - Math.max(0, s.fga - s.fgm) * 4;
+    return Math.max(40, Math.round(raw + (won ? 220 : 70)));
+  }
+  function grade(s, won) {
+    const v = s.pts + s.reb * 1.2 + s.ast * 1.5 + (s.stl + s.blk) * 2.4 - s.to * 2 - Math.max(0, s.fga - s.fgm) * 0.6 + (won ? 6 : 0);
+    if (v >= 42) return 'A+'; if (v >= 34) return 'A'; if (v >= 27) return 'B+'; if (v >= 20) return 'B';
+    if (v >= 14) return 'C+'; if (v >= 8) return 'C'; return 'D';
+  }
+  // Called once when a career game finishes. Rolls the box score into the career, pays out XP and
+  // moves the season on, then saves. Nothing here depends on the game still being live.
+  function recordGame(stats, won, myScore, oppScore) {
+    if (!c) return null;
+    c.note = '';
+    const box = { gp: 1, pts: stats.pts, reb: stats.reb, ast: stats.ast, stl: stats.stl, blk: stats.blk,
+      fgm: stats.fgm, fga: stats.fga, tpm: stats.tpm, tpa: stats.tpa, ftm: stats.ftm, fta: stats.fta, to: stats.to, w: won ? 1 : 0, l: won ? 0 : 1 };
+    for (const k in box) { c.totals[k] += box[k]; c.seasonTotals[k] += box[k]; }
+    const xp = gradeXp(box, won);
+    c.xp += xp; c.xpTotal += xp;
+    const playoff = c.phase === 'playoffs';
+    const g = c.lastGame = { opp: playoff ? c.bracket.next.opp : c.schedule[c.gameNo].opp, won, myScore, oppScore,
+      xp, grade: grade(box, won), box, playoff, round: playoff ? c.playoffRound : -1, season: c.season };
+    if (playoff) { advanceBracket(won); }
+    else {
+      if (won) { c.record[0]++; award(c.team, g.opp); } else { c.record[1]++; award(g.opp, c.team); }
+      simLeagueNight(c.team, g.opp);
+      c.gameNo++;
+      if (c.gameNo >= c.schedule.length) startPlayoffs();
+    }
+    save(); return g;
+  }
+
+  // ---------- upgrades ----------
+  function canUpgrade(catId) {
+    if (!c) return false;
+    const v = c.player.cats[catId];
+    return v < capFor(catId) && v < 99 && c.xp >= upgradeCost(v);
+  }
+  function upgrade(catId) {
+    if (!canUpgrade(catId)) return false;
+    c.xp -= upgradeCost(c.player.cats[catId]); c.player.cats[catId]++; save(); return true;
+  }
+
+  // ---------- the roster hook ----------
+  // Your player takes the starting slot at their position on your club, so the four around you are the
+  // same generated team-mates the rest of the league sees.
+  function playerDef() {
+    const p = c.player;
+    return { name: p.name, num: p.num, pos: p.pos, height: p.height, ratings: ratingsFrom(p.cats, p.pos),
+      skin: p.skin, hair: p.hair, star: false, career: true };
+  }
+  function applyRoster(rosters, teamIdx) {
+    if (!c) return -1;
+    const side = teamIdx[0] === c.team ? 0 : teamIdx[1] === c.team ? 1 : -1;
+    if (side < 0) return -1;
+    const slot = POSITIONS.indexOf(c.player.pos);
+    rosters[side][slot] = playerDef();
+    return side * 5 + slot;   // informational; Game finds the player by the `career` flag
+  }
+
+  // ---------- persistence ----------
+  let storageOk = true;
+  function save() {
+    if (!c) return;
+    U.saveLS(KEY, c);
+    try { storageOk = !!window.localStorage.getItem(KEY); } catch (e) { storageOk = false; }
+  }
+  function load() {
+    const raw = U.loadLS(KEY, null);
+    if (!raw || typeof raw !== 'object' || raw.v !== VERSION || !raw.player) { c = null; return null; }
+    // A save written against a different league list would point at a team that has moved: clamp it.
+    raw.team = U.clamp(raw.team | 0, 0, TEAMS.length - 1);
+    if (!raw.standings) raw.standings = {};
+    c = raw;
+    if (!Array.isArray(c.schedule) || !c.schedule.length) newSchedule();
+    return c;
+  }
+  function wipe() { c = null; try { localStorage.removeItem(KEY); } catch (e) { /* storage unavailable */ } }
+  function exists() { return !!c; }
+
+  load();
+  return { CATS, ARCHETYPES, HEIGHTS, GAMES, CREATE_BASE, CREATE_POOL, CREATE_CAP,
+    catOf, archOf, ratingsFrom, overallOf, upgradeCost, capFor, blankBuild, createCost, poolLeft, draftOffers,
+    begin, nextGame, playoffGame, upcoming, playoffRounds, recordGame, canUpgrade, upgrade, grade,
+    playerDef, applyRoster, strength, seedsFor, save, load, wipe, exists,
+    get storageOk() { return storageOk; },
+    get data() { return c; } };
+})();
+// ==== END CAREER ====
 
 // ==== BEGIN MOVES ====
 // Dribble moves: animation windows, cooldowns, stamina cost, combo pricing, and the
@@ -2143,6 +2518,7 @@ const Game = (() => {
     score: [0, 0], quarter: 1, clock: 0, shotClock: 24, possession: 0, hoopOf: [1, 0], human: -1, humanTeam: 0,
     mustClear: false, fouls: [0, 0], halfCourt: true, playersPerTeam: 1, lastShot: null, events: [], running: false,
     nextPossession: 0, deadDelay: 1.5, deadReason: '', inbounder: -1, inboundSpots: null, winner: -1, aiDiff: 'pro',
+    career: false, careerPid: -1, lockHuman: false,
     ftShooter: -1, ftLeft: 0, ftTotal: 0, ftAndOne: false, lastEvent: '', lastEventT: -9, teamFouls: [0, 0], possArrow: 0, inbound: null, pendingFoul: null, lastPass: null, ftLive: false, ftResolved: false, locked: false, spectateTeam: 0,
   };
   const settings = Object.assign({ difficulty: 'pro', quarterLen: 120, shadows: false, camera: 'broadcast', volume: 0.8, sfx: true, greenAuto: true, meterHelp: true, crowd: true, makeItTakeIt: false, controls: 'simple', shotTiming: 'meter' }, U.loadLS('hw_settings', {}));
@@ -2156,25 +2532,30 @@ const Game = (() => {
 
   // ---------- setup ----------
   let practiceLooseSince = 0;
-  function start(mode, teamA, teamB) {
-    g.mode = mode; g.teamIdx = [teamA, teamB]; g.teams = [TEAMS[teamA], TEAMS[teamB]];
+  function start(mode, teamA, teamB, opts) {
+    const o = opts || {};
+    g.career = !!o.career; g.careerPid = -1; g.lockHuman = false;
+    g.mode = mode; g.teamIdx = [teamA, teamB]; g.teams = kitsFor(teamA, teamB);
     g.halfCourt = mode !== '5v5'; g.playersPerTeam = mode === '5v5' ? 5 : mode === '3v3' ? 3 : 1;
     g.score = [0, 0]; g.quarter = 1; g.fouls = [0, 0]; g.teamFouls = [0, 0]; g.time = 0; g.events.length = 0; g.lastShot = null; g.mustClear = false; g.winner = -1;
     g.clock = mode === '5v5' ? settings.quarterLen : 0; g.aiDiff = settings.difficulty; g.possArrow = 1; g.inbound = null; g.pendingFoul = null; g.lastPass = null;
     g.hoopOf = g.halfCourt ? [1, 1] : [1, 0];
     PlayerSys.clear();
     g.rosters = [PlayerSys.genRoster(teamA), PlayerSys.genRoster(teamB)];
+    if (g.career) Career.applyRoster(g.rosters, g.teamIdx);   // your created player takes their slot
     if (mode === 'practice') PlayerSys.create(g.rosters[0][0], 0, 0);   // empty gym: one player, no defense
     else for (let t = 0; t < 2; t++) for (const si of pickSlots(g.rosters[t], g.playersPerTeam)) PlayerSys.create(g.rosters[t][si], t, si);
     RNG.seed((Date.now() & 0xffff) + teamA * 31 + teamB * 17);
-    g.humanTeam = 0; g.locked = false; g.running = true; g.state = S.PLAY; g.stateT = 0;
+    if (g.career) { for (const p of P) if (p.career) { g.careerPid = p.id; break; } g.lockHuman = g.careerPid >= 0; }
+    g.humanTeam = g.careerPid >= 0 ? P[g.careerPid].team : 0;
+    g.locked = false; g.running = true; g.state = S.PLAY; g.stateT = 0;
     AI.reset(g);
     if (mode === 'practice') {
       const h = hoopFor(0), p = P[0];
       PlayerSys.teleport(p, h.x - h.s * 7, 0, Math.atan2(h.s, 0)); setHuman(p.id, true);
       BallSys.setHolder(p); g.possession = 0; ball.state = BS.HELD; practiceLooseSince = 0;
     }
-    else { const tp = teamPlayers(0); setHuman(tp.length ? tp[0].id : -1, true); if (g.halfCourt) setupPossession(0); else setupTip(); }
+    else { const tp = teamPlayers(g.humanTeam); setHuman(g.careerPid >= 0 ? g.careerPid : (tp.length ? tp[0].id : -1), true); if (g.halfCourt) setupPossession(0); else setupTip(); }
     emit('start');
   }
   function pickSlots(roster, n) {
@@ -2187,7 +2568,7 @@ const Game = (() => {
   // Controllers: p.ctl is null (AI), 'local' (this keyboard) or a peer id (remote human). A team with a single
   // human keeps the classic auto-switch (control follows the ball); teams with several humans are locked.
   function setController(id, ctl, name) { const p = P[id]; if (!p) return; p.ctl = ctl; p.human = ctl === 'local'; p.remote = !!ctl && ctl !== 'local'; p.ctlName = name || ''; if (!ctl) { p.controlled = false; clearInput(p.input); } }
-  function canAutoSwitch(team) { let n = 0; for (const p of P) if (p.ctl && p.team === team) n++; return n <= 1; }
+  function canAutoSwitch(team) { if (g.lockHuman) return false; let n = 0; for (const p of P) if (p.ctl && p.team === team) n++; return n <= 1; }
   function setHuman(id, force) {
     if (!force && id >= 0 && P[id] && !canAutoSwitch(P[id].team)) return;
     for (const p of P) if (p.ctl === 'local' && p.id !== id) { p.ctl = null; p.human = false; p.controlled = false; p.ctlName = ''; clearInput(p.input); }
@@ -2201,7 +2582,13 @@ const Game = (() => {
     if (!cur || cur.id === id) return;
     if (cur.ctl === 'local') setHuman(id, true); else Net.reassign(cur.ctl, cur.id, id);
   }
-  function setSpectate(on) { if (on) { g.spectateTeam = g.humanTeam; g.humanTeam = -1; setHuman(-1, true); } else { g.humanTeam = g.spectateTeam >= 0 ? g.spectateTeam : 0; const tp = teamPlayers(g.humanTeam); const holder = P[ball.holder]; setHuman(holder && holder.team === g.humanTeam ? holder.id : (tp[0] ? tp[0].id : -1), true); } }
+  function setSpectate(on) {
+    if (on) { g.spectateTeam = g.humanTeam; g.humanTeam = -1; setHuman(-1, true); return; }
+    g.humanTeam = g.spectateTeam >= 0 ? g.spectateTeam : 0;
+    if (g.careerPid >= 0) { setHuman(g.careerPid, true); return; }   // career always comes back to your guy
+    const tp = teamPlayers(g.humanTeam); const holder = P[ball.holder];
+    setHuman(holder && holder.team === g.humanTeam ? holder.id : (tp[0] ? tp[0].id : -1), true);
+  }
   // Spacing spots relative to a hoop: [top, right wing, left wing, right corner, left corner]
   const _spots = [];
   for (let i = 0; i < 6; i++) _spots.push({ x: 0, z: 0, kind: '' });
@@ -2245,8 +2632,32 @@ const Game = (() => {
   }
   function gameOver(winner) {
     g.state = S.OVER; g.winner = winner; emit('buzzer'); emit('cheer', { big: 1.5 });
+    let extra = '';
+    if (g.career && !Net.isGuest && g.careerPid >= 0) {
+      const me = P[g.careerPid];
+      const res = Career.recordGame(me.stats, winner === me.team, g.score[me.team], g.score[1 - me.team]);
+      if (res) extra = careerCard(res, me);
+    }
     const title = winner < 0 ? 'Final' : g.teams[winner].city + ' ' + g.teams[winner].name + ' win';
-    emit('final', { title, html: boxScore() });
+    emit('final', { title, html: extra + boxScore() });
+  }
+  // The career slab above the box score: how you graded, what it paid, and where the season goes next.
+  function careerCard(res, me) {
+    const b = res.box, cd = Career.data;
+    const line = b.pts + ' PTS \u00b7 ' + b.reb + ' REB \u00b7 ' + b.ast + ' AST \u00b7 ' + b.stl + ' STL \u00b7 ' + b.blk + ' BLK';
+    const shooting = b.fgm + '/' + b.fga + ' FG' + (b.tpa ? ' \u00b7 ' + b.tpm + '/' + b.tpa + ' 3PT' : '') + (b.fta ? ' \u00b7 ' + b.ftm + '/' + b.fta + ' FT' : '');
+    let next = '';
+    if (cd) {
+      if (cd.phase === 'playoffs' && cd.bracket && cd.bracket.next) next = Career.playoffRounds()[cd.bracket.next.round] + ' vs ' + TEAMS[cd.bracket.next.opp].name;
+      else if (cd.phase === 'regular' && cd.gameNo < cd.schedule.length) next = 'Next: ' + TEAMS[cd.schedule[cd.gameNo].opp].name + ' \u00b7 game ' + (cd.gameNo + 1) + ' of ' + cd.schedule.length;
+      else next = 'Season ' + cd.season + ' starts now';
+      if (cd.note) next = cd.note + ' ' + next;
+    }
+    return '<div class="careercard"><div class="cc-grade"><b>' + esc(res.grade) + '</b><small>grade</small></div>'
+      + '<div class="cc-main"><div class="cc-name">' + esc(me.name) + '<span>#' + me.num + ' \u00b7 ' + esc(me.pos) + '</span></div>'
+      + '<div class="cc-line">' + esc(line) + '</div><div class="cc-sub">' + esc(shooting) + '</div></div>'
+      + '<div class="cc-xp"><b>+' + res.xp + '</b><small>XP</small></div></div>'
+      + (next ? '<div class="cc-next">' + esc(next) + '</div>' : '');
   }
   function boxScore() {
     const A = g.teams[0], B = g.teams[1]; const wA = g.score[0] > g.score[1], wB = g.score[1] > g.score[0];
@@ -3018,7 +3429,7 @@ function init(container) {
 const UI = (() => {
   const $ = (id) => document.getElementById(id);
   const el = {};
-  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'jerseyA', 'jerseyB', 'pnum', 'tipnote', 'pauseScore', 'wipe', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
+  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'menuCareer', 'careerBody', 'teamGrid', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'jerseyA', 'jerseyB', 'pnum', 'tipnote', 'pauseScore', 'wipe', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
   let debugOn = false, pick = U.loadLS('hw_pick', [0, 1]), last = {}, tagEls = [], meterVisible = false, hudVisible = false, mode = U.loadLS('hw_mode', '5v5');
   if (!Array.isArray(pick) || pick.length !== 2 || pick[0] === pick[1]) pick = [0, 1];
   const _pt = { x: 0, y: 0, visible: false };
@@ -3031,6 +3442,7 @@ const UI = (() => {
      document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { AudioSys.init(); AudioSys.play('ui'); selectMode(b.dataset.mode); }));
     document.querySelectorAll('[data-cycle]').forEach((b) => b.addEventListener('click', () => { const [side, dir] = b.dataset.cycle.split(',').map(Number); cycleTeam(side, dir); AudioSys.play('ui'); }));
     $('btnTipoff').onclick = () => { AudioSys.init(); AudioSys.play('ui'); hooks.startGame(mode, pick[0], pick[1]); };
+    for (const [side, id] of [[0, 'jerseyA'], [1, 'jerseyB']]) $(id).onclick = () => { AudioSys.play('ui'); toggleTeamGrid(side); };
     $('btnResetBinds').onclick = () => { Input.reset(); renderBinds(el.bindList, true); updateHint(); };
     $('btnResetBinds2').onclick = () => { Input.reset(); renderBinds(el.bindList2, true); updateHint(); };
     $('btnResume').onclick = () => hooks.resume();
@@ -3046,16 +3458,17 @@ const UI = (() => {
     updateHint();
   }
   function show(sub) {
-    for (const p of ['menuHome', 'menuControls', 'menuSettings', 'menuNet']) el[p].classList.toggle('hidden', p !== sub);
+    for (const p of ['menuHome', 'menuControls', 'menuSettings', 'menuNet', 'menuCareer']) el[p].classList.toggle('hidden', p !== sub);
     document.querySelectorAll('#menu [data-nav]').forEach((b) => b.classList.toggle('sel', b.dataset.nav === sub));
-    if (sub === 'menuControls') renderBinds(el.bindList, true); else if (sub === 'menuSettings') renderSettings(el.settingsList); else if (sub === 'menuNet') Net.renderPanel(el.netBody);
+    if (sub === 'menuControls') renderBinds(el.bindList, true); else if (sub === 'menuSettings') renderSettings(el.settingsList);
+    else if (sub === 'menuNet') Net.renderPanel(el.netBody); else if (sub === 'menuCareer') renderCareer();
   }
   function showPauseSub(sub) {
     for (const p of ['pauseHome', 'pauseControls', 'pauseSettings']) el[p].classList.toggle('hidden', p !== sub);
     const map = { pauseHome: 'btnResume', pauseControls: 'btnPauseControls', pauseSettings: 'btnPauseSettings' };
     for (const k in map) $(map[k]).classList.toggle('sel', k === sub);
   }
-  function showMenu() { el.menu.classList.remove('hidden'); show('menuHome'); el.pause.classList.add('hidden'); el.final.classList.add('hidden'); hideHUD(); renderMatchup(); }
+  function showMenu() { el.menu.classList.remove('hidden'); show('menuHome'); el.pause.classList.add('hidden'); el.final.classList.add('hidden'); hideHUD(); gridSide = -1; renderTeamGrid(); renderMatchup(); }
   function hideMenu() { el.menu.classList.add('hidden'); }
   function showPause(on) {
     el.pause.classList.toggle('hidden', !on);
@@ -3064,7 +3477,12 @@ const UI = (() => {
   function showFirstRun() { renderBinds(el.bindList3, false); el.firstrun.classList.remove('hidden'); }
   function showHUD() { el.hud.classList.remove('hidden'); hudVisible = true; }
   function hideHUD() { el.hud.classList.add('hidden'); hudVisible = false; }
-  function showFinal(title, html) { el.finalTitle.textContent = title; el.finalBody.innerHTML = html; el.final.classList.remove('hidden'); $('btnRematch').classList.toggle('hidden', Net.isGuest); }
+  function showFinal(title, html) {
+    el.finalTitle.textContent = title; el.finalBody.innerHTML = html; el.final.classList.remove('hidden');
+    // A career game is already in the books, so replaying it is not on offer.
+    $('btnRematch').classList.toggle('hidden', Net.isGuest || Game.g.career);
+    $('btnFinalMenu').querySelector('.t').textContent = Game.g.career ? 'Back to MyCareer' : 'Main menu';
+  }
   function openNet() { showMenu(); show('menuNet'); }
   // Game-start wipe: two slanted slabs cross the screen; the scene swaps while they cover it.
   function wipe(cb) {
@@ -3075,11 +3493,39 @@ const UI = (() => {
   }
    const MODE_NOTES = { '1v1': 'Half court to 21', '3v3': 'Half court to 21, 14-second clock', '5v5': 'Four quarters', practice: 'No clock, no defense' };
   function selectMode(m) { mode = m; U.saveLS('hw_mode', m); document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('sel', b.dataset.mode === m)); renderMatchup(); }
+  // Clicking a jersey opens the whole league; the arrows still step one at a time.
+  let gridSide = -1;
+  function toggleTeamGrid(side) { gridSide = gridSide === side ? -1 : side; renderTeamGrid(); }
+  function renderTeamGrid() {
+    const g = el.teamGrid;
+    g.classList.toggle('hidden', gridSide < 0);
+    if (gridSide < 0) { g.innerHTML = ''; return; }
+    let h = '<div class="tg-head"><span class="subtitle">Pick the ' + (gridSide === 0 ? 'home' : 'away') + ' team</span>'
+      + '<button class="btn small ghost" id="tgClose"><span class="t">Close</span></button></div>';
+    for (let conf = 0; conf < CONF_NAMES.length; conf++) {
+      h += '<div class="tg-conf">' + CONF_NAMES[conf] + '</div><div class="tg-list">';
+      for (let i = 0; i < TEAMS.length; i++) {
+        if (TEAMS[i].conf !== conf) continue;
+        const t = TEAMS[i], taken = pick[1 - gridSide] === i, sel = pick[gridSide] === i;
+        h += '<button class="tg-t' + (sel ? ' sel' : '') + (taken ? ' taken' : '') + '" data-tgpick="' + i + '"'
+          + (taken ? ' disabled' : '') + ' style="border-left-color:' + hex(t.primary) + '">' + esc(t.name)
+          + '<small>' + esc(t.city) + '</small></button>';
+      }
+      h += '</div>';
+    }
+    g.innerHTML = h;
+    g.querySelector('#tgClose').onclick = () => { gridSide = -1; renderTeamGrid(); AudioSys.play('ui'); };
+    g.querySelectorAll('[data-tgpick]').forEach((b) => b.onclick = () => {
+      pick[gridSide] = +b.dataset.tgpick; U.saveLS('hw_pick', pick);
+      gridSide = -1; renderTeamGrid(); renderMatchup(); AudioSys.play('ui');
+    });
+  }
   function cycleTeam(side, dir) { let v = (pick[side] + dir + TEAMS.length) % TEAMS.length; if (v === pick[1 - side]) v = (v + dir + TEAMS.length) % TEAMS.length; pick[side] = v; U.saveLS('hw_pick', pick); renderMatchup(); }
    function renderMatchup() {
      for (const [side, jer] of [[0, el.jerseyA], [1, el.jerseyB]]) {
        const t = TEAMS[pick[side]]; jer.style.background = hex(t.primary); jer.style.color = t.dark ? '#f3f0e7' : '#15130a';
-       jer.querySelector('.city').textContent = t.city; jer.querySelector('.name').textContent = t.name; jer.dataset.num = String(side === 0 ? 1 : 2);
+       jer.querySelector('.city').textContent = t.city + ' \u00b7 ' + CONF_NAMES[t.conf]; jer.querySelector('.name').textContent = t.name; jer.dataset.num = String(side === 0 ? 1 : 2);
+       jer.title = 'Click to pick from all ' + TEAMS.length + ' teams';
      }
      const A = TEAMS[pick[0]], B = TEAMS[pick[1]];
      el.tipnote.textContent = mode === 'practice' ? 'Shootaround in the ' + A.name + ' gym. ' + MODE_NOTES.practice + '.'
@@ -3142,6 +3588,190 @@ const UI = (() => {
       for (const [v, label] of def.choices) { const b = document.createElement('button'); b.className = 'btn small' + (s[def.key] === v ? ' sel' : ''); b.textContent = label; b.onclick = () => { s[def.key] = v; Game.saveSettings(); if (hooks.applySettings) hooks.applySettings(def.key); renderSettings(cont); if (def.key === 'controls') updateHint(); AudioSys.play('ui'); }; ch.appendChild(b); }
       row.appendChild(ch); cont.appendChild(row);
     }
+  }
+
+  // ---------- MyCareer screens ----------
+  // Three states share one pane: building a player, picking who signs you, and the season hub. Every
+  // control writes straight through to Career, which saves on every change.
+  let crBuild = null, crOffers = null;
+  const HAIRS_UI = ['Fade', 'Afro', 'Headband', 'Short', 'Bald'];
+  function openCareer() { showMenu(); show('menuCareer'); }
+  function renderCareer() {
+    const cont = el.careerBody;
+    if (Career.exists()) renderHub(cont);
+    else if (crOffers) renderOffers(cont);
+    else { if (!crBuild) crBuild = Career.blankBuild('twoway', 'SG'); renderCreate(cont); }
+  }
+  const pickBtn = (attr, val, sel, label, sub, colour) =>
+    '<button class="cr-pick' + (sel ? ' sel' : '') + '" data-' + attr + '="' + esc(val) + '" style="border-left-color:' + (colour || 'var(--line)') + '"><b>' + esc(label) + '</b>'
+    + (sub ? '<span>' + esc(sub) + '</span>' : '') + '</button>';
+  function optRow(label, inner) { return '<div class="opt"><span>' + esc(label) + '</span><div class="choices">' + inner + '</div></div>'; }
+  function choice(attr, val, sel, label) { return '<button class="btn small' + (sel ? ' sel' : '') + '" data-' + attr + '="' + esc(val) + '">' + esc(label) + '</button>'; }
+
+  function renderCreate(cont) {
+    const b = crBuild, left = Career.poolLeft(b.cats), arch = Career.archOf(b.arch);
+    const hR = Career.HEIGHTS[b.pos];
+    let h = '<div class="pane-title">MyCareer<small>Build a player, get signed, and take them through a career. Everything saves in this browser, so you can close the tab.</small></div>';
+    h += '<h2 class="sec">Who you are</h2>';
+    h += '<div class="opt"><span>Name</span><input class="field" id="crName" maxlength="18" placeholder="Your name" value="' + esc(b.name) + '"></div>';
+    h += optRow('Position', POSITIONS.map((p) => choice('crpos', p, b.pos === p, p)).join(''));
+    h += optRow('Height', '<button class="btn small" data-crh="-1">&minus;</button><span class="key" style="cursor:default">' + b.height.toFixed(2) + ' m</span><button class="btn small" data-crh="1">+</button>'
+      + '<span class="k" style="align-self:center;margin-left:10px;font-size:11px">' + hR[0].toFixed(2) + '–' + hR[1].toFixed(2) + ' for a ' + b.pos + '</span>');
+    h += optRow('Jersey number', '<button class="btn small" data-crn="-1">&minus;</button><span class="key" style="cursor:default">' + b.num + '</span><button class="btn small" data-crn="1">+</button>');
+    h += optRow('Skin tone', PlayerSys.SKINS.map((c, i) => '<button class="btn small' + (b.skin === i ? ' sel' : '') + '" data-crskin="' + i + '" style="background:' + hex(c) + ';color:#15130a;min-width:34px">&nbsp;</button>').join(''));
+    h += optRow('Hair', HAIRS_UI.map((n, i) => choice('crhair', i, b.hair === i, n)).join(''));
+    h += '<h2 class="sec">Archetype<small style="font-weight:400;text-transform:none;letter-spacing:0;font-family:var(--sans);font-size:12px;color:var(--muted)"> &mdash; sets how high each attribute can ever go</small></h2>';
+    h += '<div class="cr-arch">' + Career.ARCHETYPES.map((a) => pickBtn('crarch', a.id, b.arch === a.id, a.name, a.blurb, b.arch === a.id ? 'var(--accent)' : 'var(--line)')).join('') + '</div>';
+    h += '<h2 class="sec">Attributes <span style="color:' + (left ? 'var(--accent)' : 'var(--muted)') + '">' + left + ' points left</span></h2>';
+    for (const cat of Career.CATS) {
+      const v = b.cats[cat.id], cap = Math.min(arch.caps[cat.id], Career.CREATE_CAP);
+      h += '<div class="cr-attr"><span class="nm">' + esc(cat.name) + '</span>'
+        + '<span class="bar"><i style="width:' + v + '%"></i><u style="left:' + cap + '%"></u></span>'
+        + '<span class="val">' + v + '</span>'
+        + '<button class="btn small" data-crcat="' + cat.id + ',-1"' + (v <= Career.CREATE_BASE ? ' disabled' : '') + '>&minus;</button>'
+        + '<button class="btn small" data-crcat="' + cat.id + ',1"' + (v >= cap || left <= 0 ? ' disabled' : '') + '>+</button></div>';
+    }
+    h += '<div class="note">The red mark is this archetype’s ceiling. You start capped at ' + Career.CREATE_CAP + ' and earn the rest by playing.</div>';
+    h += '<div class="cr-actions"><button class="btn primary" id="crGo"' + (b.name.trim() ? '' : ' disabled') + '><span class="t">Enter the draft</span></button>'
+      + '<span class="note" style="margin:0">Overall ' + Career.overallOf(b.cats, b.pos) + ' · ' + esc(arch.name) + (b.name.trim() ? '' : ' · pick a name first') + '</span></div>';
+    cont.innerHTML = h;
+    const nameIn = cont.querySelector('#crName');
+    nameIn.onkeydown = (e) => e.stopPropagation();
+    nameIn.oninput = (e) => { b.name = e.target.value; const go = cont.querySelector('#crGo'); if (go) go.disabled = !b.name.trim(); };
+    const re = () => { AudioSys.play('ui'); renderCareer(); };
+    cont.querySelectorAll('[data-crpos]').forEach((x) => x.onclick = () => {
+      b.pos = x.dataset.crpos; const r = Career.HEIGHTS[b.pos]; b.height = U.clamp(b.height, r[0], r[1]); re();
+    });
+    cont.querySelectorAll('[data-crh]').forEach((x) => x.onclick = () => {
+      const r = Career.HEIGHTS[b.pos]; b.height = +U.clamp(b.height + 0.01 * +x.dataset.crh, r[0], r[1]).toFixed(2); re();
+    });
+    cont.querySelectorAll('[data-crn]').forEach((x) => x.onclick = () => { b.num = ((b.num - 1 + +x.dataset.crn + 99) % 99) + 1; re(); });
+    cont.querySelectorAll('[data-crskin]').forEach((x) => x.onclick = () => { b.skin = +x.dataset.crskin; re(); });
+    cont.querySelectorAll('[data-crhair]').forEach((x) => x.onclick = () => { b.hair = +x.dataset.crhair; re(); });
+    cont.querySelectorAll('[data-crarch]').forEach((x) => x.onclick = () => {
+      b.arch = x.dataset.crarch;
+      const caps = Career.archOf(b.arch).caps;   // a new ceiling can refund points you can no longer hold
+      for (const cat of Career.CATS) b.cats[cat.id] = Math.min(b.cats[cat.id], Math.min(caps[cat.id], Career.CREATE_CAP));
+      re();
+    });
+    cont.querySelectorAll('[data-crcat]').forEach((x) => x.onclick = () => {
+      const [id, d] = x.dataset.crcat.split(','); const cap = Math.min(Career.archOf(b.arch).caps[id], Career.CREATE_CAP);
+      const nv = b.cats[id] + +d;
+      if (nv < Career.CREATE_BASE || nv > cap) return;
+      if (+d > 0 && Career.poolLeft(b.cats) <= 0) return;
+      b.cats[id] = nv; re();
+    });
+    cont.querySelector('#crGo').onclick = () => {
+      if (!b.name.trim()) return;
+      AudioSys.play('ui'); crOffers = Career.draftOffers(b.pos); renderCareer();
+    };
+  }
+
+  function renderOffers(cont) {
+    const b = crBuild;
+    let h = '<div class="pane-title">Draft night<small>Three clubs want ' + esc(b.name) + '. Pick where the career starts.</small></div>';
+    h += '<div class="cr-grid" style="grid-template-columns:repeat(3,1fr);margin-top:8px">';
+    for (const i of crOffers) {
+      const t = TEAMS[i], st = Career.strength(i);
+      const outlook = st > 74 ? 'Contender' : st > 70 ? 'Solid roster' : 'Rebuilding';
+      h += '<button class="cr-pick" data-croffer="' + i + '" style="border-left-color:' + hex(t.primary) + ';padding:14px 14px 12px">'
+        + '<b style="font-size:20px">' + esc(t.name) + '</b><span style="display:block;margin-top:2px">' + esc(t.city) + ' · ' + CONF_NAMES[t.conf] + '</span>'
+        + '<span style="display:block;margin-top:8px;color:var(--ink)">' + esc(outlook) + '</span></button>';
+    }
+    h += '</div><div class="cr-actions"><button class="btn small ghost" id="crBack"><span class="t">Back to the build</span></button></div>';
+    cont.innerHTML = h;
+    cont.querySelectorAll('[data-croffer]').forEach((x) => x.onclick = () => {
+      AudioSys.play('ui'); Career.begin(b, +x.dataset.croffer); crOffers = null; crBuild = null; renderCareer();
+    });
+    cont.querySelector('#crBack').onclick = () => { AudioSys.play('ui'); crOffers = null; renderCareer(); };
+  }
+
+  function renderHub(cont) {
+    const c = Career.data, t = TEAMS[c.team], p = c.player;
+    const ovr = Career.overallOf(p.cats, p.pos), up = Career.upcoming();
+    const ink = t.dark ? '#f3f0e7' : '#15130a';
+    let h = '<div class="pane-title">MyCareer<small>Season ' + c.season + ' with the ' + esc(t.city) + ' ' + esc(t.name) + '. Saved in this browser.</small></div>';
+    h += '<div class="cr-top">';
+    h += '<div class="cr-card" data-num="' + p.num + '" style="background:' + hex(t.primary) + ';color:' + ink + '">'
+      + '<div class="cr-nm">' + esc(p.name) + '</div>'
+      + '<div class="cr-meta">' + esc(p.pos) + ' · ' + p.height.toFixed(2) + 'm · ' + esc(Career.archOf(p.arch).name) + '</div>'
+      + '<div class="cr-ovr">Overall ' + ovr + (c.rings ? ' · ' + c.rings + '× champion' : '') + '</div></div>';
+    h += '<div class="cr-season">';
+    if (up) {
+      const opp = TEAMS[up.opp];
+      const label = up.playoff ? Career.playoffRounds()[up.round] : 'Game ' + (c.gameNo + 1) + ' of ' + c.schedule.length;
+      h += '<div class="cr-phase">' + esc(label) + '</div>'
+        + '<div class="cr-next">' + (up.home ? 'vs ' : '@ ') + esc(opp.name) + '</div>'
+        + '<div class="cr-rec">' + esc(opp.city) + ' · ' + CONF_NAMES[opp.conf] + ' · your record ' + c.record[0] + '–' + c.record[1] + '</div>';
+    } else {
+      h += '<div class="cr-phase">Offseason</div><div class="cr-next">Season ' + c.season + '</div><div class="cr-rec">Training camp is open.</div>';
+    }
+    h += '</div></div>';
+    if (!Career.storageOk) h += '<div class="cr-rec" style="color:var(--danger);margin-top:10px">This browser is blocking storage, so this career lives only until you close the tab.</div>';
+    if (c.note) h += '<div class="cr-rec" style="color:var(--accent);margin-top:10px">' + esc(c.note) + '</div>';
+    if (c.lastGame) {
+      const lg = c.lastGame, o = TEAMS[lg.opp];
+      h += '<div class="cr-rec" style="margin:10px 0 0">Last out: ' + (lg.won ? 'beat ' : 'lost to ') + esc(o.name) + ' ' + lg.myScore + '–' + lg.oppScore
+        + ' · ' + lg.box.pts + '/' + lg.box.reb + '/' + lg.box.ast + ' · grade ' + esc(lg.grade) + '</div>';
+    }
+    const netBlocked = Net.active;
+    h += '<div class="cr-actions"><button class="btn primary" id="crPlay"' + (netBlocked ? ' disabled' : '') + '><span class="t">' + (up ? 'Play the game' : 'Start the season') + '</span></button>'
+      + '<button class="btn small ghost" id="crSim"' + (netBlocked ? ' disabled' : '') + '><span class="t">Sim this one</span></button>'
+      + (netBlocked ? '<span class="note" style="margin:0">Leave the lobby first \u2014 MyCareer is single player.</span>' : '') + '</div>';
+
+    h += '<h2 class="sec">Upgrades</h2>';
+    h += '<div class="cr-xpbar"><b>' + c.xp + '</b><span class="k">XP banked · ' + c.xpTotal + ' earned all-time</span></div>';
+    for (const cat of Career.CATS) {
+      const v = p.cats[cat.id], cap = Career.capFor(cat.id), can = Career.canUpgrade(cat.id), cost = Career.upgradeCost(v);
+      const maxed = v >= cap;
+      h += '<div class="cr-attr"><span class="nm">' + esc(cat.name) + '</span>'
+        + '<span class="bar"><i style="width:' + v + '%"></i><u style="left:' + cap + '%"></u></span>'
+        + '<span class="val">' + v + '</span>'
+        + '<span class="cost">' + (maxed ? 'maxed' : cost + ' XP') + '</span>'
+        + '<button class="btn small" data-crup="' + cat.id + '"' + (can ? '' : ' disabled') + '>+</button></div>';
+    }
+
+    h += '<h2 class="sec">' + CONF_NAMES[t.conf] + ' standings</h2><div class="cr-stand">'
+      + '<span class="hd">#</span><span class="hd">Team</span><span class="hd">W</span><span class="hd">L</span>';
+    const seeds = Career.seedsFor(t.conf);
+    seeds.forEach((idx, i) => {
+      const st = c.standings[idx] || [0, 0];
+      // the dashed line after eighth is the playoff cut
+      const cell = 'class="' + (i === 7 ? 'cut' : '') + '"' + (idx === c.team ? ' style="color:var(--accent);font-weight:600"' : '');
+      h += '<span ' + cell + '><i>' + (i + 1) + '</i></span><span ' + cell + '>' + esc(TEAMS[idx].name) + '</span>'
+        + '<span ' + cell + '>' + st[0] + '</span><span ' + cell + '>' + st[1] + '</span>';
+    });
+    h += '</div><div class="note">Top eight make the playoffs. The rest of the league plays the same night you do.</div>';
+
+    const tt = c.totals, gp = Math.max(1, tt.gp);
+    h += '<h2 class="sec">Career</h2><table class="cr-hist"><tr><th>Season</th><th>Team</th><th>GP</th><th>W–L</th><th>PPG</th><th>RPG</th><th>APG</th><th>OVR</th></tr>';
+    for (const row of c.history) {
+      const ht = TEAMS[teamIndexById(row.team)];
+      h += '<tr><td' + (row.champ ? ' class="ring"' : '') + '>' + row.season + (row.champ ? ' ★' : '') + '</td><td>' + esc(ht.abbr) + '</td><td>' + row.gp + '</td><td>' + row.w + '–' + row.l + '</td><td>' + row.ppg + '</td><td>' + row.rpg + '</td><td>' + row.apg + '</td><td>' + row.ovr + '</td></tr>';
+    }
+    h += '<tr><td><b>Now</b></td><td>' + esc(t.abbr) + '</td><td>' + tt.gp + '</td><td>' + tt.w + '–' + tt.l + '</td><td>' + (tt.pts / gp).toFixed(1) + '</td><td>' + (tt.reb / gp).toFixed(1) + '</td><td>' + (tt.ast / gp).toFixed(1) + '</td><td>' + ovr + '</td></tr></table>';
+    h += '<div class="cr-actions"><button class="btn small ghost" id="crWipe"><span class="t">Delete this career</span></button>'
+      + '<span class="note" style="margin:0">' + tt.gp + ' games played · ' + (tt.fga ? (100 * tt.fgm / tt.fga).toFixed(1) : '0.0') + '% from the field</span></div>';
+    cont.innerHTML = h;
+
+    cont.querySelectorAll('[data-crup]').forEach((x) => x.onclick = () => { if (Career.upgrade(x.dataset.crup)) { AudioSys.play('ui'); renderCareer(); } });
+    const play = cont.querySelector('#crPlay');
+    if (play) play.onclick = () => { AudioSys.play('ui'); startCareerGame(false); };
+    const sim = cont.querySelector('#crSim');
+    if (sim) sim.onclick = () => { AudioSys.play('ui'); startCareerGame(true); };
+    cont.querySelector('#crWipe').onclick = (e) => {
+      const btn = e.currentTarget;
+      if (btn.dataset.armed !== '1') { btn.dataset.armed = '1'; btn.querySelector('.t').textContent = 'Really delete? Click again'; return; }
+      Career.wipe(); crBuild = null; crOffers = null; AudioSys.play('ui'); renderCareer();
+    };
+  }
+  // Playing and simming take the same path: a sim is the same game with the CPU holding your controller.
+  function startCareerGame(sim) {
+    const c = Career.data, up = Career.upcoming();
+    if (!c || Net.active) return;
+    if (!up) { renderCareer(); return; }
+    const a = up.home ? c.team : up.opp, b = up.home ? up.opp : c.team;
+    hooks.startGame('5v5', a, b, { career: true, sim: !!sim });
   }
   function updateHint() {
     const b = Input.binds, L = Input.keyLabel; const k = (a) => '<kbd>' + L(b[a]) + '</kbd>';
@@ -3244,7 +3874,7 @@ const UI = (() => {
     updateHUD(g); updateMeter(g); updateTags(g);
     if (debugOn) updateDebug(dt, stats);
   }
-  return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, openNet, wipe, update, toast, feedback, toggleDebug, clearToast, get pick() { return pick; }, get mode() { return mode; }, get debugOn() { return debugOn; } };
+  return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, openNet, openCareer, renderCareer, wipe, update, toast, feedback, toggleDebug, clearToast, get pick() { return pick; }, get mode() { return mode; }, get debugOn() { return debugOn; } };
 })();
 // ==== END UI ====
 
@@ -3658,10 +4288,12 @@ function applySettings(key) {
 	     if (key === 'shadows' || key == null) { CONFIG.render.shadows = s.shadows; Render.setShadows(s.shadows); }
 	     if (key === 'difficulty') Game.g.aiDiff = s.difficulty;
 	   }
-function startGame(mode, a, b) {
+function startGame(mode, a, b, opts) {
 	     lastMode = mode;
 	     UI.wipe(() => {
-	       Render.buildArena(TEAMS[a], TEAMS[b]); Game.start(mode, a, b); Render.buildPlayers(Game.g.teams); Render.setShadows(Game.settings.shadows);
+	       const kits = kitsFor(a, b);
+	       Render.buildArena(kits[0], kits[1]); Game.start(mode, a, b, opts); Render.buildPlayers(Game.g.teams); Render.setShadows(Game.settings.shadows);
+	       if (opts && opts.sim) Game.setSpectate(true);
       document.getElementById('final').classList.add('hidden');
       if (Net.isHost) Net.hostStart(mode, a, b); else if (Net.isGuest) Net.enterGuest();
       UI.hideMenu(); UI.showHUD(); UI.clearToast(); const ball = BallSys.ball; CameraSys.snap(ball.x, ball.z); acc = 0; paused = false;
@@ -3671,8 +4303,13 @@ function startGame(mode, a, b) {
   }
   function pause(silent) { paused = true; if (!silent) UI.showPause(true); }
   function resume() { paused = false; UI.showPause(false); last = performance.now(); acc = 0; }
-  function quit() { Game.stop(); paused = false; UI.showPause(false); UI.showMenu(); if (Net.active) Net.onQuit(); }
-  function rematch() { if (Net.isGuest) return; const g = Game.g; startGame(lastMode, g.teamIdx[0], g.teamIdx[1]); }
+  function quit() {
+    const wasCareer = Game.g.career;
+    Game.stop(); paused = false; UI.showPause(false); UI.showMenu();
+    if (wasCareer) UI.openCareer();
+    if (Net.active) Net.onQuit();
+  }
+  function rematch() { if (Net.isGuest || Game.g.career) return; const g = Game.g; startGame(lastMode, g.teamIdx[0], g.teamIdx[1]); }
   function frame(now) {
     requestAnimationFrame(frame);
     if (!visible) return;
