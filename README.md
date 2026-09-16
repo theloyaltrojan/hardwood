@@ -30,3 +30,6 @@ There is also a **Direct connect** fallback for two players that needs no signal
 
 ## Dev
 `node .claude/serve.js` serves the folder on http://127.0.0.1:8765 (only needed for the in-app preview; the file works from `file://` too).
+
+## License
+MIT. See [LICENSE](LICENSE).
