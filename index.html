@@ -424,8 +424,6 @@
         <button class="mode" data-mode="1v1"><span class="mode-big">1v1</span><span class="mode-body"><b>Streetball</b><span>Half court, first to 21, loser's ball. Break ankles and get to the rim.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M4 26h20M88 26h-20"/><path d="M28 4v44" /><path d="M64 4v44"/><path d="M4 14h12a12 12 0 0 1 0 24H4"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/></svg></button>
         <button class="mode" data-mode="3v3"><span class="mode-big">3v3</span><span class="mode-body"><b>Half court</b><span>Three a side with a 14-second clock. Clear it past the arc after every stop.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M46 4v44"/><path d="M4 14h12a12 12 0 0 1 0 24H4"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><circle cx="46" cy="26" r="7"/></svg></button>
         <button class="mode sel" data-mode="5v5"><span class="mode-big">5v5</span><span class="mode-body"><b>Full court</b><span>Four quarters, 24-second clock, inbounds, fouls and free throws. The whole broadcast.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M46 4v44"/><circle cx="46" cy="26" r="7"/><path d="M4 8h22a18 18 0 0 1 0 36H4"/><path d="M88 8h-22a18 18 0 0 0 0 36h22"/><path d="M4 18h9v16H4M88 18h-9v16h9"/></svg></button>
-         <button class="mode compact" id="btnTutorial"><span class="mode-big">Learn</span><span class="mode-body"><b>Workout</b><span>Seven steps in an empty gym. Moving, the shot meter, dribble moves, dunks.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><path d="M20 34l8-14 8 9 8-18"/></svg></button>
-         <button class="mode compact" id="btnPark"><span class="mode-big">Park</span><span class="mode-body"><b>MyPark</b><span>Walk the park as your MyCareer player. Stand on a pad, fill a court, run it.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><rect x="10" y="10" width="30" height="14"/><rect x="52" y="28" width="30" height="14"/><circle cx="46" cy="26" r="2.5"/></svg></button>
          <button class="mode compact" data-mode="practice"><span class="mode-big">Gym</span><span class="mode-body"><b>Practice</b><span>Empty court, unlimited shots, no clock.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><circle cx="72" cy="26" r="2.5"/></svg></button>
       </div>
       <div class="matchup">
@@ -439,7 +437,7 @@
     <div id="menuControls" class="pane hidden">
       <div class="pane-title">Controls<small>Click any key to rebind it. Saved in this browser.</small></div>
       <div class="grid2" id="bindList"></div>
-      <div class="row"><button class="btn small ghost" id="btnResetBinds"><span class="t">Reset defaults</span></button></div>
+      <div class="row"><button class="btn small ghost" id="btnResetBinds"><span class="t">Reset defaults</span></button><button class="btn small ghost" id="btnWorkoutAgain"><span class="t">Run the workout</span></button></div>
     </div>
     <div id="menuSettings" class="pane hidden">
       <div class="pane-title">Settings</div>
@@ -708,8 +706,12 @@ const CONFIG = {
     // Shot-selection preference, not physics. Threes used to be pushed down hard here because teams looked
     // like they lived at the arc — that was the stale-hasBall bug firing phantom 25m "threes", not real shot
     // selection, so the penalty is gone. All that is left is a mild pull toward the rim.
-    zoneBias: { three: 1.00, mid: 1.00, close: 1.05 },
-    driveBias: 1.08,      // a drive is worth a little more than its own finish: it collapses the defence
+    // Measured 75% of shots coming from the paint against about 40% in a real game: a close-range pull
+    // plus a drive bonus compounded into a team that only ever drove and laid it in.
+    zoneBias: { three: 1.22, mid: 1.02, close: 0.82 },
+    driveBias: 0.84,      // a drive still collapses the defence, but it no longer beats a good look
+    spreadMin: 2.9,       // two defenders this close to the same spot are stacked, not defending
+    spreadPush: 1.25,      // how hard the second one slides off it
     blockedLane: 0.5,     // a covered passing lane is a risk, not a wall
     denyRange: 5.6,       // how close to the ball counts as one pass away
     denyDist: 1.75,       // how far off the man a denial sits
@@ -718,7 +720,7 @@ const CONFIG = {
     driftDist: 2.4,       // how far along the arc to slide when he is right on you
     bar: { early: 1.06, mid: 0.94, late: 0.80, last: 0.56 },
   },
-  game: { shotClock: 24, halfShotClock: 14, offRebClock: 14, quarterLen: 120, quarters: 4, halfCourtTarget: 21, deadBallDelay: 0.85, inboundDelay: 0.35, ftRoutine: 1.2, foulOutLimit: 6, reachInFoulChance: 0.18, shootingFoulChance: 0.15 },
+  game: { shotClock: 24, halfShotClock: 14, offRebClock: 14, quarterLen: 120, quarters: 4, halfCourtTarget: 21, deadBallDelay: 0.85, inboundDelay: 0.35, practiceReturn: 1.5, ftRoutine: 1.2, foulOutLimit: 6, reachInFoulChance: 0.18, shootingFoulChance: 0.15 },
   // Coins. Everything the store sells is cosmetic, so these numbers only pace how long a look takes to earn.
   money: {
     starting: 500, two: 55, three: 95, dunk: 130, block: 110, steal: 85, assist: 45,
@@ -947,32 +949,40 @@ const AudioSys = (() => {
 // `conf` splits the league in two for standings and the playoff bracket; `dark` means the primary colour
 // is dark enough that jersey text has to be light.
 const TEAMS = [
+  // Thirty clubs, the way a league actually looks. Real cities - which nobody owns - with nicknames
+  // invented for this game. No borrowed marks, no borrowed logos, no borrowed players.
   // ---- East ----
-  { id: 'voltage',    city: 'Neon City',   name: 'Voltage',     abbr: 'NCV', primary: 0xffd400, secondary: 0x15161a, dark: false, conf: 0 },
-  { id: 'anchors',    city: 'Ironport',    name: 'Anchors',     abbr: 'IPA', primary: 0x1f3f8f, secondary: 0xf2f4f8, dark: true,  conf: 0 },
-  { id: 'comets',     city: 'Orbital',     name: 'Comets',      abbr: 'ORB', primary: 0x6a2cff, secondary: 0x35d0ff, dark: true,  conf: 0 },
-  { id: 'cinders',    city: 'Ashfall',     name: 'Cinders',     abbr: 'ASH', primary: 0xd1202a, secondary: 0x2a2a2e, dark: true,  conf: 0 },
-  { id: 'gulls',      city: 'Harbor Row',  name: 'Gulls',       abbr: 'HRG', primary: 0x16b5b0, secondary: 0xf4f7f6, dark: false, conf: 0 },
-  { id: 'regents',    city: 'Kingsbridge', name: 'Regents',     abbr: 'KBR', primary: 0x4b2a8f, secondary: 0xe8c65a, dark: true,  conf: 0 },
-  { id: 'current',    city: 'Cobalt Falls',name: 'Current',     abbr: 'CFC', primary: 0x1878e8, secondary: 0xd8ecff, dark: true,  conf: 0 },
-  { id: 'herons',     city: 'Saltmarsh',   name: 'Herons',      abbr: 'SMH', primary: 0x5b6a78, secondary: 0xf2f4f6, dark: true,  conf: 0 },
-  { id: 'foundry',    city: 'Gearhaven',   name: 'Foundry',     abbr: 'GHF', primary: 0xe2661c, secondary: 0x2b2f36, dark: false, conf: 0 },
-  { id: 'stags',      city: 'Elmwood',     name: 'Stags',       abbr: 'EWS', primary: 0x1c6b3a, secondary: 0xe4dcc4, dark: true,  conf: 0 },
-  { id: 'kilns',      city: 'Brickyard',   name: 'Kilns',       abbr: 'BYK', primary: 0xa8442c, secondary: 0xf0d9b8, dark: true,  conf: 0 },
-  { id: 'timberjacks',city: 'Northgate',   name: 'Timberjacks', abbr: 'NGT', primary: 0x3a4149, secondary: 0xc8452f, dark: true,  conf: 0 },
+  { id: 'shamrocks', city: 'Boston',        name: 'Shamrocks', abbr: 'BOS', primary: 0x0b6b3a, secondary: 0xf4f1e6, dark: false, conf: 0 },
+  { id: 'bridges',   city: 'Brooklyn',      name: 'Bridges',   abbr: 'BKN', primary: 0x1b1d22, secondary: 0xe8eaee, dark: true, conf: 0 },
+  { id: 'skyline',   city: 'New York',      name: 'Skyline',   abbr: 'NYS', primary: 0xf06a1e, secondary: 0x1c3f94, dark: true, conf: 0 },
+  { id: 'liberty',   city: 'Philadelphia',  name: 'Liberty',   abbr: 'PHL', primary: 0x1f4fb0, secondary: 0xd8232a, dark: true, conf: 0 },
+  { id: 'talons',    city: 'Toronto',       name: 'Talons',    abbr: 'TOR', primary: 0xc4102e, secondary: 0x15161a, dark: true, conf: 0 },
+  { id: 'stampede',  city: 'Chicago',       name: 'Stampede',  abbr: 'CHS', primary: 0x8e1114, secondary: 0xd9d2c4, dark: true, conf: 0 },
+  { id: 'cavalry',   city: 'Cleveland',     name: 'Cavalry',   abbr: 'CLV', primary: 0x6e1230, secondary: 0xe3b23c, dark: true, conf: 0 },
+  { id: 'motors',    city: 'Detroit',       name: 'Motors',    abbr: 'DET', primary: 0x2f6fd0, secondary: 0xb8bec8, dark: true, conf: 0 },
+  { id: 'speed',     city: 'Indiana',       name: 'Speed',     abbr: 'IND', primary: 0xe3b80c, secondary: 0x122140, dark: false, conf: 0 },
+  { id: 'antlers',   city: 'Milwaukee',     name: 'Antlers',   abbr: 'MIL', primary: 0x1d4d32, secondary: 0xf0e6cd, dark: true, conf: 0 },
+  { id: 'kestrels',  city: 'Atlanta',       name: 'Kestrels',  abbr: 'ATL', primary: 0xe2452c, secondary: 0x21242b, dark: true, conf: 0 },
+  { id: 'stingers',  city: 'Charlotte',     name: 'Stingers',  abbr: 'CHA', primary: 0x17a89c, secondary: 0x4b2d8f, dark: true, conf: 0 },
+  { id: 'heatwave',  city: 'Miami',         name: 'Heatwave',  abbr: 'MIA', primary: 0xe0186b, secondary: 0x101114, dark: true, conf: 0 },
+  { id: 'mystics',   city: 'Orlando',       name: 'Mystics',   abbr: 'ORL', primary: 0x1aa3e8, secondary: 0xbfc6cf, dark: true, conf: 0 },
+  { id: 'monuments', city: 'Washington',    name: 'Monuments', abbr: 'WSH', primary: 0x152a52, secondary: 0xc8102e, dark: true, conf: 0 },
   // ---- West ----
-  { id: 'coyotes',    city: 'Sundown',     name: 'Coyotes',     abbr: 'SDC', primary: 0xff6a00, secondary: 0x3b1f0e, dark: false, conf: 1 },
-  { id: 'sentinels',  city: 'Nullsec',     name: 'Sentinels',   abbr: 'NSS', primary: 0x18e37a, secondary: 0x0b0f0c, dark: false, conf: 1 },
-  { id: 'drifters',   city: 'Dust Bowl',   name: 'Drifters',    abbr: 'DBD', primary: 0xc9a227, secondary: 0x43301a, dark: false, conf: 1 },
-  { id: 'pumas',      city: 'Mesa Verde',  name: 'Pumas',       abbr: 'MVP', primary: 0x7a8a3c, secondary: 0xf1e7cf, dark: true,  conf: 1 },
-  { id: 'undertow',   city: 'Pacifica',    name: 'Undertow',    abbr: 'PCU', primary: 0x0f9bb5, secondary: 0x06303a, dark: true,  conf: 1 },
-  { id: 'prospectors',city: 'Gold Rush',   name: 'Prospectors', abbr: 'GRP', primary: 0xe0a21a, secondary: 0x4a2f12, dark: false, conf: 1 },
-  { id: 'alpine',     city: 'Summit Peak', name: 'Alpine',      abbr: 'SPA', primary: 0xe9eef4, secondary: 0x1b4f8a, dark: false, conf: 1 },
-  { id: 'condors',    city: 'Redrock',     name: 'Condors',     abbr: 'RRC', primary: 0x9c3b1b, secondary: 0x1a1512, dark: true,  conf: 1 },
-  { id: 'smelters',   city: 'Silver Lake', name: 'Smelters',    abbr: 'SLS', primary: 0xaab3bd, secondary: 0x23262b, dark: false, conf: 1 },
-  { id: 'lumen',      city: 'Cascade',     name: 'Lumen',       abbr: 'CSL', primary: 0x0d5c4a, secondary: 0x9fe8c4, dark: true,  conf: 1 },
-  { id: 'navigators', city: 'Vanguard Bay',name: 'Navigators',  abbr: 'VBN', primary: 0x16294d, secondary: 0xd9a441, dark: true,  conf: 1 },
-  { id: 'blaze',      city: 'Solano',      name: 'Blaze',       abbr: 'SLB', primary: 0xe23a1e, secondary: 0xffc93c, dark: true,  conf: 1 },
+  { id: 'goldrush',  city: 'Denver',        name: 'Gold Rush', abbr: 'DEN', primary: 0xd4a02a, secondary: 0x10254a, dark: false, conf: 1 },
+  { id: 'frost',     city: 'Minnesota',     name: 'Frost',     abbr: 'MIN', primary: 0x7fd4ef, secondary: 0x16233d, dark: false, conf: 1 },
+  { id: 'storm',     city: 'Oklahoma City', name: 'Storm',     abbr: 'OKC', primary: 0xef7622, secondary: 0x1d4f9c, dark: true, conf: 1 },
+  { id: 'pioneers',  city: 'Portland',      name: 'Pioneers',  abbr: 'POR', primary: 0xb01020, secondary: 0x22252c, dark: true, conf: 1 },
+  { id: 'rhythm',    city: 'Salt Lake',     name: 'Rhythm',    abbr: 'SLR', primary: 0x5b2d8e, secondary: 0xe9c84a, dark: true, conf: 1 },
+  { id: 'sentinels', city: 'Golden State',  name: 'Sentinels', abbr: 'GSS', primary: 0x2456c8, secondary: 0xf5c518, dark: true, conf: 1 },
+  { id: 'royals',    city: 'Los Angeles',   name: 'Royals',    abbr: 'LAR', primary: 0x7a3bd6, secondary: 0xf0d878, dark: true, conf: 1 },
+  { id: 'sails',     city: 'San Diego',     name: 'Sails',     abbr: 'SDS', primary: 0xd82f5a, secondary: 0x1a3f7a, dark: true, conf: 1 },
+  { id: 'solar',     city: 'Phoenix',       name: 'Solar',     abbr: 'PHX', primary: 0xf2911b, secondary: 0x3c2160, dark: true, conf: 1 },
+  { id: 'crowns',    city: 'Sacramento',    name: 'Crowns',    abbr: 'SAC', primary: 0x9a5cc6, secondary: 0xb6bcc4, dark: true, conf: 1 },
+  { id: 'drifters',  city: 'Dallas',        name: 'Drifters',  abbr: 'DAL', primary: 0x2e86c7, secondary: 0x20262e, dark: true, conf: 1 },
+  { id: 'launch',    city: 'Houston',       name: 'Launch',    abbr: 'HOU', primary: 0xd12a1f, secondary: 0xf2f2ee, dark: true, conf: 1 },
+  { id: 'kodiaks',   city: 'Memphis',       name: 'Kodiaks',   abbr: 'MEM', primary: 0x2c3f6e, secondary: 0x8fa4c8, dark: true, conf: 1 },
+  { id: 'herons',    city: 'New Orleans',   name: 'Herons',    abbr: 'NOH', primary: 0x0f5b62, secondary: 0xc9a227, dark: true, conf: 1 },
+  { id: 'rangers',   city: 'San Antonio',   name: 'Rangers',   abbr: 'SAT', primary: 0xb9c0c8, secondary: 0x15171b, dark: false, conf: 1 },
 ];
 const CONF_NAMES = ['East', 'West'];
 const teamIndexById = (id) => { for (let i = 0; i < TEAMS.length; i++) if (TEAMS[i].id === id) return i; return 0; };
@@ -1451,7 +1461,7 @@ const PlayerSys = (() => {
 
   function create(def, team, slot) {
     const p = {
-      id: players.length, team, slot, name: def.name, num: def.num, pos: def.pos, height: def.height, ratings: def.ratings, skin: def.skin, hair: def.hair, ovr: overall(def.ratings),
+      id: players.length, team, slot, name: def.name, num: def.num, pos: def.pos, height: def.height, ratings: def.ratings, skin: def.skin, hair: def.hair, ovr: def.ovr != null ? def.ovr : overall(def.ratings),
       x: 0, y: 0, z: 0, px: 0, py: 0, pz: 0, vx: 0, vy: 0, vz: 0, facing: 0, pfacing: 0, speed: 0,
       state: ST.IDLE, stateT: 0, stateDur: 0, hasBall: false, hand: 1, handFrom: 1, dribblePhase: 0, dribbleH: 0.85,
       stamina: PC.staminaMax, winded: false, sprinting: false, comboCount: 0, lastMoveEnd: -9, cd: { move: 0, steal: 0, jump: 0, pump: 0, pass: 0, contest: 0 },
@@ -1839,7 +1849,22 @@ const Career = (() => {
     for (const cat of CATS) for (const k of cat.keys) out[k] = U.clamp(Math.round(cats[cat.id] + (t[k] - 70) * 0.18), 25, 99);
     return out;
   }
-  function overallOf(cats, pos) { const r = ratingsFrom(cats, pos); let s = 0, n = 0; for (const k in r) { s += r[k]; n++; } return Math.round(s / n); }
+  // Overall is weighted by position, the way a real rating is: a centre is not judged on his handle.
+  // A flat mean over all sixteen ratings also meant one category upgrade moved the number by an eighth
+  // of a point, so it sat still for half a dozen purchases and looked broken.
+  const OVR_WEIGHT = {
+    PG: { playmaking: 0.27, shooting: 0.23, athletic: 0.18, defense: 0.15, finishing: 0.12, rebounding: 0.05 },
+    SG: { shooting: 0.28, finishing: 0.19, athletic: 0.18, playmaking: 0.15, defense: 0.14, rebounding: 0.06 },
+    SF: { finishing: 0.22, shooting: 0.22, defense: 0.19, athletic: 0.17, playmaking: 0.11, rebounding: 0.09 },
+    PF: { finishing: 0.24, defense: 0.22, rebounding: 0.20, athletic: 0.14, shooting: 0.13, playmaking: 0.07 },
+    C:  { rebounding: 0.26, defense: 0.25, finishing: 0.25, athletic: 0.12, shooting: 0.07, playmaking: 0.05 },
+  };
+  function overallOf(cats, pos) {
+    const w = OVR_WEIGHT[pos] || OVR_WEIGHT.SF;
+    let s = 0, tw = 0;
+    for (const cat of CATS) { const k = w[cat.id] || 0; s += cats[cat.id] * k; tw += k; }
+    return Math.round(tw ? s / tw : 0);
+  }
   // Upgrades get steeply more expensive, so the last few points of a maxed category are a season's work.
   function upgradeCost(v) { return Math.round(14 + Math.pow(Math.max(0, v - 38), 1.36)); }
   function capFor(catId) { return archOf(c.player.arch).caps[catId]; }
@@ -2025,8 +2050,9 @@ const Career = (() => {
   // same generated team-mates the rest of the league sees.
   function playerDef() {
     const p = c.player;
+    // carry the weighted overall through, so the scorebug and the career screen agree on one number
     return { name: p.name, num: p.num, pos: p.pos, height: p.height, ratings: ratingsFrom(p.cats, p.pos),
-      skin: p.skin, hair: p.hair, star: false, career: true };
+      ovr: overallOf(p.cats, p.pos), skin: p.skin, hair: p.hair, star: false, career: true };
   }
   function applyRoster(rosters, teamIdx) {
     if (!c) return -1;
@@ -2933,7 +2959,18 @@ const AI = (() => {
     // a shooter standing at the arc does not get left alone
     if (mToRim > CONFIG.court.threeR - 0.4 && m.ratings.threePt >= 72) off = Math.min(off, 1.15);
     const dl = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1; dirX /= dl; dirZ /= dl;
-    const tx = m.x + dirX * off, tz = m.z + dirZ * off;
+    let tx = m.x + dirX * off, tz = m.z + dirZ * off;
+    // Two defenders converging on the same patch of floor is the clearest tell of bot defence. If a
+    // team-mate is already closer to this spot than I am, slide off it instead of stacking on him.
+    for (const q of P) {
+      if (q === p || q.team !== p.team) continue;
+      const qd = U.dist(q.x, q.z, tx, tz);
+      if (qd < AC.spreadMin && qd < U.dist(p.x, p.z, tx, tz)) {
+        const sx = tx - q.x, sz = tz - q.z, sl = Math.hypot(sx, sz) || 1;
+        tx += (sx / sl) * (AC.spreadMin - qd) * AC.spreadPush;
+        tz += (sz / sl) * (AC.spreadMin - qd) * AC.spreadPush;
+      }
+    }
     const away = U.dist(p.x, p.z, tx, tz);
     moveTo(p, tx, tz, away > 2.2 || incoming);
     // contest a catch-and-shoot from my own man
@@ -3016,7 +3053,7 @@ const Game = (() => {
     career: false, careerPid: -1, lockHuman: false, myPlayer: false,
     ftShooter: -1, ftLeft: 0, ftTotal: 0, ftAndOne: false, lastEvent: '', lastEventT: -9, teamFouls: [0, 0], possArrow: 0, inbound: null, pendingFoul: null, lastPass: null, ftLive: false, ftResolved: false, locked: false, spectateTeam: 0,
   };
-  const settings = Object.assign({ difficulty: 'pro', quarterLen: 120, shadows: false, camera: 'broadcast', volume: 0.8, sfx: true, greenAuto: true, meterHelp: true, crowd: true, makeItTakeIt: false, controls: 'simple', shotTiming: 'meter', playAs: 'mine' }, U.loadLS('hw_settings', {}));
+  const settings = Object.assign({ difficulty: 'pro', quarterLen: 120, shadows: false, camera: 'behind', volume: 0.8, sfx: true, greenAuto: true, meterHelp: true, crowd: true, makeItTakeIt: false, controls: 'simple', shotTiming: 'meter', playAs: 'team' }, U.loadLS('hw_settings', {}));
   function saveSettings() { U.saveLS('hw_settings', settings); }
   const hoopFor = (team) => Court.hoops[g.hoopOf[team]];
   const otherTeam = (t) => 1 - t;
@@ -3350,7 +3387,7 @@ const Game = (() => {
     // Practice has no possession rules, so hand a stranded ball back instead of ending the drill.
     if (g.mode === 'practice' && ball.holder < 0) {
       if (practiceLooseSince === 0) practiceLooseSince = g.time;
-      else if (g.time - practiceLooseSince > 4) { const p = P[0]; if (p) { ball.shotLive = false; BallSys.setHolder(p); } practiceLooseSince = 0; }
+      else if (g.time - practiceLooseSince > GC.practiceReturn) { const p = P[0]; if (p) { ball.shotLive = false; BallSys.setHolder(p); } practiceLooseSince = 0; }
     } else practiceLooseSince = 0;
     for (const p of P) if (!p.human && !p.remote) clearInputEdges(p.input);
   }
@@ -3763,7 +3800,11 @@ const Bank = (() => {
     return amount;
   }
   // The only player whose work pays: the one you are actually controlling.
-  function isMine(p) { return !!p && (p.human || p.career); }
+  // Nothing pays in the gym. It is one player, no defence and no clock, so every payout there would be
+  // free money on a loop — which is a coin printer, not a game mode. The tutorial runs in the same mode
+  // and is unaffected: its completion bonus is a direct award(), not match earnings.
+  function payable() { return typeof Game === 'undefined' || !Game.g || Game.g.mode !== 'practice'; }
+  function isMine(p) { return !!p && (p.human || p.career) && payable(); }
   function onMake(p, value, green, contested) {
     if (!isMine(p)) return;
     let c = value === 3 ? PAY.three : PAY.two;
@@ -3775,7 +3816,7 @@ const Bank = (() => {
   function onBlock(p) { if (isMine(p)) award(PAY.block, 'block'); }
   function onSteal(p) { if (isMine(p)) award(PAY.steal, 'steal'); }
   function onAssist(p) { if (isMine(p)) award(PAY.assist, 'assist'); }
-  function onWin(won, mode) { award(won ? PAY.win : PAY.loss, won ? 'win' : 'played'); }
+  function onWin(won, mode) { if (mode === 'practice') return; award(won ? PAY.win : PAY.loss, won ? 'win' : 'played'); }
   function takeFeed() { const out = pending; pending = []; return out; }
   function startSession() { session = 0; pending = []; }
 
@@ -4911,14 +4952,20 @@ const UI = (() => {
      document.querySelectorAll('#menu [data-nav]').forEach((b) => b.addEventListener('click', () => { AudioSys.init(); AudioSys.play('ui'); show(b.dataset.nav); }));
      document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { AudioSys.init(); AudioSys.play('ui'); selectMode(b.dataset.mode); }));
     document.querySelectorAll('[data-cycle]').forEach((b) => b.addEventListener('click', () => { const [side, dir] = b.dataset.cycle.split(',').map(Number); cycleTeam(side, dir); AudioSys.play('ui'); }));
-    $('btnTipoff').onclick = () => { AudioSys.init(); AudioSys.play('ui'); hooks.startGame(mode, pick[0], pick[1]); };
-    for (const [side, id] of [[0, 'jerseyA'], [1, 'jerseyB']]) $(id).onclick = () => { AudioSys.play('ui'); toggleTeamGrid(side); };
-    $('btnTutorial').onclick = () => { AudioSys.init(); AudioSys.play('ui'); hooks.startTutorial(); };
-    $('btnPark').onclick = () => {
+    $('btnTipoff').onclick = () => {
       AudioSys.init(); AudioSys.play('ui');
-      // the park is walked as your created player, so it needs a career first
-      show('menuPark');
+      // The first time a person presses this, they get the workout instead. The shot meter and the
+      // dribble moves are not discoverable by pressing things, and a tutorial sitting in a menu does
+      // not get opened. Seven steps, nothing in it can be failed, and it hands you back here after.
+      // Deliberately on the button and not in startGame, which is also the API the tests drive.
+      if (!Tutorial.seen() && !Net.active) { hooks.startTutorial(); return; }
+      hooks.startGame(mode, pick[0], pick[1]);
     };
+    for (const [side, id] of [[0, 'jerseyA'], [1, 'jerseyB']]) $(id).onclick = () => { AudioSys.play('ui'); toggleTeamGrid(side); };
+    // The workout is no longer a game mode you pick - it runs itself the first time you play - but it
+    // still needs a door for anyone who wants it again.
+    const again = $('btnWorkoutAgain');
+    if (again) again.onclick = () => { AudioSys.init(); AudioSys.play('ui'); hooks.startTutorial(); };
     $('btnResetBinds').onclick = () => { Input.reset(); renderBinds(el.bindList, true); updateHint(); };
     $('btnResetBinds2').onclick = () => { Input.reset(); renderBinds(el.bindList2, true); updateHint(); };
     $('btnResume').onclick = () => hooks.resume();
@@ -5317,7 +5364,9 @@ const UI = (() => {
     const P = PlayerSys.players;
     for (let i = 0; i < tagEls.length; i++) {
       const d = tagEls[i], p = P[i];
-      if (!p) { if (!d.classList.contains('hidden')) d.classList.add('hidden'); continue; }
+      // Only people get a name over their head. Ten CPU tags is clutter, and the closer camera made
+      // it worse: they sat across the middle of the screen for the whole possession.
+      if (!p || !(p.controlled || p.remote)) { if (!d.classList.contains('hidden')) d.classList.add('hidden'); continue; }
       Render.project(p.x, p.y + p.height * 1.02, p.z, _pt);
       if (!_pt.visible) { d.classList.add('hidden'); continue; }
       d.classList.remove('hidden'); d.style.left = _pt.x + 'px'; d.style.top = _pt.y + 'px';

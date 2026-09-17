@@ -209,9 +209,10 @@ await test('no two clubs share a court in similar colours', async () => {
       const k = kitsFor(a, b), gap = colourGap(k[0].primary, k[1].primary);
       if (gap < worst) { worst = gap; pair = TEAMS[a].abbr + ' v ' + TEAMS[b].abbr; }
     }
-    return { worst, pair, pairs: TEAMS.length * (TEAMS.length - 1) };
+    return { worst, pair, pairs: TEAMS.length * (TEAMS.length - 1), n: TEAMS.length };
   });
-  check.equal(r.pairs, 552, 'every ordered pairing checked');
+  const TEAM_PAIRS = r.n * (r.n - 1);
+  check.equal(r.pairs, TEAM_PAIRS, 'every ordered pairing checked');
   check.atLeast(r.worst, 280, 'closest kit pairing (' + r.pair + ')');
   await page.close(); open.delete(page);
 });
