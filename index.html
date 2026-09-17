@@ -210,6 +210,19 @@
   .final-board .fscore { font-family: var(--display); font-size: 64px; line-height: 1; }
   .final-board .fmid { font-family: var(--display); font-size: 18px; letter-spacing: 0.2em; color: var(--muted); }
 
+  /* ---------- tutorial ---------- */
+  #tut { position: fixed; left: 50%; top: 84px; transform: translateX(-50%); z-index: 8; width: min(520px, 92vw); pointer-events: none; }
+  #tut .tcard { background: rgba(10,12,17,0.9); border-left: 6px solid var(--accent); padding: 12px 18px 13px; }
+  #tut .step { font-family: var(--display); font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+  #tut h4 { margin: 3px 0 5px; font-family: var(--display); font-size: 25px; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 400; }
+  #tut p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink); }
+  #tut .goal { margin-top: 9px; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+  #tut .track { flex: 1; height: 5px; background: var(--panel3); }
+  #tut .track i { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
+  #tut.done .tcard { border-left-color: var(--ok); }
+  #tut .skip { margin-top: 10px; text-align: right; font-size: 11px; color: var(--muted); letter-spacing: 0.1em; }
+  #tut .skip b { color: var(--ink); }
+
   /* ---------- boot ---------- */
   #boot { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: flex; align-items: center; justify-content: center; transition: opacity 0.45s ease; }
   #boot.gone { opacity: 0; pointer-events: none; }
@@ -395,6 +408,7 @@
         <button class="mode" data-mode="1v1"><span class="mode-big">1v1</span><span class="mode-body"><b>Streetball</b><span>Half court, first to 21, loser's ball. Break ankles and get to the rim.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M4 26h20M88 26h-20"/><path d="M28 4v44" /><path d="M64 4v44"/><path d="M4 14h12a12 12 0 0 1 0 24H4"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/></svg></button>
         <button class="mode" data-mode="3v3"><span class="mode-big">3v3</span><span class="mode-body"><b>Half court</b><span>Three a side with a 14-second clock. Clear it past the arc after every stop.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M46 4v44"/><path d="M4 14h12a12 12 0 0 1 0 24H4"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><circle cx="46" cy="26" r="7"/></svg></button>
         <button class="mode sel" data-mode="5v5"><span class="mode-big">5v5</span><span class="mode-body"><b>Full court</b><span>Four quarters, 24-second clock, inbounds, fouls and free throws. The whole broadcast.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M46 4v44"/><circle cx="46" cy="26" r="7"/><path d="M4 8h22a18 18 0 0 1 0 36H4"/><path d="M88 8h-22a18 18 0 0 0 0 36h22"/><path d="M4 18h9v16H4M88 18h-9v16h9"/></svg></button>
+         <button class="mode compact" id="btnTutorial"><span class="mode-big">Learn</span><span class="mode-body"><b>Workout</b><span>Seven steps in an empty gym. Moving, the shot meter, dribble moves, dunks.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><path d="M20 34l8-14 8 9 8-18"/></svg></button>
          <button class="mode compact" id="btnPark"><span class="mode-big">Park</span><span class="mode-body"><b>MyPark</b><span>Walk the park as your MyCareer player. Stand on a pad, fill a court, run it.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><rect x="10" y="10" width="30" height="14"/><rect x="52" y="28" width="30" height="14"/><circle cx="46" cy="26" r="2.5"/></svg></button>
          <button class="mode compact" data-mode="practice"><span class="mode-big">Gym</span><span class="mode-body"><b>Practice</b><span>Empty court, unlimited shots, no clock.</span></span><svg viewBox="0 0 92 52" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="84" height="44"/><path d="M88 14h-12a12 12 0 0 0 0 24h12"/><circle cx="72" cy="26" r="2.5"/></svg></button>
       </div>
@@ -428,6 +442,16 @@
       <div class="pane-title">Multiplayer<small>Host a lobby and share the code, or join a friend's.</small></div>
       <div id="netBody"></div>
     </div>
+  </div>
+</div>
+
+<div id="tut" class="hidden">
+  <div class="tcard">
+    <div class="step" id="tutStep"></div>
+    <h4 id="tutTitle"></h4>
+    <p id="tutBody"></p>
+    <div class="goal"><span id="tutGoal"></span><span class="track"><i id="tutBar"></i></span></div>
+    <div class="skip">Press <b id="tutSkipKey">Esc</b> to skip</div>
   </div>
 </div>
 
@@ -648,7 +672,7 @@ const CONFIG = {
   money: {
     starting: 500, two: 55, three: 95, dunk: 130, block: 110, steal: 85, assist: 45,
     perfectBonus: 40, toughBonus: 35, win: 750, loss: 220,
-    daily: 300, dailyStreak: 120, dailyMaxStreak: 7,
+    daily: 300, dailyStreak: 120, dailyMaxStreak: 7, tutorial: 600,
   },
   // MyPark: the walkable lobby. It is player only, so everyone in it is a real connection.
   park: {
@@ -1810,9 +1834,19 @@ const Career = (() => {
     if (!c) return -1;
     const side = teamIdx[0] === c.team ? 0 : teamIdx[1] === c.team ? 1 : -1;
     if (side < 0) return -1;
-    const slot = POSITIONS.indexOf(c.player.pos);
-    rosters[side][slot] = playerDef();
-    return side * 5 + slot;   // informational; Game finds the player by the `career` flag
+    return applyToSide(rosters, side);
+  }
+  // Every other mode: your created player suits up for whichever side you are on. Smaller modes only field
+  // some of the five roster slots, so take whichever of the slots actually in use sits closest to your
+  // natural position rather than a slot that will never be picked.
+  function applyToSide(rosters, side, slots) {
+    if (!c || !rosters[side]) return -1;
+    const want = POSITIONS.indexOf(c.player.pos);
+    const use = (slots && slots.length) ? slots : [0, 1, 2, 3, 4];
+    let best = use[0];
+    for (const sl of use) if (Math.abs(sl - want) < Math.abs(best - want)) best = sl;
+    rosters[side][best] = playerDef();
+    return best;
   }
 
   // ---------- persistence ----------
@@ -1839,7 +1873,7 @@ const Career = (() => {
   return { CATS, ARCHETYPES, HEIGHTS, GAMES, CREATE_BASE, CREATE_POOL, CREATE_CAP,
     catOf, archOf, ratingsFrom, overallOf, upgradeCost, capFor, blankBuild, createCost, poolLeft, draftOffers,
     begin, nextGame, playoffGame, upcoming, playoffRounds, recordGame, canUpgrade, upgrade, grade,
-    playerDef, applyRoster, strength, seedsFor, save, load, wipe, exists,
+    playerDef, applyRoster, applyToSide, strength, seedsFor, save, load, wipe, exists,
     get storageOk() { return storageOk; },
     get data() { return c; } };
 })();
@@ -2768,10 +2802,10 @@ const Game = (() => {
     score: [0, 0], quarter: 1, clock: 0, shotClock: 24, possession: 0, hoopOf: [1, 0], human: -1, humanTeam: 0,
     mustClear: false, fouls: [0, 0], halfCourt: true, playersPerTeam: 1, lastShot: null, events: [], running: false,
     nextPossession: 0, deadDelay: 1.5, deadReason: '', inbounder: -1, inboundSpots: null, winner: -1, aiDiff: 'pro',
-    career: false, careerPid: -1, lockHuman: false,
+    career: false, careerPid: -1, lockHuman: false, myPlayer: false,
     ftShooter: -1, ftLeft: 0, ftTotal: 0, ftAndOne: false, lastEvent: '', lastEventT: -9, teamFouls: [0, 0], possArrow: 0, inbound: null, pendingFoul: null, lastPass: null, ftLive: false, ftResolved: false, locked: false, spectateTeam: 0,
   };
-  const settings = Object.assign({ difficulty: 'pro', quarterLen: 120, shadows: false, camera: 'broadcast', volume: 0.8, sfx: true, greenAuto: true, meterHelp: true, crowd: true, makeItTakeIt: false, controls: 'simple', shotTiming: 'meter' }, U.loadLS('hw_settings', {}));
+  const settings = Object.assign({ difficulty: 'pro', quarterLen: 120, shadows: false, camera: 'broadcast', volume: 0.8, sfx: true, greenAuto: true, meterHelp: true, crowd: true, makeItTakeIt: false, controls: 'simple', shotTiming: 'meter', playAs: 'mine' }, U.loadLS('hw_settings', {}));
   function saveSettings() { U.saveLS('hw_settings', settings); }
   const hoopFor = (team) => Court.hoops[g.hoopOf[team]];
   const otherTeam = (t) => 1 - t;
@@ -2784,7 +2818,7 @@ const Game = (() => {
   let practiceLooseSince = 0;
   function start(mode, teamA, teamB, opts) {
     const o = opts || {};
-    g.career = !!o.career; g.careerPid = -1; g.lockHuman = false;
+    g.career = !!o.career; g.careerPid = -1; g.lockHuman = false; g.myPlayer = false;
     g.mode = mode; g.teamIdx = [teamA, teamB]; g.teams = kitsFor(teamA, teamB);
     g.halfCourt = mode !== '5v5'; g.playersPerTeam = mode === '5v5' ? 5 : mode === '3v3' ? 3 : mode === '2v2' ? 2 : 1;
     g.score = [0, 0]; g.quarter = 1; g.fouls = [0, 0]; g.teamFouls = [0, 0]; g.time = 0; g.events.length = 0; g.lastShot = null; g.mustClear = false; g.winner = -1;
@@ -2792,10 +2826,14 @@ const Game = (() => {
     g.hoopOf = g.halfCourt ? [1, 1] : [1, 0];
     PlayerSys.clear();
     g.rosters = [PlayerSys.genRoster(teamA), PlayerSys.genRoster(teamB)];
+    const slots = o.slots || (mode === 'practice' ? [0] : pickSlots(g.rosters[0], g.playersPerTeam));
     if (g.career) Career.applyRoster(g.rosters, g.teamIdx);   // your created player takes their slot
+    // ...and in every other single-player mode they play for whichever side you are on. Skipped online,
+    // where both clients have to build the same roster from the same seed.
+    else if (!o.park && !Net.active && Career.exists()) { Career.applyToSide(g.rosters, 0, slots); g.myPlayer = true; }
     if (o.roster) o.roster(g.rosters, g.teamIdx);             // MyPark seats the people who stood on the pads
-    if (mode === 'practice') PlayerSys.create(g.rosters[0][0], 0, 0);   // empty gym: one player, no defense
-    else for (let t = 0; t < 2; t++) for (const si of (o.slots || pickSlots(g.rosters[t], g.playersPerTeam))) PlayerSys.create(g.rosters[t][si], t, si);
+    if (mode === 'practice') PlayerSys.create(g.rosters[0][slots[0]], 0, slots[0]);   // empty gym: one player, no defense
+    else for (let t = 0; t < 2; t++) for (const si of (t === 0 ? slots : (o.slots || pickSlots(g.rosters[t], g.playersPerTeam)))) PlayerSys.create(g.rosters[t][si], t, si);
     RNG.seed((Date.now() & 0xffff) + teamA * 31 + teamB * 17);
     if (g.career) { for (const p of P) if (p.career) { g.careerPid = p.id; break; } g.lockHuman = g.careerPid >= 0; }
     g.humanTeam = g.careerPid >= 0 ? P[g.careerPid].team : 0;
@@ -2807,7 +2845,14 @@ const Game = (() => {
       PlayerSys.teleport(p, h.x - h.s * 7, 0, Math.atan2(h.s, 0)); setHuman(p.id, true);
       BallSys.setHolder(p); g.possession = 0; ball.state = BS.HELD; practiceLooseSince = 0;
     }
-    else { const tp = teamPlayers(g.humanTeam); setHuman(g.careerPid >= 0 ? g.careerPid : (tp.length ? tp[0].id : -1), true); if (g.halfCourt) setupPossession(0); else setupTip(); }
+    else {
+      const tp = teamPlayers(g.humanTeam);
+      let start = g.careerPid >= 0 ? g.careerPid : -1;
+      if (start < 0 && g.myPlayer) { const mine = tp.find((q) => q.career); if (mine) start = mine.id; }
+      if (start >= 0 && settings.playAs === 'mine') g.lockHuman = true;
+      setHuman(start >= 0 ? start : (tp.length ? tp[0].id : -1), true);
+      if (g.halfCourt) setupPossession(0); else setupTip();
+    }
     emit('start');
   }
   function pickSlots(roster, n) {
@@ -4103,6 +4148,113 @@ const Park = (() => {
 })();
 // ==== END PARK ====
 
+// ==== BEGIN TUTORIAL ====
+// A guided shootaround in the empty gym. Each step states one thing, waits until you have actually done it,
+// and moves on. Nothing here can be failed: a step either completes or you stay on it, which is the only
+// way a tutorial teaches instead of testing.
+const Tutorial = (() => {
+  const KEY = 'hw_tutdone';
+  const ST = PlayerSys.ST;
+  let active = false, i = 0, stepT = 0, total = 0, doneT = 0, finished = false;
+  let hits = 0, moves = 0, madeShots = 0, greens = 0, dunks = 0, passes = 0, lastState = -1;
+  const key = (a) => Input.keyLabel(Input.binds[a]);
+
+  // Each step: what to say, how to know it is done, and anything to set up first.
+  const STEPS = [
+    { title: 'Move', body: () => 'Walk around with ' + key('up') + key('left') + key('down') + key('right') + '. Hold ' + key('sprint') + ' to sprint.',
+      goal: 'Cover some ground', need: 12,
+      progress: (p, dt) => (p.speed > 2.4 ? dt * p.speed : 0) },
+    { title: 'Get to the rim', body: () => 'Drive at the basket and lay it in. Press ' + key('shoot') + ' close to the hoop.',
+      goal: 'Score at the rim', need: 1,
+      progress: () => { const n = madeShots; madeShots = 0; return n; },
+      setup: (p) => { const h = Game.hoopFor(p.team); PlayerSys.teleport(p, h.x - h.s * 6.5, 0, Math.atan2(h.s, 0)); } },
+    { title: 'The shot meter', body: () => 'Hold ' + key('shoot') + ' to start the meter and let go at the top. The closer to perfect, the better the odds.',
+      goal: 'Make three jumpers', need: 3,
+      progress: () => { const n = madeShots; madeShots = 0; return n; },
+      setup: (p) => { const h = Game.hoopFor(p.team); PlayerSys.teleport(p, h.x - h.s * 5.6, 2.2, Math.atan2(h.s * 5.6, -2.2)); } },
+    { title: 'Green it', body: () => 'A perfect release is a much smaller window than the good one — and a green from you always drops.',
+      goal: 'Hit one perfect release', need: 1,
+      progress: () => { const n = greens; greens = 0; return n; },
+      setup: (p) => { const h = Game.hoopFor(p.team); PlayerSys.teleport(p, h.x - h.s * 6.4, -1.5, Math.atan2(h.s * 6.4, 1.5)); } },
+    { title: 'Dribble moves', body: () => 'The arrow keys are a second stick. Flick toward the rim to spin, away to step back, across to cross over. They work while you run.',
+      goal: 'Pull off four moves', need: 4,
+      progress: () => { const n = moves; moves = 0; return n; } },
+    // Counts any finish at the rim, dunk or layup, so a build with no hops is never stuck here.
+    { title: 'Finish on the move', body: () => 'Sprint at the rim with ' + key('sprint') + ' and press ' + key('shoot') + ' inside the paint. Enough hops and it is a dunk.',
+      goal: 'Finish at the rim', need: 1,
+      progress: () => { const n = dunks; dunks = 0; return n; },
+      setup: (p) => { const h = Game.hoopFor(p.team); PlayerSys.teleport(p, h.x - h.s * 11, 0, Math.atan2(h.s, 0)); } },
+    { title: 'Ready', body: () => 'That is the whole game. ' + key('pass') + ' passes, and on defence it steals. ' + key('shoot') + ' jumps to contest. ' + key('fake') + ' fakes.',
+      goal: 'Head out', need: 1, progress: (p, dt) => dt * 0.55 },
+  ];
+
+  function stat(p) { return p ? p.stats : null; }
+  function begin() {
+    active = true; finished = false; i = 0; stepT = 0; total = 0; doneT = 0;
+    hits = moves = madeShots = greens = dunks = passes = 0; lastState = -1;
+    setupStep();
+    UI.showTutorial(true);
+  }
+  function setupStep() {
+    const p = PlayerSys.players[Game.g.human];
+    total = 0; stepT = 0;
+    const s = STEPS[i];
+    if (s && s.setup && p) { s.setup(p); BallSys.setHolder(p); PlayerSys.setState(p, ST.IDLE); }
+  }
+  function skip() { finish(false); }
+  function finish(earned) {
+    active = false; finished = true;
+    UI.showTutorial(false);
+    U.saveLS(KEY, true);
+    if (earned) {
+      const coins = CONFIG.money.tutorial;
+      Bank.award(coins, 'tutorial');
+      Game.toast('WORKOUT DONE', '+' + coins + ' COINS');
+    }
+  }
+  // Watch the live game for the things the steps ask for.
+  function observe(dt) {
+    const g = Game.g, p = PlayerSys.players[g.human];
+    if (!p) return;
+    if (Moves.MOVE_STATES.has(p.state) && p.state !== lastState) moves++;
+    lastState = p.state;
+    const ball = BallSys.ball;
+    if (ball.scored && !ball._tutScored) {
+      ball._tutScored = true;
+      if (ball.shot.shooter === p.id) {
+        if (ball.shot.kind === 'jumper') { madeShots++; if (ball.shot.green) greens++; }
+        else dunks++;
+      }
+    } else if (!ball.scored) ball._tutScored = false;
+    if (p.state === ST.PASS) passes++;
+  }
+  function step(dt) {
+    if (!active) return;
+    observe(dt);
+    const s = STEPS[i]; if (!s) { finish(true); return; }
+    const p = PlayerSys.players[Game.g.human];
+    stepT += dt;
+    total += s.progress(p, dt) || 0;
+    if (total >= s.need) {
+      i++;
+      if (i >= STEPS.length) { finish(true); return; }
+      doneT = 0.9;
+      setupStep();
+      AudioSys.play('ui');
+    }
+    if (doneT > 0) doneT -= dt;
+  }
+  function view() {
+    const s = STEPS[i];
+    if (!s) return null;
+    return { n: i + 1, of: STEPS.length, title: s.title, body: s.body(), goal: s.goal,
+      pct: U.clamp(total / s.need, 0, 1), just: doneT > 0 };
+  }
+  const seen = () => !!U.loadLS(KEY, false);
+  return { begin, step, skip, view, seen, get active() { return active; }, get finished() { return finished; } };
+})();
+// ==== END TUTORIAL ====
+
 // ==== BEGIN CAMERA ====
 // Broadcast-style follow camera with damping; also provides the input basis (screen-relative movement).
 const CameraSys = (() => {
@@ -4432,11 +4584,11 @@ function init(container) {
 const UI = (() => {
   const $ = (id) => document.getElementById(id);
   const el = {};
-  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'menuCareer', 'careerBody', 'teamGrid', 'menuPark', 'parkBody', 'menuStore', 'storeBody', 'coinBar', 'coinNum', 'coinPop', 'park', 'parkSub', 'parkPrompt', 'parkLog', 'parkInput', 'parkTags', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'jerseyA', 'jerseyB', 'pnum', 'tipnote', 'pauseScore', 'wipe', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
+  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'menuCareer', 'careerBody', 'teamGrid', 'menuPark', 'parkBody', 'menuStore', 'storeBody', 'coinBar', 'coinNum', 'coinPop', 'tut', 'tutStep', 'tutTitle', 'tutBody', 'tutGoal', 'tutBar', 'tutSkipKey', 'park', 'parkSub', 'parkPrompt', 'parkLog', 'parkInput', 'parkTags', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'jerseyA', 'jerseyB', 'pnum', 'tipnote', 'pauseScore', 'wipe', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
   let debugOn = false, pick = U.loadLS('hw_pick', [0, 1]), last = {}, tagEls = [], meterVisible = false, hudVisible = false, mode = U.loadLS('hw_mode', '5v5');
   if (!Array.isArray(pick) || pick.length !== 2 || pick[0] === pick[1]) pick = [0, 1];
   const _pt = { x: 0, y: 0, visible: false };
-  const hooks = { startGame: null, resume: null, quit: null, rematch: null, applySettings: null };
+  const hooks = { startGame: null, startTutorial: null, resume: null, quit: null, rematch: null, applySettings: null };
 
    function init(h) {
      Object.assign(hooks, h);
@@ -4446,6 +4598,7 @@ const UI = (() => {
     document.querySelectorAll('[data-cycle]').forEach((b) => b.addEventListener('click', () => { const [side, dir] = b.dataset.cycle.split(',').map(Number); cycleTeam(side, dir); AudioSys.play('ui'); }));
     $('btnTipoff').onclick = () => { AudioSys.init(); AudioSys.play('ui'); hooks.startGame(mode, pick[0], pick[1]); };
     for (const [side, id] of [[0, 'jerseyA'], [1, 'jerseyB']]) $(id).onclick = () => { AudioSys.play('ui'); toggleTeamGrid(side); };
+    $('btnTutorial').onclick = () => { AudioSys.init(); AudioSys.play('ui'); hooks.startTutorial(); };
     $('btnPark').onclick = () => {
       AudioSys.init(); AudioSys.play('ui');
       // the park is walked as your created player, so it needs a career first
@@ -4585,6 +4738,7 @@ const UI = (() => {
     }
   }
   const SETTINGS_DEF = [
+    { key: 'playAs', label: 'You control', choices: [['mine', 'My player'], ['team', 'Whoever has the ball']] },
     { key: 'controls', label: 'Controls', choices: [['simple', 'Simple'], ['advanced', 'Advanced']] },
     { key: 'shotTiming', label: 'Shot timing', choices: [['meter', 'Meter'], ['auto', 'Assisted']] },
     { key: 'difficulty', label: 'AI difficulty', choices: [['rookie', 'Rookie'], ['pro', 'Pro'], ['allstar', 'All-Star']] },
@@ -5049,6 +5203,22 @@ const UI = (() => {
   // The coin readout rides along wherever you can actually earn: in a game, or out in the park.
   let coinShown = -1, coinPopT = 0;
   const WHY = { bucket: 'bucket', three: 'three', dunk: 'dunk', block: 'block', steal: 'steal', assist: 'assist', win: 'win', played: 'played' };
+  function showTutorial(on) { el.tut.classList.toggle('hidden', !on); if (on) el.tutSkipKey.textContent = Input.keyLabel(Input.binds.pause); }
+  let tutKey = '';
+  function updateTutorial() {
+    if (!Tutorial.active) { if (!el.tut.classList.contains('hidden')) el.tut.classList.add('hidden'); return; }
+    const v = Tutorial.view(); if (!v) return;
+    const k = v.n + '|' + v.body;
+    if (k !== tutKey) {
+      tutKey = k;
+      el.tutStep.textContent = 'Step ' + v.n + ' of ' + v.of;
+      el.tutTitle.textContent = v.title;
+      el.tutBody.textContent = v.body;
+      el.tutGoal.textContent = v.goal;
+    }
+    el.tutBar.style.width = (v.pct * 100).toFixed(0) + '%';
+    el.tut.classList.toggle('done', v.just);
+  }
   function updateCoins(dt) {
     const on = Game.g.running || Main.inPark;
     el.coinBar.classList.toggle('hidden', !on);
@@ -5068,7 +5238,7 @@ const UI = (() => {
     if (Net.isHost) for (const e of b.events) Net.forwardEvent('bsfx', e);
     for (const e of b.events) { if (typeof e === 'number') { if (e < 0) AudioSys.play('dribble', U.clamp(0.6 + (-e - 1) * 0.07, 0.5, 1.1)); else AudioSys.play('bounce', e); } else if (e === 'rim') AudioSys.play('rim'); else if (e === 'board') AudioSys.play('board'); }
     b.events.length = 0;
-    updateCoins(dt);
+    updateCoins(dt); updateTutorial();
     if (Main.inPark) updatePark();
     if (!hudVisible) return;
     const hp = PlayerSys.players[g.human]; if (hp) { Render.project(hp.x, hp.y + hp.height * 1.15, hp.z, fbPos); }
@@ -5076,7 +5246,7 @@ const UI = (() => {
     if (debugOn) updateDebug(dt, stats);
   }
   return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, openNet, openCareer, renderCareer,
-    showPark, openPark, openStore, renderStore, parkToast, parkChatDirty, openChat, closeChat, get chatOpen() { return chatOpen; },
+    showPark, openPark, openStore, renderStore, showTutorial, parkToast, parkChatDirty, openChat, closeChat, get chatOpen() { return chatOpen; },
     wipe, update, toast, feedback, toggleDebug, clearToast, get pick() { return pick; }, get mode() { return mode; }, get debugOn() { return debugOn; } };
 })();
 // ==== END UI ====
@@ -5596,7 +5766,7 @@ const Main = (() => {
     Render.init(document.getElementById('app'));
     Bank.applyEquipped();
     Render.buildArena(TEAMS[0], TEAMS[1]);
-    UI.init({ startGame, resume, quit, rematch, applySettings });
+    UI.init({ startGame, startTutorial, resume, quit, rematch, applySettings });
     applySettings();
     const wake = () => { AudioSys.init(); AudioSys.resume(); };
     window.addEventListener('pointerdown', wake); Input.onAny(wake);
@@ -5604,6 +5774,7 @@ const Main = (() => {
       if (Input.remapping) return;
       if (code === Input.binds.debug) UI.toggleDebug();
       if (inPark && !UI.chatOpen && code === 'KeyT') { UI.openChat(); return; }
+      if (code === Input.binds.pause && Tutorial.active) { Tutorial.skip(); quit(); return; }
       if (code === Input.binds.pause && (Game.g.running || inPark)) { if (paused) resume(); else pause(); }
     });
     document.addEventListener('visibilitychange', () => { visible = !document.hidden; if (visible) { last = performance.now(); acc = 0; } });
@@ -5687,9 +5858,25 @@ function startGame(mode, a, b, opts) {
     Render.buildPlayers(Game.g.teams);
     CameraSys.setFrame(Park.frameFor(ct));
   }
+  // The workout: practice mode with a script running on top of it.
+  function startTutorial() {
+    UI.wipe(() => {
+      inPark = false;
+      const kits = kitsFor(UI.pick[0], UI.pick[1]);
+      Render.setMatchFrame(null); CameraSys.setFrame(null); Render.setSky(null);
+      if (Court.group) Court.group.visible = true;
+      Render.buildArena(kits[0], kits[1]); Game.start('practice', UI.pick[0], UI.pick[1]);
+      Render.buildPlayers(Game.g.teams); Render.setShadows(Game.settings.shadows);
+      document.getElementById('final').classList.add('hidden');
+      UI.hideMenu(); UI.showHUD(); UI.clearToast();
+      const ball = BallSys.ball; CameraSys.snap(ball.x, ball.z); acc = 0; paused = false;
+      Tutorial.begin();
+    });
+  }
   function pause(silent) { paused = true; if (!silent) UI.showPause(true); }
   function resume() { paused = false; UI.showPause(false); last = performance.now(); acc = 0; }
   function quit() {
+    if (Tutorial.active) Tutorial.skip();
     if (inPark) { leavePark(); return; }
     const wasCareer = Game.g.career;
     Game.stop(); paused = false; UI.showPause(false); UI.showMenu();
@@ -5740,6 +5927,7 @@ function startGame(mode, a, b, opts) {
       while (acc >= DT && steps < CONFIG.physics.maxSteps) {
         const human = PlayerSys.players[g.human]; if (human && !Net.isGuest) Input.sample(human.input, CameraSys.basis);
         if (Net.isGuest) Net.guestStep(DT); else Game.step(DT);
+        if (Tutorial.active) { Tutorial.step(DT); if (Tutorial.finished) { quit(); break; } }
         Input.endTick(); acc -= DT; steps++;
       }
       if (steps === CONFIG.physics.maxSteps) acc = 0;
@@ -5755,7 +5943,7 @@ if (Net.active) Net.update(elapsed);
      if (!firstFrame) { firstFrame = true; Boot.ready(); }
      stats.steps = steps; stats.simMs = simMs; stats.frameMs = performance.now() - t0;
    }
-  return { init, startGame, enterPark, leavePark, startPark, startParkRemote, pause, resume, quit, stats,
+  return { init, startGame, startTutorial, enterPark, leavePark, startPark, startParkRemote, pause, resume, quit, stats,
     get paused() { return paused; }, get inPark() { return inPark; } };
 })();
 window.addEventListener('DOMContentLoaded', () => {
