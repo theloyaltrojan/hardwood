@@ -732,7 +732,17 @@ const CONFIG = {
     chatMax: 60, chatShow: 7, bubbleTime: 5.5,
     camDist: 10.5, camHeight: 6.6, camDamp: 6, camLookY: 1.6,
   },
-  camera: { broadcastHeight: 10.8, broadcastDist: 19.5, followX: 0.86, lookY: 1.1, lookZ: 0.28, damp: 4.5, lookDamp: 6, fov: 42, halfCourtZoom: 0.86 },
+  camera: {
+    broadcastHeight: 10.8, broadcastDist: 19.5, followX: 0.86, lookY: 1.1, lookZ: 0.28, damp: 4.5, lookDamp: 6, fov: 42, halfCourtZoom: 0.86,
+    // over the shoulder of whoever has it, looking at the rim they are attacking
+    behindDist: 11.5,        // how far back down the floor the camera sits from the ball
+    behindHeight: 4.9,       // and how high - low enough that players have height on screen
+    behindFollowZ: 0.62,     // how much it slides sideways with the ball
+    behindLookAhead: 5.2,    // the look point sits past the ball, toward the rim
+    behindLookY: 2.0, behindLookZ: 0.45,
+    behindBoardGap: 1.1,     // how far in front of the defensive backboard the camera has to stop
+    behindFov: 50,           // wider than broadcast: close camera, so keep the floor readable
+  },
   render: { shadows: false, crowd: true, pixelRatioCap: 1.5, exposure: 1.1, vignette: 0.55, fogDensity: 0.016 },
   audio: { volume: 0.8 },
   net: {
@@ -1105,7 +1115,8 @@ function makeFloorTexture(team) {
 	                  g.save(); g.translate(X(0), Z(0)); g.scale(1, C.apronZ / C.apronX);
 	                  const vg = g.createRadialGradient(0, 0, 13 * s, 0, 0, 19 * s);
 	                  vg.addColorStop(0, 'rgba(0, 0, 0, 0)');
-	                  vg.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+	                  vg.addColorStop(0.72, 'rgba(0, 0, 0, 0.16)');
+	                  vg.addColorStop(1, 'rgba(0, 0, 0, 0.30)');   // gentle: a low camera sees a lot of apron
 	                  g.fillStyle = vg; g.fillRect(-W, -H, W * 2, H * 2); g.restore();
 	                  const tex = new THREE.CanvasTexture(cv); tex.anisotropy = 8; tex.encoding = THREE.sRGBEncoding; tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
 	                  return tex;
@@ -4476,7 +4487,16 @@ const CameraSys = (() => {
     const half = g.halfCourt; const h = Court.hoops[g.hoopOf[g.possession]];
     let tx, ty, tz, lx, ly, lz;
     if (mode === 'behind') {
-      const s = h.s; tx = h.x - s * 21; ty = 8.5; tz = focusZ * 0.35; lx = h.x - s * 6 + (focusX - (h.x - s * 6)) * 0.35; ly = 1.2; lz = focusZ * 0.5;
+      // Sit down the floor from the ball, on the far side from the rim being attacked, and look past
+      // the ball at that rim. The stop is the defensive backboard, not the apron: retreat past that and
+      // the camera is staring at the back of a board from two metres away with the play hidden behind it.
+      const s = h.s, lim = Math.abs(Court.boardX(1)) - CC.behindBoardGap;
+      tx = focusX - s * CC.behindDist;
+      tx = s > 0 ? Math.max(tx, -lim) : Math.min(tx, lim);
+      ty = CC.behindHeight;
+      tz = focusZ * CC.behindFollowZ;
+      lx = focusX + s * CC.behindLookAhead;
+      ly = CC.behindLookY; lz = focusZ * CC.behindLookZ;
       basis.fx = s; basis.fz = 0; basis.rx = 0; basis.rz = s;
     } else {
       const zoom = half ? CC.halfCourtZoom : 1;
@@ -4486,6 +4506,8 @@ const CameraSys = (() => {
     }
     pos.x = U.damp(pos.x, tx, CC.damp, dt); pos.y = U.damp(pos.y, ty, CC.damp, dt); pos.z = U.damp(pos.z, tz, CC.damp, dt);
     look.x = U.damp(look.x, lx, CC.lookDamp, dt); look.y = U.damp(look.y, ly, CC.lookDamp, dt); look.z = U.damp(look.z, lz, CC.lookDamp, dt);
+    const wantFov = mode === 'behind' ? CC.behindFov : CC.fov;
+    if (cam.fov !== wantFov) { cam.fov = U.damp(cam.fov, wantFov, 6, dt); if (Math.abs(cam.fov - wantFov) < 0.05) cam.fov = wantFov; cam.updateProjectionMatrix(); }
     if (shake > 0) { shake -= dt; pos.y += Math.sin(g.time * 90) * 0.08 * shake; }
     if (frame) {
       _cp.x = pos.x; _cp.z = pos.z; applyFrame(_cp);
