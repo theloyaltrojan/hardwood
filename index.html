@@ -595,8 +595,16 @@ ARCHITECTURE PLAN
 */
 'use strict';
 
+// Three r128 predates colour management: it reads a hex literal as a linear value and
+// then gamma-encodes the framebuffer, so every authored colour comes out washed out and
+// pastel. Convert on the way in, which is what r152 onward does for you.
+(() => {
+  const setHex = THREE.Color.prototype.setHex;
+  THREE.Color.prototype.setHex = function (h) { return setHex.call(this, h).convertSRGBToLinear(); };
+})();
+
 // ==== BEGIN CONFIG ====
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const CONFIG = {
   physics: { hz: 120, maxSteps: 6, gravity: -9.81 },
   court: {
@@ -664,7 +672,13 @@ const CONFIG = {
     // like they lived at the arc — that was the stale-hasBall bug firing phantom 25m "threes", not real shot
     // selection, so the penalty is gone. All that is left is a mild pull toward the rim.
     zoneBias: { three: 1.00, mid: 1.00, close: 1.05 },
-    driveBias: 1.02,
+    driveBias: 1.08,      // a drive is worth a little more than its own finish: it collapses the defence
+    blockedLane: 0.5,     // a covered passing lane is a risk, not a wall
+    denyRange: 5.6,       // how close to the ball counts as one pass away
+    denyDist: 1.75,       // how far off the man a denial sits
+    denySkill: 0.55,      // ...tightened by the defender's perimeter rating
+    driftUnder: 3.0,      // start sliding off the man inside this
+    driftDist: 2.4,       // how far along the arc to slide when he is right on you
     bar: { early: 1.06, mid: 0.94, late: 0.80, last: 0.56 },
   },
   game: { shotClock: 24, halfShotClock: 14, offRebClock: 14, quarterLen: 120, quarters: 4, halfCourtTarget: 21, deadBallDelay: 0.85, inboundDelay: 0.35, ftRoutine: 1.2, foulOutLimit: 6, reachInFoulChance: 0.18, shootingFoulChance: 0.15 },
@@ -1039,6 +1053,23 @@ function makeFloorTexture(team) {
 	                  g.globalAlpha = 0.04;
 	                  for (let i = 0; i < 3000; i++) { const x = rnd() * W, y = rnd() * H; g.fillStyle = rnd() > 0.5 ? '#ffffff' : '#000000'; g.fillRect(x, y, 1, 1); }
 	                  g.globalAlpha = 1;
+	                  // baked light pools - two rig spotlights used to draw these, and cost about four
+	                  // frames a second for a highlight that never moves. The key light still does the sheen.
+	                  for (const lx of [-3.25, 3.25]) {
+	                    g.save(); g.translate(X(lx), Z(0)); g.scale(1, 0.66);
+	                    const r = 12 * s;
+	                    const lg = g.createRadialGradient(0, 0, r * 0.06, 0, 0, r);
+	                    lg.addColorStop(0, 'rgba(255, 246, 226, 0.20)');
+	                    lg.addColorStop(0.45, 'rgba(255, 246, 226, 0.09)');
+	                    lg.addColorStop(1, 'rgba(255, 246, 226, 0)');
+	                    g.fillStyle = lg; g.fillRect(-W, -H, W * 2, H * 2); g.restore();
+	                  }
+	                  // apron falloff - the rig light dies before it reaches the stands
+	                  g.save(); g.translate(X(0), Z(0)); g.scale(1, C.apronZ / C.apronX);
+	                  const vg = g.createRadialGradient(0, 0, 13 * s, 0, 0, 19 * s);
+	                  vg.addColorStop(0, 'rgba(0, 0, 0, 0)');
+	                  vg.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+	                  g.fillStyle = vg; g.fillRect(-W, -H, W * 2, H * 2); g.restore();
 	                  const tex = new THREE.CanvasTexture(cv); tex.anisotropy = 8; tex.encoding = THREE.sRGBEncoding; tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
 	                  return tex;
 	                }
@@ -1075,7 +1106,7 @@ function buildHoop(h) {
 	                  const bx = boardX(s);
 	                  // backboard - glass with slight reflection
 	                  const boardTex = makeBoardTexture();
-	                  const boardMat = new THREE.MeshStandardMaterial({ map: boardTex, transparent: true, opacity: 0.35, roughness: 0.05, metalness: 0.05, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 0.8 });
+	                  const boardMat = new THREE.MeshStandardMaterial({ map: boardTex, color: 0xcddced, transparent: true, opacity: 0.42, roughness: 0.05, metalness: 0.05, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 0.8 });
 	                  const board = new THREE.Mesh(new THREE.PlaneGeometry(C.boardW, C.boardH), boardMat);
 	                  board.position.set(bx, C.boardBottom + C.boardH / 2, 0); board.rotation.y = -s * Math.PI / 2; g.add(board);
 	                  // frame
@@ -1120,7 +1151,7 @@ function buildHoop(h) {
 
   function buildStands(scene, teamA, teamB) {
     const L = C.length, Wd = C.width;
-    const standMat = new THREE.MeshLambertMaterial({ color: 0x151a24 });
+    const standMat = new THREE.MeshLambertMaterial({ color: 0x1b2230 });
     const rows = 7;
     const seats = []; // {x,y,z}
     const addRow = (geo, x, y, z) => { const m = new THREE.Mesh(geo, standMat); m.position.set(x, y, z); m.receiveShadow = false; scene.add(m); };
@@ -1135,6 +1166,62 @@ function buildHoop(h) {
         for (let z = -(Wd / 2 + 1.5); z <= Wd / 2 + 1.5; z += 0.52) seats.push({ x: sgn * (L / 2 + 3.4 + i * depth), y: y + 0.3, z });
       }
     }
+    // LED ribbon around the front of the bowl, in the home colours
+    const ribbon = (w, x, y, z, ry) => {
+      const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 48;
+      const g2 = cv.getContext('2d');
+      g2.fillStyle = '#05070c'; g2.fillRect(0, 0, 1024, 48);
+      const msg = ['HARDWOOD LEGENDS', teamA.abbr + '   \u2022   ' + teamB.abbr];
+      g2.font = '800 20px Inter, Helvetica, Arial, sans-serif'; g2.textBaseline = 'middle';
+      for (let i = 0; i < 4; i++) {
+        const x0 = i * 256;
+        g2.fillStyle = hex(i % 2 ? teamB.primary : teamA.primary);
+        for (let c = 0; c < 3; c++) {                                  // chevrons lead each message
+          const bx = x0 + 10 + c * 11;
+          g2.beginPath(); g2.moveTo(bx, 38); g2.lineTo(bx + 8, 10); g2.lineTo(bx + 14, 10); g2.lineTo(bx + 6, 38); g2.closePath(); g2.fill();
+        }
+        g2.fillStyle = '#f3f0e7'; g2.fillText(msg[i % 2], x0 + 56, 25);
+      }
+      // the dot grid is what sells it as an LED board rather than a painted sign
+      g2.globalAlpha = 0.38; g2.fillStyle = '#000000';
+      for (let k = 0; k < 1024; k += 3) g2.fillRect(k, 0, 1, 48);
+      for (let k = 0; k < 48; k += 3) g2.fillRect(0, k, 1024, 1);
+      g2.globalAlpha = 1;
+      const tex = new THREE.CanvasTexture(cv); tex.encoding = THREE.sRGBEncoding;
+      tex.wrapS = THREE.RepeatWrapping; tex.repeat.x = Math.max(1, Math.round(w / 14));
+      const m2 = new THREE.Mesh(new THREE.PlaneGeometry(w, 0.62),
+        new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+      m2.position.set(x, y, z); m2.rotation.y = ry; scene.add(m2);
+    };
+    ribbon(L + 10, 0, 0.62, -(Wd / 2 + 1.85), 0);
+    for (const sgn of [-1, 1]) ribbon(Wd + 3.5, sgn * (L / 2 + 2.85), 0.62, 0, sgn * Math.PI / 2);
+
+    // hanging scoreboard over centre court
+    const jumbo = new THREE.Group(); jumbo.position.set(0, 13.4, 0); jumbo.scale.setScalar(0.62);
+    const shellMat = new THREE.MeshStandardMaterial({ color: 0x0a0d14, roughness: 0.6, metalness: 0.3 });
+    jumbo.add(new THREE.Mesh(new THREE.BoxGeometry(5.4, 2.6, 5.4), shellMat));
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(5.9, 0.22, 5.9), shellMat);
+    cap.position.y = 1.45; jumbo.add(cap);   // Group.add returns the group, so the cap has to be placed on its own line
+    for (const [dx, dz, ry] of [[0, 2.76, 0], [0, -2.76, Math.PI], [2.76, 0, Math.PI / 2], [-2.76, 0, -Math.PI / 2]]) {
+      const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128;
+      const g2 = cv.getContext('2d');
+      g2.fillStyle = '#05070c'; g2.fillRect(0, 0, 256, 128);
+      g2.fillStyle = hex(teamA.primary); g2.fillRect(0, 0, 256, 8);
+      g2.font = '900 56px Inter, Helvetica, Arial, sans-serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle';
+      g2.fillStyle = '#f3f0e7'; g2.fillText(teamA.abbr + '  ' + teamB.abbr, 128, 52);
+      g2.fillStyle = '#8b909a'; g2.font = '700 22px Inter, Helvetica, Arial, sans-serif';
+      g2.fillText('HARDWOOD LEGENDS', 128, 100);
+      const tex = new THREE.CanvasTexture(cv); tex.encoding = THREE.sRGBEncoding;
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(5.0, 2.3), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+      face.position.set(dx, 0, dz); face.rotation.y = ry; jumbo.add(face);
+    }
+    const wireMat = new THREE.MeshBasicMaterial({ color: 0x1a1f2a });
+    for (const [wx, wz] of [[-1.8, -1.8], [1.8, -1.8], [-1.8, 1.8], [1.8, 1.8]]) {
+      const w2 = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 4.2, 5), wireMat);
+      w2.position.set(wx, 3.6, wz); jumbo.add(w2);
+    }
+    scene.add(jumbo);
+
     // near side: scorer's table + benches
     const table = new THREE.Mesh(new THREE.BoxGeometry(11, 0.85, 0.8), new THREE.MeshLambertMaterial({ color: 0x10131b })); table.position.set(0, 0.425, Wd / 2 + 1.5); scene.add(table);
     const strip = new THREE.Mesh(new THREE.PlaneGeometry(10.8, 0.3), new THREE.MeshBasicMaterial({ color: teamA.primary })); strip.position.set(0, 0.55, Wd / 2 + 1.09); strip.rotation.y = Math.PI; scene.add(strip);
@@ -1143,40 +1230,52 @@ function buildHoop(h) {
     // crowd (instanced)
     if (!CONFIG.render.crowd) return;
     crowdN = seats.length;
-    const bodyGeo = new THREE.BoxGeometry(0.36, 0.52, 0.3); const headGeo = new THREE.SphereGeometry(0.11, 6, 5);
-    crowdBody = new THREE.InstancedMesh(bodyGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), crowdN);
-    crowdHead = new THREE.InstancedMesh(headGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), crowdN);
+    // A tapered torso instead of a box, and a crowd dark enough to read as a crowd rather than as rows of
+    // bright cubes. Broadcast arenas are a bright floor against a dim bowl; the old palette did the opposite.
+    const bodyGeo = new THREE.CylinderGeometry(0.15, 0.21, 0.5, 6); const headGeo = new THREE.SphereGeometry(0.105, 6, 5);
+    const crowdMat = () => new THREE.MeshLambertMaterial({ color: 0xa6acb8 });
+    crowdBody = new THREE.InstancedMesh(bodyGeo, crowdMat(), crowdN);
+    crowdHead = new THREE.InstancedMesh(headGeo, crowdMat(), crowdN);
     crowdBaseY = new Float32Array(crowdN); crowdPhase = new Float32Array(crowdN);
     const m = new THREE.Matrix4(), col = new THREE.Color();
     const palette = [teamA.primary, teamA.primary, teamB.primary, 0x2b2f3a, 0x3d4457, 0x5a3b2e, 0x8a8f9c, 0x1f2a44, 0x704a7a];
     const skins = [0xf1c9a5, 0xd9a06f, 0xb5764a, 0x8d5a34, 0x5c3a21];
+    const DIM = 0.82;                       // per-seat variation on top of the material's own dimming
+    const dim = (c) => { col.setHex(c); col.multiplyScalar(DIM); return col; };
     let seed = 99; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
     for (let i = 0; i < crowdN; i++) {
       const st = seats[i]; crowdBaseY[i] = st.y; crowdPhase[i] = rnd() * Math.PI * 2;
-      m.makeTranslation(st.x, st.y, st.z); crowdBody.setMatrixAt(i, m);
-      m.makeTranslation(st.x, st.y + 0.36, st.z); crowdHead.setMatrixAt(i, m);
-      col.setHex(palette[(rnd() * palette.length) | 0]); crowdBody.setColorAt(i, col);
-      col.setHex(skins[(rnd() * skins.length) | 0]); crowdHead.setColorAt(i, col);
+      // jitter every seat so the rows stop looking stamped out
+      const sc = 0.88 + rnd() * 0.26, jx = (rnd() - 0.5) * 0.16, jz = (rnd() - 0.5) * 0.12;
+      m.makeRotationY(rnd() * 0.5 - 0.25);
+      m.scale(new THREE.Vector3(sc, sc, sc));
+      m.setPosition(st.x + jx, st.y - 0.02, st.z + jz); crowdBody.setMatrixAt(i, m);
+      m.makeTranslation(st.x + jx, st.y + 0.33 * sc, st.z + jz); crowdHead.setMatrixAt(i, m);
+      crowdBody.setColorAt(i, dim(palette[(rnd() * palette.length) | 0]));
+      crowdHead.setColorAt(i, dim(skins[(rnd() * skins.length) | 0]));
     }
     crowdBody.instanceMatrix.setUsage(THREE.DynamicDrawUsage); crowdHead.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    if (crowdBody.instanceColor) crowdBody.instanceColor.needsUpdate = true;
+    if (crowdHead.instanceColor) crowdHead.instanceColor.needsUpdate = true;
     scene.add(crowdBody); scene.add(crowdHead);
   }
 
 function build(scene, teamA, teamB) {
 	              group = new THREE.Group(); scene.add(group);
 	              floorTex = makeFloorTexture(teamA);
-	              floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.65, metalness: 0.08, envMapIntensity: 0.3 });
+	              floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.28, metalness: 0.14, envMapIntensity: 0.55 });
 	              const floor = new THREE.Mesh(new THREE.PlaneGeometry(C.apronX * 2, C.apronZ * 2), floorMat);
 	              floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; group.add(floor);
 	              const outer = new THREE.Mesh(new THREE.PlaneGeometry(90, 70), new THREE.MeshLambertMaterial({ color: 0x0c0f16 })); outer.rotation.x = -Math.PI / 2; outer.position.y = -0.02; group.add(outer);
 	              for (const h of hoops) group.add(buildHoop(h));
 	              buildStands(group, teamA, teamB);
-	              const hemi = new THREE.HemisphereLight(0xe8f0ff, 0x2a2118, 0.7); group.add(hemi);
-	              dirLight = new THREE.DirectionalLight(0xfff5e6, 1.1); dirLight.position.set(8, 28, 14); dirLight.target.position.set(0, 0, 0);
+	              // Less flat fill, a stronger key: the floor should be the brightest thing in the building.
+	              const hemi = new THREE.HemisphereLight(0xcfe0ff, 0x181410, 0.58); group.add(hemi);
+	              dirLight = new THREE.DirectionalLight(0xfff5e6, 1.55); dirLight.position.set(8, 28, 14); dirLight.target.position.set(0, 0, 0);
 	              dirLight.shadow.mapSize.set(1024, 1024); dirLight.shadow.camera.left = -22; dirLight.shadow.camera.right = 22; dirLight.shadow.camera.top = 16; dirLight.shadow.camera.bottom = -16; dirLight.shadow.camera.near = 3; dirLight.shadow.camera.far = 80; dirLight.shadow.bias = -0.0008; dirLight.shadow.normalBias = 0.02; dirLight.shadow.radius = 3;
 	              dirLight.castShadow = CONFIG.render.shadows; group.add(dirLight); group.add(dirLight.target);
-	              const fill = new THREE.DirectionalLight(0x8fb0ff, 0.35); fill.position.set(-12, 16, -10); group.add(fill);
-	              const rimA = new THREE.DirectionalLight(0xff6a00, 0.4); rimA.position.set(-15, 8, 6); group.add(rimA);
+	              const fill = new THREE.DirectionalLight(0x8fb0ff, 0.28); fill.position.set(-12, 16, -10); group.add(fill);
+	              const rimA = new THREE.DirectionalLight(0xff6a00, 0.32); rimA.position.set(-15, 8, 6); group.add(rimA);
 	              const rimB = new THREE.DirectionalLight(0x35d0ff, 0.3); rimB.position.set(15, 8, -6); group.add(rimB);
 	              const stripGeo = new THREE.PlaneGeometry(26, 0.5); const stripMat = new THREE.MeshBasicMaterial({ color: 0xfff4d6 });
 	              for (const z of [-9, -3, 3, 9]) { const st = new THREE.Mesh(stripGeo, stripMat); st.position.set(0, 13, z); st.rotation.x = Math.PI / 2; group.add(st); }
@@ -1216,7 +1315,7 @@ function build(scene, teamA, teamB) {
       transparent: true, depthWrite: false,
       uniforms: { uScale: { value: window.innerHeight * 0.5 } },
       vertexShader: 'uniform float uScale; attribute float alpha; attribute float psize; attribute vec3 pcol; varying float vA; varying vec3 vC; void main() { vA = alpha; vC = pcol; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = psize * uScale / max(0.001, -mv.z); gl_Position = projectionMatrix * mv; }',
-      fragmentShader: 'varying float vA; varying vec3 vC; void main() { vec2 d = gl_PointCoord - vec2(0.5); float r = dot(d, d); if (r > 0.25) discard; gl_FragColor = vec4(vC, vA * (1.0 - r * 4.0)); }',
+      fragmentShader: 'varying float vA; varying vec3 vC; void main() { vec2 d = gl_PointCoord - vec2(0.5); float r = dot(d, d); if (r > 0.25) discard; gl_FragColor = vec4(pow(vC, vec3(0.4545)), vA * (1.0 - r * 4.0)); }',
     });
     pPoints = new THREE.Points(geo, mat); pPoints.frustumCulled = false; pPoints.renderOrder = 2; scene.add(pPoints);
   }
@@ -1296,7 +1395,7 @@ const PlayerSys = (() => {
       let num; do { num = 1 + ((RNG.next() * 49) | 0); } while (usedNums.has(num)); usedNums.add(num);
       const height = +(t.height + RNG.gauss() * 0.03).toFixed(2);
       const name = RNG.pick(FIRST_NAMES) + ' ' + RNG.pick(LAST_NAMES);
-      roster.push({ name, num, pos, height, ratings: r, skin: (RNG.next() * 5) | 0, hair: (RNG.next() * 5) | 0, star: i === starSlot });
+      roster.push({ name, num, pos, height, ratings: r, skin: (RNG.next() * 5) | 0, hair: (RNG.next() * HAIRS.length) | 0, star: i === starSlot });
     }
     return roster;
   }
@@ -1416,7 +1515,7 @@ const PlayerSys = (() => {
   const SF = 0.98;                     // one build-scale knob for the whole figure
   const POS_BODY = { PG: { h: 0.97, w: 0.90 }, SG: { h: 0.99, w: 0.94 }, SF: { h: 1.00, w: 0.99 }, PF: { h: 0.99, w: 1.07 }, C: { h: 0.96, w: 1.15 } };
   const SKINS = [0xf1c9a5, 0xd9a06f, 0xb5764a, 0x8d5a34, 0x5c3a21];
-  const HAIRS = [0x1a1210, 0x241a14, 0x120e0c, 0x2e2119, 0x0e0b0a];
+  const HAIRS = [0x1a1210, 0x241a14, 0x120e0c, 0x2e2119, 0x0e0b0a, 0x4a3324, 0x15100e];
   const GEO = {}; const teamMats = {};
   let bodyMat = null, shadowMat = null;
 
@@ -1427,15 +1526,18 @@ const PlayerSys = (() => {
       if (!pt.geo) continue;
       const g = pt.geo.index ? pt.geo.toNonIndexed() : pt.geo.clone();
       if (pt.matrix) g.applyMatrix4(pt.matrix);
-      total += g.attributes.position.count; prepped.push({ g, c: new THREE.Color(pt.color) });
+      total += g.attributes.position.count; prepped.push({ g, c: new THREE.Color(pt.color), ao: pt.ao });
     }
     const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3);
     let o = 0;
-    for (const { g, c } of prepped) {
-      const n = g.attributes.position.count;
-      pos.set(g.attributes.position.array, o * 3);
+    for (const { g, c, ao } of prepped) {
+      const n = g.attributes.position.count, pa = g.attributes.position.array;
+      pos.set(pa, o * 3);
       if (g.attributes.normal) nor.set(g.attributes.normal.array, o * 3);
-      for (let i = 0; i < n; i++) { const b = (o + i) * 3; col[b] = c.r; col[b + 1] = c.g; col[b + 2] = c.b; }
+      for (let i = 0; i < n; i++) {
+        const b = (o + i) * 3, k = ao ? ao(pa[i * 3], pa[i * 3 + 1], pa[i * 3 + 2]) : 1;
+        col[b] = c.r * k; col[b + 1] = c.g * k; col[b + 2] = c.b * k;
+      }
       o += n; g.dispose();
     }
     const out = new THREE.BufferGeometry();
@@ -1447,44 +1549,69 @@ const PlayerSys = (() => {
   const V2 = (x, y) => new THREE.Vector2(x * SF, y * SF);
   const at = (x, y, z) => new THREE.Matrix4().makeTranslation(x * SF, y * SF, (z || 0) * SF);
   function scaled(x, y, z, sx, sy, sz) { const m = new THREE.Matrix4().makeScale(sx, sy, sz == null ? sx : sz); return m.premultiply(at(x, y, z)); }
+  // tilt then spin then place - used for braids, locs and the kit's side panels
+  const posed = (x, y, z, rx, ry) => {
+    const m = new THREE.Matrix4().makeRotationX(rx || 0);
+    if (ry) m.premultiply(new THREE.Matrix4().makeRotationY(ry));
+    return m.premultiply(at(x, y, z));
+  };
+  // Contact shading. A crease is just a darker vertex colour, so the whole body
+  // still merges into one draw call: darkest at yDark, untouched at yLight.
+  const ao = (yDark, yLight, k) => {
+    const a = yDark * SF, b = yLight * SF;
+    return (x, y) => 1 - k * (1 - U.clamp((y - a) / (b - a), 0, 1));
+  };
 
   function initGeo() {
     // torso: waist -> chest -> shoulders -> neck opening
-    GEO.torso = new THREE.LatheGeometry([V2(0.150, 0.94), V2(0.178, 1.03), V2(0.200, 1.14), V2(0.212, 1.26), V2(0.206, 1.36), V2(0.172, 1.44), V2(0.098, 1.49)], 16);
-    GEO.shorts = new THREE.LatheGeometry([V2(0.150, 0.70), V2(0.196, 0.745), V2(0.214, 0.83), V2(0.206, 0.92), V2(0.168, 0.99)], 16);
+    GEO.torso = new THREE.LatheGeometry([V2(0.146, 0.92), V2(0.162, 0.97), V2(0.182, 1.04), V2(0.200, 1.12), V2(0.212, 1.21), V2(0.216, 1.29), V2(0.209, 1.37), V2(0.186, 1.43), V2(0.138, 1.47), V2(0.096, 1.495)], 20);
+    GEO.shorts = new THREE.LatheGeometry([V2(0.156, 0.695), V2(0.190, 0.712), V2(0.205, 0.756), V2(0.217, 0.83), V2(0.209, 0.92), V2(0.170, 0.985)], 18);
+    // kit trim. All of it merges into the body, so a full uniform is still one draw call.
+    GEO.collar = new THREE.TorusGeometry(0.101 * SF, 0.013 * SF, 5, 18); GEO.collar.rotateX(Math.PI / 2); GEO.collar.translate(0, 1.487 * SF, 0);
+    GEO.waistband = new THREE.CylinderGeometry(0.173 * SF, 0.212 * SF, 0.062 * SF, 18, 1, true); GEO.waistband.translate(0, 0.954 * SF, 0);
+    GEO.jerseyPanel = new THREE.LatheGeometry([V2(0.181, 1.02), V2(0.204, 1.12), V2(0.216, 1.21), V2(0.220, 1.29), V2(0.2156, 1.34)], 4, -0.13, 0.26);
+    GEO.shortStripe = new THREE.LatheGeometry([V2(0.200, 0.73), V2(0.209, 0.756), V2(0.221, 0.83), V2(0.2148, 0.90), V2(0.201, 0.94)], 4, -0.155, 0.31);
     // the gusset closes the gap between the short legs
     GEO.gusset = new THREE.SphereGeometry(0.135 * SF, 10, 8); GEO.gusset.scale(1, 0.75, 0.9);
     GEO.neck = new THREE.CylinderGeometry(0.058 * SF, 0.068 * SF, 0.12 * SF, 10); GEO.neck.translate(0, 1.52 * SF, 0);
-    GEO.deltoid = new THREE.SphereGeometry(0.072 * SF, 10, 8);
+    GEO.deltoid = new THREE.SphereGeometry(0.072 * SF, 16, 12);
     GEO.head = new THREE.SphereGeometry(0.112 * SF, 14, 11);
     GEO.jaw = new THREE.SphereGeometry(0.092 * SF, 10, 7, 0, Math.PI * 2, Math.PI * 0.42, Math.PI * 0.58);
     GEO.ear = new THREE.SphereGeometry(0.030 * SF, 6, 5);
     GEO.nose = new THREE.ConeGeometry(0.017 * SF, 0.042 * SF, 6); GEO.nose.rotateX(Math.PI / 2);
     GEO.eye = new THREE.SphereGeometry(0.014 * SF, 6, 5);
     GEO.brow = new THREE.BoxGeometry(0.036 * SF, 0.010 * SF, 0.012 * SF);
+    GEO.mouth = new THREE.BoxGeometry(0.034 * SF, 0.007 * SF, 0.012 * SF);
     // hair variants
     // phi = PI/2 faces +Z, so sweeping around from there leaves an opening over the face
-    GEO.hairFade = new THREE.SphereGeometry(0.120 * SF, 14, 9, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    GEO.hairFade = new THREE.SphereGeometry(0.124 * SF, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
     GEO.hairAfro = new THREE.SphereGeometry(0.150 * SF, 16, 11, Math.PI / 2 + 0.88, Math.PI * 2 - 1.76, 0, Math.PI * 0.80);
-    GEO.hairTop = new THREE.SphereGeometry(0.123 * SF, 14, 9, 0, Math.PI * 2, 0, Math.PI * 0.42);
+    GEO.hairTop = new THREE.SphereGeometry(0.128 * SF, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.42);
     GEO.band = new THREE.TorusGeometry(0.114 * SF, 0.019 * SF, 6, 18); GEO.band.rotateX(Math.PI / 2);
+    GEO.braid = new THREE.CylinderGeometry(0.013 * SF, 0.009 * SF, 0.24 * SF, 5); GEO.braid.rotateX(Math.PI / 2);
+    GEO.loc = new THREE.CylinderGeometry(0.014 * SF, 0.011 * SF, 0.13 * SF, 5); GEO.loc.translate(0, -0.055 * SF, 0);
     // arm: upper (shoulder -> elbow), fore (elbow -> hand). Both hang down -Y from their pivot.
-    GEO.upperArm = new THREE.CylinderGeometry(0.052 * SF, 0.044 * SF, 0.29 * SF, 8); GEO.upperArm.translate(0, -0.145 * SF, 0);
-    GEO.sleeve = new THREE.CylinderGeometry(0.066 * SF, 0.058 * SF, 0.13 * SF, 8); GEO.sleeve.translate(0, -0.055 * SF, 0);
-    GEO.elbow = new THREE.SphereGeometry(0.044 * SF, 8, 6);
-    GEO.foreArm = new THREE.CylinderGeometry(0.044 * SF, 0.036 * SF, 0.27 * SF, 8); GEO.foreArm.translate(0, -0.135 * SF, 0);
-    GEO.wristband = new THREE.TorusGeometry(0.040 * SF, 0.012 * SF, 5, 10); GEO.wristband.rotateX(Math.PI / 2);
-    GEO.hand = new THREE.SphereGeometry(0.048 * SF, 8, 6);
+    GEO.upperArm = new THREE.CylinderGeometry(0.052 * SF, 0.044 * SF, 0.29 * SF, 10); GEO.upperArm.translate(0, -0.145 * SF, 0);
+    GEO.sleeve = new THREE.CylinderGeometry(0.066 * SF, 0.058 * SF, 0.13 * SF, 10); GEO.sleeve.translate(0, -0.055 * SF, 0);
+    GEO.armTrim = new THREE.TorusGeometry(0.0595 * SF, 0.0062 * SF, 5, 14); GEO.armTrim.rotateX(Math.PI / 2); GEO.armTrim.translate(0, -0.1185 * SF, 0);
+    GEO.elbow = new THREE.SphereGeometry(0.044 * SF, 9, 7);
+    GEO.foreArm = new THREE.CylinderGeometry(0.044 * SF, 0.036 * SF, 0.27 * SF, 10); GEO.foreArm.translate(0, -0.135 * SF, 0);
+    GEO.wristband = new THREE.TorusGeometry(0.040 * SF, 0.012 * SF, 5, 12); GEO.wristband.rotateX(Math.PI / 2);
+    GEO.hand = new THREE.SphereGeometry(0.048 * SF, 9, 7);
     // leg: thigh (hip -> knee), shin (knee -> foot)
-    GEO.thigh = new THREE.CylinderGeometry(0.088 * SF, 0.072 * SF, 0.40 * SF, 8); GEO.thigh.translate(0, -0.20 * SF, 0);
-    GEO.knee = new THREE.SphereGeometry(0.068 * SF, 8, 6);
-    GEO.shin = new THREE.CylinderGeometry(0.066 * SF, 0.050 * SF, 0.36 * SF, 8); GEO.shin.translate(0, -0.18 * SF, 0);
-    GEO.sock = new THREE.CylinderGeometry(0.058 * SF, 0.052 * SF, 0.09 * SF, 8); GEO.sock.translate(0, -0.325 * SF, 0);
-    GEO.shoe = new THREE.BoxGeometry(0.128 * SF, 0.078 * SF, 0.255 * SF); GEO.shoe.translate(0, -0.405 * SF, 0.042 * SF);
-    GEO.sole = new THREE.BoxGeometry(0.134 * SF, 0.022 * SF, 0.262 * SF); GEO.sole.translate(0, -0.437 * SF, 0.044 * SF);
+    GEO.thigh = new THREE.CylinderGeometry(0.088 * SF, 0.072 * SF, 0.40 * SF, 10); GEO.thigh.translate(0, -0.20 * SF, 0);
+    GEO.knee = new THREE.SphereGeometry(0.068 * SF, 9, 7);
+    GEO.shin = new THREE.CylinderGeometry(0.066 * SF, 0.050 * SF, 0.36 * SF, 10); GEO.shin.translate(0, -0.18 * SF, 0);
+    GEO.sock = new THREE.CylinderGeometry(0.058 * SF, 0.052 * SF, 0.09 * SF, 10); GEO.sock.translate(0, -0.325 * SF, 0);
+    // a shoe, not a brick: heel counter, midfoot, rounded toe box, foam midsole, rubber outsole
+    GEO.shoeHeel = new THREE.BoxGeometry(0.120 * SF, 0.088 * SF, 0.142 * SF); GEO.shoeHeel.translate(0, -0.350 * SF, -0.028 * SF);
+    GEO.shoeMid = new THREE.BoxGeometry(0.116 * SF, 0.062 * SF, 0.124 * SF); GEO.shoeMid.translate(0, -0.363 * SF, 0.032 * SF);
+    GEO.shoeToe = new THREE.SphereGeometry(0.070 * SF, 9, 7); GEO.shoeToe.scale(0.84, 0.60, 1.28); GEO.shoeToe.translate(0, -0.352 * SF, 0.086 * SF);
+    GEO.midsole = new THREE.BoxGeometry(0.132 * SF, 0.040 * SF, 0.268 * SF); GEO.midsole.translate(0, -0.414 * SF, 0.040 * SF);
+    GEO.outsole = new THREE.BoxGeometry(0.136 * SF, 0.015 * SF, 0.274 * SF); GEO.outsole.translate(0, -0.4415 * SF, 0.040 * SF);
     // jersey number ring: thetaStart puts u=0.25 on +Z (chest) and u=0.75 on -Z (back)
-    GEO.numRing = new THREE.CylinderGeometry(0.218 * SF, 0.212 * SF, 0.20 * SF, 24, 1, true, -Math.PI / 2, Math.PI * 2);
-    GEO.numRing.translate(0, 1.26 * SF, 0);
+    // 20 segments and a quarter-turn start means its vertices land exactly on the torso's
+    GEO.numRing = new THREE.LatheGeometry([V2(0.2085, 1.15), V2(0.2170, 1.22), V2(0.2205, 1.29), V2(0.2144, 1.36)], 20, -Math.PI / 2, Math.PI * 2);
     GEO.shadow = new THREE.CircleGeometry(0.46 * SF, 16); GEO.shadow.rotateX(-Math.PI / 2);
     GEO.ring = new THREE.RingGeometry(0.50 * SF, 0.62 * SF, 24); GEO.ring.rotateX(-Math.PI / 2);
     bodyMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.74, metalness: 0.03, envMapIntensity: 0.35 });
@@ -1497,11 +1624,11 @@ const PlayerSys = (() => {
   }
   // One texture carrying the number twice, so it wraps the chest and the back of the ring.
   function numberTexture(num, team) {
-    const W = 512, H = 256; const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const W = 1024, H = 256; const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
     g.clearRect(0, 0, W, H);
     const ink = team.dark ? '#f6f3ec' : '#15130a', edge = team.dark ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)';
-    g.font = '900 150px Inter, Helvetica, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '900 156px Inter, Helvetica, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
     for (const cx of [W * 0.25, W * 0.75]) {
       g.lineWidth = 10; g.strokeStyle = edge; g.strokeText(String(num), cx, H * 0.5);
       g.fillStyle = ink; g.fillText(String(num), cx, H * 0.5);
@@ -1516,16 +1643,24 @@ const PlayerSys = (() => {
     const skin = SKINS[p.skin], hairCol = HAIRS[(p.hair == null ? p.skin : p.hair) % HAIRS.length];
     const jersey = team.primary, trim = team.secondary;
     const pb = POS_BODY[p.pos] || POS_BODY.PG;
-    const style = (p.hair == null ? p.skin : p.hair) % 5;
+    const style = (p.hair == null ? p.skin : p.hair) % HAIRS.length;
     const g = new THREE.Group();
 
     // --- body: one merged, vertex-coloured mesh ---
     const parts = [
-      { geo: GEO.torso, color: jersey }, { geo: GEO.shorts, color: trim }, { geo: GEO.gusset, color: trim, matrix: at(0, 0.80) },
-      { geo: GEO.neck, color: skin },
-      { geo: GEO.deltoid, color: jersey, matrix: at(-0.196, 1.40) }, { geo: GEO.deltoid, color: jersey, matrix: at(0.196, 1.40) },
+      { geo: GEO.torso, color: jersey, ao: ao(0.92, 1.10, 0.28) },
+      { geo: GEO.shorts, color: trim, ao: ao(0.695, 0.84, 0.24) },
+      { geo: GEO.gusset, color: trim, matrix: at(0, 0.80), ao: ao(0.72, 0.85, 0.34) },
+      { geo: GEO.collar, color: trim }, { geo: GEO.waistband, color: jersey },
+      { geo: GEO.jerseyPanel, color: trim, matrix: posed(0, 0, 0, 0, Math.PI / 2) },
+      { geo: GEO.jerseyPanel, color: trim, matrix: posed(0, 0, 0, 0, -Math.PI / 2) },
+      { geo: GEO.shortStripe, color: jersey, matrix: posed(0, 0, 0, 0, Math.PI / 2) },
+      { geo: GEO.shortStripe, color: jersey, matrix: posed(0, 0, 0, 0, -Math.PI / 2) },
+      { geo: GEO.neck, color: skin, ao: ao(1.58, 1.47, 0.34) },
+      { geo: GEO.deltoid, color: jersey, matrix: scaled(-0.204, 1.392, 0, 1.14, 1.06, 1.0) },
+      { geo: GEO.deltoid, color: jersey, matrix: scaled(0.204, 1.392, 0, 1.14, 1.06, 1.0) },
       { geo: GEO.head, color: skin, matrix: scaled(0, 1.655, 0, 1, 1.1, 0.98) },
-      { geo: GEO.jaw, color: skin, matrix: scaled(0, 1.655, 0.008, 0.94, 1.0, 1.0) },
+      { geo: GEO.jaw, color: skin, matrix: scaled(0, 1.655, 0.008, 0.94, 1.0, 1.0), ao: ao(1.585, 1.675, 0.26) },
       { geo: GEO.ear, color: skin, matrix: scaled(-0.100, 1.652, 0, 0.7, 1.1, 0.55) },
       { geo: GEO.ear, color: skin, matrix: scaled(0.100, 1.652, 0, 0.7, 1.1, 0.55) },
       { geo: GEO.nose, color: skin, matrix: at(0, 1.645, 0.100) },
@@ -1533,11 +1668,22 @@ const PlayerSys = (() => {
       { geo: GEO.eye, color: 0x241b14, matrix: scaled(0.044, 1.666, 0.097, 1.05, 0.8, 0.55) },
       { geo: GEO.brow, color: hairCol, matrix: at(-0.044, 1.694, 0.099) },
       { geo: GEO.brow, color: hairCol, matrix: at(0.044, 1.694, 0.099) },
+      { geo: GEO.mouth, color: skin, ao: () => 0.52, matrix: at(0, 1.606, 0.094) },
     ];
     if (style === 0) parts.push({ geo: GEO.hairFade, color: hairCol, matrix: scaled(0, 1.668, -0.024, 1.0, 0.95, 1.0) });
     else if (style === 1) parts.push({ geo: GEO.hairAfro, color: hairCol, matrix: scaled(0, 1.688, -0.012, 1.0, 0.95, 1.0) });
     else if (style === 2) { parts.push({ geo: GEO.hairFade, color: hairCol, matrix: scaled(0, 1.672, -0.024, 1.0, 0.90, 1.0) }); parts.push({ geo: GEO.band, color: trim, matrix: at(0, 1.712) }); }
-    else if (style === 3) parts.push({ geo: GEO.hairTop, color: hairCol, matrix: scaled(0, 1.676, -0.018, 1.02, 0.80, 1.02) });
+    else if (style === 3) parts.push({ geo: GEO.hairTop, color: hairCol, matrix: scaled(0, 1.674, -0.018, 1.02, 0.86, 1.02) });
+    else if (style === 5) {
+      parts.push({ geo: GEO.hairFade, color: hairCol, matrix: scaled(0, 1.666, -0.024, 0.97, 0.86, 0.97) });
+      for (let k = -2; k <= 2; k++) parts.push({ geo: GEO.braid, color: hairCol, matrix: posed(k * 0.046, 1.722 - Math.abs(k) * 0.019, -0.022, 0.20, k * -0.26) });
+    } else if (style === 6) {
+      parts.push({ geo: GEO.hairTop, color: hairCol, matrix: scaled(0, 1.672, -0.020, 1.03, 0.85, 1.03) });
+      for (let k = 0; k < 8; k++) {
+        const a = 0.72 + k * ((Math.PI * 2 - 1.44) / 7);
+        parts.push({ geo: GEO.loc, color: hairCol, matrix: posed(Math.sin(a) * 0.104, 1.700, Math.cos(a) * 0.104, -0.35, a) });
+      }
+    }
     // style 4 is bald: head only
     const bodyGeo = mergeParts(parts);
     const body = new THREE.Mesh(bodyGeo, bodyMat); g.add(body);
@@ -1547,10 +1693,14 @@ const PlayerSys = (() => {
     const numMesh = new THREE.Mesh(GEO.numRing, numMat); g.add(numMesh);
 
     // --- articulated limbs ---
-    const armGeo = mergeParts([{ geo: GEO.upperArm, color: skin }, { geo: GEO.sleeve, color: jersey }, { geo: GEO.elbow, color: skin, matrix: at(0, -0.29) }]);
-    const foreGeo = mergeParts([{ geo: GEO.foreArm, color: skin }, { geo: GEO.wristband, color: trim, matrix: at(0, -0.245) }, { geo: GEO.hand, color: skin, matrix: scaled(0, -0.295, 0.01, 1, 0.85, 0.8) }]);
-    const thighGeo = mergeParts([{ geo: GEO.thigh, color: skin }, { geo: GEO.knee, color: skin, matrix: at(0, -0.40) }]);
-    const shinGeo = mergeParts([{ geo: GEO.shin, color: skin }, { geo: GEO.sock, color: 0xf2f2ee }, { geo: GEO.shoe, color: jersey }, { geo: GEO.sole, color: 0x1b1d24 }]);
+    const armGeo = mergeParts([{ geo: GEO.upperArm, color: skin }, { geo: GEO.sleeve, color: jersey }, { geo: GEO.armTrim, color: trim },
+      { geo: GEO.elbow, color: skin, matrix: at(0, -0.29) }]);
+    const foreGeo = mergeParts([{ geo: GEO.foreArm, color: skin, ao: ao(0, -0.09, 0.22) }, { geo: GEO.wristband, color: trim, matrix: at(0, -0.245) },
+      { geo: GEO.hand, color: skin, matrix: scaled(0, -0.295, 0.01, 1, 0.85, 0.8) }]);
+    const thighGeo = mergeParts([{ geo: GEO.thigh, color: skin, ao: ao(-0.145, -0.27, 0.30) }, { geo: GEO.knee, color: skin, matrix: at(0, -0.40) }]);
+    const shinGeo = mergeParts([{ geo: GEO.shin, color: skin, ao: ao(0, -0.09, 0.18) }, { geo: GEO.sock, color: 0xf2f2ee },
+      { geo: GEO.shoeHeel, color: jersey }, { geo: GEO.shoeMid, color: jersey }, { geo: GEO.shoeToe, color: jersey },
+      { geo: GEO.midsole, color: 0xf4f2ec }, { geo: GEO.outsole, color: 0x1b1d24 }]);
     const mkArm = (side) => {
       const a = new THREE.Group(); a.position.set(side * 0.215 * SF, 1.415 * SF, 0);
       a.add(new THREE.Mesh(armGeo, bodyMat));
@@ -1598,7 +1748,7 @@ const PlayerSys = (() => {
     liveMeshes.length = 0;
     for (const p of players) p.mesh = null;
   }
-  return { ST, STATE_NAMES, SKINS, players, genRoster, overall, create, clear, setState, teleport, controlFactor, updateMovement, updateVertical, jump, pushHistory, delayedPos, faceToward, faceVelocity, costStamina, reachHeight, speedMul, fatigueMul, buildMesh, disposeMesh, destroyMeshes, matsFor };
+  return { ST, STATE_NAMES, SKINS, HAIRS, players, genRoster, overall, create, clear, setState, teleport, controlFactor, updateMovement, updateVertical, jump, pushHistory, delayedPos, faceToward, faceVelocity, costStamina, reachHeight, speedMul, fatigueMul, buildMesh, disposeMesh, destroyMeshes, matsFor };
 })();
 // ==== END PLAYER ====
 
@@ -2487,9 +2637,9 @@ const AI = (() => {
     for (const m of mates) {
       if (m === p || m.state === ST.STUMBLE || m.state === ST.FALL || m.airborne) continue;
       const dd = U.dist(p.x, p.z, m.x, m.z); if (dd > 13 || dd < 1.8) continue;
-      if (Passing.laneBlocked(p, m)) continue;
       if (!Court.inFrontcourt(m.x, h) && Court.inFrontcourt(p.x, h)) continue;
       let ev = shotEV(m, m.x, m.z, h, Passing.nearestOppDist(m));
+      if (Passing.laneBlocked(p, m)) ev *= AC.blockedLane;
       const mHoop = U.dist(m.x, m.z, h.x, h.z);
       if (m.ai.role === 'cut' && mHoop < 5) ev = Math.max(ev, 1.55);        // a cutter with a step is a layup
       if (m.ai.role === 'screen' && mHoop < 4.5) ev = Math.max(ev, 1.35);   // roll man
@@ -2656,7 +2806,18 @@ const AI = (() => {
     if (a.role === 'cut') { if (g.time - a.roleT < 1.5) { moveTo(p, h.x - s * 1.2, h.z + (p.z > 0 ? 0.8 : -0.8), true); return; } a.role = 'spot'; a.cutT = g.time + 5 + RNG.next() * 5; }
     // relocate: if the handler drives toward my spot, slide to the far side
     if (U.dist(handler.x, handler.z, spot.x, spot.z) < 2.2) { const alt = spots.find((sp) => U.dist(handler.x, handler.z, sp.x, sp.z) > 4); if (alt) spot = alt; }
-    moveTo(p, spot.x, spot.z, U.dist(p.x, p.z, spot.x, spot.z) > 4);
+    let tx = spot.x, tz = spot.z;
+    // Drift off the man. Slide along the tangent at my spot, away from whoever is guarding me, so there is
+    // an actual passing target instead of five covered bodies standing on their marks.
+    if (def && defDist < AC.driftUnder) {
+      const ax = tx - h.x, az = tz - h.z, al = Math.hypot(ax, az) || 1;
+      const lx = -az / al, lz = ax / al;
+      const side = ((p.x - def.x) * lx + (p.z - def.z) * lz) >= 0 ? 1 : -1;
+      const push = AC.driftDist * (1 - defDist / AC.driftUnder);
+      tx += lx * side * push; tz += lz * side * push;
+      if (Math.abs(tz) > Court.C.width / 2 - 1.4) { tz = Math.sign(tz) * (Court.C.width / 2 - 1.4); tx -= ax / al * push * 0.5; }
+    }
+    moveTo(p, tx, tz, U.dist(p.x, p.z, tx, tz) > 4);
   }
 
   // ---------------- defense ----------------
@@ -2708,14 +2869,16 @@ const AI = (() => {
     if (incoming) {
       // beat the pass to the catch point, a stride toward the basket side
       off = 1.0; dirX = ax * 0.55 + bx * 0.45; dirZ = az * 0.55 + bz * 0.45;
-    } else if (mToBall < 6.4) {
-      // one pass away: sit in the passing lane, tight to the man
-      off = 0.95; dirX = bx * 0.72 + ax * 0.28; dirZ = bz * 0.72 + az * 0.28;
+    } else if (mToBall < AC.denyRange) {
+      // One pass away: sit in the passing lane. Denying everyone at arm's length left nobody on the floor
+      // to pass to, so this scales with how good a defender actually is.
+      off = AC.denyDist - AC.denySkill * (p.ratings.perimD / 99);
+      dirX = bx * 0.72 + ax * 0.28; dirZ = bz * 0.72 + az * 0.28;
     } else {
       // two passes away: help position on the man-basket line, sagging with distance but still recoverable.
       // Rim protectors sag deeper, which is what puts a big in the paint instead of out on the perimeter.
       const protect = U.clamp(((p.ratings.block + p.ratings.interiorD) / 2 - 58) / 38, 0, 1);
-      off = U.clamp(1.25 + (mToBall - 6.4) * 0.16 + protect * 0.85, 1.25, 3.1);
+      off = U.clamp(1.45 + (mToBall - AC.denyRange) * 0.18 + protect * 0.85, 1.45, 3.4);
       dirX = ax * (0.66 + protect * 0.14) + bx * (0.34 - protect * 0.14);
       dirZ = az * (0.66 + protect * 0.14) + bz * (0.34 - protect * 0.14);
     }
@@ -2890,7 +3053,10 @@ const Game = (() => {
   // Spacing spots relative to a hoop: [top, right wing, left wing, right corner, left corner]
   const _spots = [];
   for (let i = 0; i < 6; i++) _spots.push({ x: 0, z: 0, kind: '' });
-  const SPOT_REL = [[7.6, 0, 'top'], [6.2, 5.2, 'wing'], [6.2, -5.2, 'wing'], [1.4, 6.3, 'corner'], [4.5, -2.9, 'elbow'], [2.5, 3.3, 'short']];
+  // Distances are from the basket, so anything under the 7.24m arc is a long two. The old corner spot sat
+  // at 6.45m and just inside the corner line, which put a shooter on the worst shot in basketball every
+  // possession. These are five real three-point spots plus one interior.
+  const SPOT_REL = [[7.9, 0, 'top'], [6.4, 5.6, 'wing'], [6.4, -5.6, 'wing'], [1.3, 7.05, 'corner'], [1.3, -7.05, 'corner'], [3.0, 2.6, 'short']];
   function formationSpots(h, n) {
     for (let i = 0; i < SPOT_REL.length; i++) { _spots[i].x = h.x - h.s * SPOT_REL[i][0]; _spots[i].z = SPOT_REL[i][1]; _spots[i].kind = SPOT_REL[i][2]; }
     _spots.length = SPOT_REL.length; return _spots;
@@ -3860,9 +4026,9 @@ const Park = (() => {
       b.position.set(bx, 0.45, bz); group.add(b);
       for (const o of [-1.3, 1.3]) { const lgm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.45, 0.45), benchMat); lgm.position.set(bx + o, 0.22, bz); group.add(lgm); }
     }
-    group.add(new THREE.HemisphereLight(0x9fc0ff, 0x2d3326, 0.9));
-    const sun = new THREE.DirectionalLight(0xffd9a8, 0.8); sun.position.set(28, 26, 16); group.add(sun);
-    const back = new THREE.DirectionalLight(0x6e8cff, 0.32); back.position.set(-20, 14, -18); group.add(back);
+    group.add(new THREE.HemisphereLight(0x9fc0ff, 0x2d3326, 1.45));
+    const sun = new THREE.DirectionalLight(0xffd9a8, 1.6); sun.position.set(28, 26, 16); group.add(sun);
+    const back = new THREE.DirectionalLight(0x6e8cff, 0.5); back.position.set(-20, 14, -18); group.add(back);
     built = true;
   }
   function drawSign(ct) {
@@ -4345,7 +4511,7 @@ function init(container) {
     renderer.toneMappingExposure = CONFIG.render.exposure || 1.1;
     renderer.outputEncoding = THREE.sRGBEncoding; renderer.shadowMap.enabled = CONFIG.render.shadows; renderer.shadowMap.type = THREE.PCFShadowMap;
     container.appendChild(renderer.domElement);
-    scene = new THREE.Scene(); scene.background = new THREE.Color(0x080a10); scene.fog = new THREE.FogExp2(0x080a10, CONFIG.render.fogDensity);
+    scene = new THREE.Scene(); scene.background = new THREE.Color(0x080a10).convertLinearToSRGB(); scene.fog = new THREE.FogExp2(0x080a10, CONFIG.render.fogDensity);
     const vig = document.createElement('div'); vig.id = 'vignette';
     vig.style.opacity = String(U.clamp(CONFIG.render.vignette, 0, 1));
     container.appendChild(vig);
@@ -4533,7 +4699,8 @@ function init(container) {
   function setSky(colour, density) {
     if (!scene) return;
     const c = colour == null ? SKY0 : colour;
-    scene.background.setHex(c); scene.fog.color.setHex(c);
+    scene.background.setHex(c).convertLinearToSRGB();   // the background is the raw clear colour
+    scene.fog.color.setHex(c);                          // ...but fog is mixed in linear
     scene.fog.density = colour == null ? CONFIG.render.fogDensity : density;
   }
   // A park match still simulates at the engine origin; this parks the drawing of it on the right court.
@@ -4765,7 +4932,7 @@ const UI = (() => {
   // Three states share one pane: building a player, picking who signs you, and the season hub. Every
   // control writes straight through to Career, which saves on every change.
   let crBuild = null, crOffers = null;
-  const HAIRS_UI = ['Fade', 'Afro', 'Headband', 'Short', 'Bald'];
+  const HAIRS_UI = ['Fade', 'Afro', 'Headband', 'Short', 'Bald', 'Braids', 'Locs'];
   function openCareer() { showMenu(); show('menuCareer'); }
   function renderCareer() {
     const cont = el.careerBody;
@@ -5413,7 +5580,7 @@ const Net = (() => {
     return { name: cleanName(def.name || name), num: U.clamp(parseInt(def.num, 10) || 0, 0, 99),
       pos: POSITIONS.indexOf(def.pos) >= 0 ? def.pos : 'SG',
       height: U.clamp(parseFloat(def.height) || 1.95, 1.6, 2.3),
-      ratings: r, skin: U.clamp(parseInt(def.skin, 10) || 0, 0, 4), hair: U.clamp(parseInt(def.hair, 10) || 0, 0, 4), star: false };
+      ratings: r, skin: U.clamp(parseInt(def.skin, 10) || 0, 0, 4), hair: U.clamp(parseInt(def.hair, 10) || 0, 0, PlayerSys.HAIRS.length - 1), star: false };
   }
   function hostPushPads() { broadcast(JSON.stringify({ t: 'park', d: { t: 'pads', list: Park.padSnapshot() } })); }
   function hostPushRoster() {
@@ -5808,6 +5975,9 @@ function startGame(mode, a, b, opts) {
       inPark = true; parkAcc = 0; paused = false;
       Game.stop();
       Render.setMatchFrame(null);
+      // With no match frame the players hang off the scene, not off Court.group, so hiding
+      // the arena on its own leaves ten of them standing around the park.
+      PlayerSys.destroyMeshes();
       if (Court.group) Court.group.visible = false;
       Park.enter(Render.scene);
       if (Net.active) Net.parkJoin();

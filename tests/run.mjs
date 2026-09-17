@@ -336,6 +336,28 @@ await test('the park is player only and will not start a run alone', async () =>
   await page.close(); open.delete(page);
 });
 
+await test('walking out of a game into the park leaves its players behind', async () => {
+  const page = await fresh({ headless: false });
+  await page.evaluate(() => {
+    Career.wipe();
+    const b = Career.blankBuild('slasher', 'SF'); b.name = 'Lone Walker';
+    Career.begin(b, 0);
+    Main.startGame('5v5', 0, 1);
+  });
+  await page.waitForTimeout(600);
+  const during = await page.evaluate(() => PlayerSys.players.filter((p) => p.mesh).length);
+  await page.evaluate(() => { Main.quit(); Main.enterPark(); });
+  await page.waitForTimeout(1500);
+  const after = await page.evaluate(() => ({
+    meshes: PlayerSys.players.filter((p) => p.mesh).length,
+    goers: Park.goers.length,
+  }));
+  check.atLeast(during, 10, 'a live game should have built its players');
+  check.equal(after.meshes, 0, 'arena players still drawn in the park');
+  check.equal(after.goers, 1, 'nobody in the park but you');
+  await page.close(); open.delete(page);
+});
+
 // ---------------------------------------------------------------- performance
 await test('holds its frame budget', async () => {
   const page = await fresh({ headless: false });

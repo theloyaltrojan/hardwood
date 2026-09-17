@@ -2,6 +2,45 @@
 
 All notable changes to Hardwood Legends. Dates are the day the work landed.
 
+## [1.1.0] — 2026-09-16
+
+### Added
+- **Tutorial** — a seven-step workout in an empty gym covering moving, finishing, the shot meter, greening
+  a release, dribble moves and finishing on the move. Nothing in it can be failed. Pays 600 coins.
+- **Your created player suits up in every mode**, not just MyCareer and MyPark, taking whichever roster
+  slot the mode actually fields nearest their position. A setting picks whether you control your own player
+  or whoever has the ball.
+
+### Changed
+- **AI shot creation.** A covered passing lane used to veto a pass outright, so the handler usually found
+  nobody and forced a smothered shot; it is now a risk the value model prices in. Off-ball players slide
+  along the arc away from their man instead of standing on a mark, and off-ball denial scales with the
+  defender's rating rather than pinning everyone at arm's length. Field goal percentage across fifteen
+  seeded runs moves from 33.5 to about 40, with a fifth more passing.
+- **Spacing spots are real three-point spots.** The old "corner" spot sat 6.45m from the basket and inside
+  the corner line — a long two, the worst shot in basketball, taken every possession.
+- **Colour is handled properly.** Three r128 predates colour management, so every hex literal in the game
+  was being read as a linear value and then gamma-encoded on the way out — which is why everything looked
+  like a pastel toy. Authored colours are now converted to linear on the way in. Kits are red and gold
+  instead of pink and cream, skin tones separate, hair is hair. The arena, the park and the particle
+  shader were rebalanced around the change.
+- **The arena looks like an arena.** A dim bowl against a lit floor rather than the reverse, light pools
+  baked into the floor texture, an LED ribbon with a dot grid around the front row, a hanging scoreboard,
+  and a crowd of tapered bodies with per-seat jitter instead of rows of identical bright cubes.
+- **The players look like players.** A real kit — collar and sleeve trim, a waistband, side panels down
+  the jersey and the shorts — all merged into the same single draw call as the body. Shoes with a heel
+  counter, a rounded toe box and a foam midsole instead of two stacked boxes. Contact shading baked into
+  the vertex colours under the jaw, the shorts hem and the knee. Rounder limbs, and two more hairstyles
+  (braids and locs).
+
+### Fixed
+- The hanging scoreboard was sitting at chest height on halfway: `Group.add()` returns the group, not the
+  child, so placing its cap moved the whole board.
+- Jersey numbers wrapped a third of the way around the torso and read as two loose digits.
+- The head poked through the top of its own hair on two of the styles.
+- Leaving a game for MyPark left all ten arena players standing in the park. With no match frame they hang
+  off the scene rather than off the court group, so hiding the arena did not hide them.
+
 ## [1.0.0] — 2026-09-16
 
 The first version with everything wired together: a career, a park, a store, and a test suite that
