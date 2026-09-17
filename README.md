@@ -2,6 +2,9 @@
 
 **Play it:** https://theloyaltrojan.github.io/hardwood/
 
+[![CI](https://github.com/theloyaltrojan/hardwood/actions/workflows/ci.yml/badge.svg)](https://github.com/theloyaltrojan/hardwood/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Arcade-sim basketball in the style of modern console hoops games, running entirely from **one file**: `index.html`.
 No build step. Open the file in a browser and play.
 
@@ -96,7 +99,44 @@ Players on a team with one human keep auto-switch (control follows the ball); te
 There is also a **Direct connect** fallback for two players that needs no signaling server at all: exchange the offer and answer codes by hand.
 
 ## Dev
-`node .claude/serve.js` serves the folder on http://127.0.0.1:8765 (only needed for the in-app preview; the file works from `file://` too).
+The game has no build step and no dependencies. Open `index.html` and it runs.
+
+```
+node .claude/serve.js     # serve the folder on http://127.0.0.1:8765
+```
+
+### Tests
+The game stays dependency-free; the test suite needs one headless browser.
+
+```
+npm install
+npx playwright install chromium    # or skip it, the runner falls back to installed Chrome
+npm test
+```
+
+`tests/run.mjs` is a regression suite. Every case in it is either a bug that actually shipped and had to
+be found by measurement, or an invariant whose breakage was expensive:
+
+- the game boots and draws a frame, and says plainly when it cannot
+- every mode simulates clean
+- only the recorded ball holder believes they have the ball
+- nobody shoots from the far end of the court
+- how open you are moves the odds, monotonically and steeply up close
+- shooting stays in a believable band
+- no two clubs share a court in similar colours
+- a career records a game, rolls through playoffs into the next season, and survives a reload
+- coins are earned, spent and remembered, and only the player you control earns
+- the park is player only and will not start a run alone
+- it holds its frame budget
+
+`node tests/parse.mjs` is the quick one: it pulls the inline script out of the HTML and checks it parses.
+CI runs both on every push.
+
+### Layout
+One file, `index.html`, with the script split into modules delimited by `// ==== BEGIN <NAME> ====`
+markers in dependency order: CONFIG, UTIL, INPUT, AUDIO, DATA, COURT, PLAYER, CAREER, BANK, PARK, MOVES,
+BALL, SHOOTING, DUNKS, AI, GAME, CAMERA, RENDER, UI, NET, MAIN. Gameplay constants live in the single
+`CONFIG` object at the top. Physics runs at a fixed 120 Hz, decoupled from rendering with interpolation.
 
 ## License
 MIT. See [LICENSE](LICENSE).

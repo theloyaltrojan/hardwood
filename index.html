@@ -131,6 +131,7 @@
   .nav-item.sel::before, .nav-item:hover::before { transform: scaleY(1); }
   .nav-item.quiet { font-size: 22px; margin-top: 6px; }
   .rail-foot { margin-top: auto; color: var(--muted); font-size: 12px; line-height: 1.6; max-width: 280px; }
+  .rail-foot #verTag { display: block; margin-top: 8px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; opacity: 0.55; }
   .rail-foot b { color: var(--ink); font-weight: 600; }
   .pane-wrap { padding: 44px 48px 32px; overflow: auto; min-width: 0; }
   .pane { max-width: 760px; animation: panein 0.22s cubic-bezier(0.2, 0.9, 0.2, 1); }
@@ -208,6 +209,26 @@
   .final-board .fname small { display: block; font-size: 13px; letter-spacing: 0.12em; opacity: 0.8; }
   .final-board .fscore { font-family: var(--display); font-size: 64px; line-height: 1; }
   .final-board .fmid { font-family: var(--display); font-size: 18px; letter-spacing: 0.2em; color: var(--muted); }
+
+  /* ---------- boot ---------- */
+  #boot { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: flex; align-items: center; justify-content: center; transition: opacity 0.45s ease; }
+  #boot.gone { opacity: 0; pointer-events: none; }
+  #boot .bi { width: min(560px, 88vw); text-align: left; }
+  #boot .wm { font-family: var(--display); text-transform: uppercase; line-height: 0.95; }
+  #boot .wm span:first-child { display: block; font-size: 17px; letter-spacing: 0.5em; color: var(--muted); margin-bottom: 4px; }
+  #boot .wm span:last-child { display: inline-block; font-size: 62px; background: var(--accent); color: var(--accent-ink); padding: 5px 14px 0; transform: skewX(var(--skew)); }
+  #boot .msg { margin-top: 26px; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  #boot .bar { margin-top: 10px; height: 4px; background: var(--panel3); overflow: hidden; }
+  #boot .bar i { display: block; height: 100%; width: 30%; background: var(--accent); animation: bootslide 1.1s ease-in-out infinite; }
+  @keyframes bootslide { 0% { transform: translateX(-110%); } 100% { transform: translateX(340%); } }
+  #boot.err .bar { display: none; }
+  #boot .fail { display: none; margin-top: 22px; border-left: 5px solid var(--danger); background: var(--panel2); padding: 14px 18px; }
+  #boot.err .fail { display: block; }
+  #boot .fail h3 { margin: 0 0 8px; font-family: var(--display); font-size: 22px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--danger); font-weight: 400; }
+  #boot .fail p { margin: 0 0 8px; font-size: 13px; line-height: 1.6; color: var(--ink); }
+  #boot .fail ul { margin: 6px 0 10px; padding-left: 18px; font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+  #boot .fail code { font-family: var(--mono); font-size: 11.5px; color: var(--muted); word-break: break-all; }
+  #boot .fail .btn { margin-top: 6px; }
 
   /* ---------- Store ---------- */
   .coins { font-family: var(--display); font-size: 15px; letter-spacing: 0.08em; color: var(--accent); }
@@ -366,7 +387,7 @@
       <button class="nav-item" data-nav="menuControls">Controls</button>
       <button class="nav-item" data-nav="menuSettings">Settings</button>
     </nav>
-    <div class="rail-foot"><b>One file, no assets.</b> Every court line, jersey, crowd member and sound is generated in code when the page loads.</div>
+    <div class="rail-foot"><b>One file, no assets.</b> Every court line, jersey, crowd member and sound is generated in code when the page loads.<span id="verTag"></span></div>
   </div>
   <div class="pane-wrap">
     <div id="menuHome" class="pane">
@@ -406,6 +427,21 @@
     <div id="menuNet" class="pane hidden">
       <div class="pane-title">Multiplayer<small>Host a lobby and share the code, or join a friend's.</small></div>
       <div id="netBody"></div>
+    </div>
+  </div>
+</div>
+
+<div id="boot">
+  <div class="bi">
+    <div class="wm"><span>Hardwood</span><span>Legends</span></div>
+    <div class="msg" id="bootMsg">Loading</div>
+    <div class="bar"><i></i></div>
+    <div class="fail" id="bootFail">
+      <h3 id="bootTitle">Could not start</h3>
+      <p id="bootWhy"></p>
+      <ul id="bootFix"></ul>
+      <p><code id="bootDetail"></code></p>
+      <button class="btn small" id="bootRetry"><span class="t">Try again</span></button>
     </div>
   </div>
 </div>
@@ -461,7 +497,51 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ---------- boot ----------
+// The menu is static markup, so without this the page would render a complete, convincing main menu even
+// when the renderer never came up: every button there, nothing behind them. The overlay stays on top until
+// a frame has actually been drawn, and says plainly what went wrong when it cannot.
+window.Boot = (function () {
+  const el = (id) => document.getElementById(id);
+  let done = false;
+  function fail(title, why, fixes, detail) {
+    if (done) return;
+    done = true;
+    const b = el('boot'); if (!b) return;
+    b.classList.add('err');
+    el('bootMsg').textContent = 'Failed to start';
+    el('bootTitle').textContent = title;
+    el('bootWhy').textContent = why;
+    el('bootFix').innerHTML = fixes.map((f) => '<li>' + f + '</li>').join('');
+    el('bootDetail').textContent = detail || '';
+    const r = el('bootRetry'); if (r) r.onclick = () => location.reload();
+  }
+  function ready() {
+    if (done) return;
+    done = true;
+    const b = el('boot'); if (!b) return;
+    b.classList.add('gone');
+    setTimeout(() => { if (b.parentNode) b.parentNode.removeChild(b); }, 600);
+  }
+  function step(text) { const m = el('bootMsg'); if (m && !done) m.textContent = text; }
+  return { fail, ready, step, get done() { return done; } };
+})();
+window.addEventListener('error', (e) => {
+  if (Boot.done) return;
+  Boot.fail('Something broke while starting',
+    'The game hit an error before it finished loading.',
+    ['Reload the page.', 'If it keeps happening, the browser console has the full trace.'],
+    (e && e.message) || '');
+});
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+        onerror="Boot.fail('Could not load Three.js',
+          'The 3D library this game runs on is served from a CDN, and the request for it did not come back.',
+          ['Check that you are online.',
+           'An ad blocker or a work network may be blocking cdnjs.cloudflare.com \u2014 allow it and reload.',
+           'If cdnjs itself is down, try again shortly.'],
+          'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')"></script>
 <script>
 /*
 =====================================================================
@@ -492,6 +572,7 @@ ARCHITECTURE PLAN
 'use strict';
 
 // ==== BEGIN CONFIG ====
+const VERSION = '1.0.0';
 const CONFIG = {
   physics: { hz: 120, maxSteps: 6, gravity: -9.81 },
   court: {
@@ -4387,6 +4468,7 @@ const UI = (() => {
       else if (e.key === 'Escape') { el.parkInput.value = ''; closeChat(); }
     };
     el.parkInput.onblur = () => closeChat();
+    const vt = document.getElementById('verTag'); if (vt) vt.textContent = 'v' + VERSION;
     selectMode(mode); renderMatchup();
     for (let i = 0; i < 10; i++) { const d = document.createElement('div'); d.className = 'tag hidden'; el.tags.appendChild(d); tagEls.push(d); }
     updateHint();
@@ -5528,6 +5610,8 @@ const Main = (() => {
     UI.showMenu();
     last = performance.now(); requestAnimationFrame(frame);
   }
+  // Clear the boot overlay only once a frame has genuinely been drawn, not merely when init returned.
+  let firstFrame = false;
 function applySettings(key) {
 	     const s = Game.settings; AudioSys.setVolume(s.volume); CameraSys.setMode(s.camera); CONFIG.shooting.greenAuto = s.greenAuto;
 	     if (key === 'shadows' || key == null) { CONFIG.render.shadows = s.shadows; Render.setShadows(s.shadows); }
@@ -5647,6 +5731,7 @@ function startGame(mode, a, b, opts) {
       if (g.running) { const b = BallSys.ball; CameraSys.update(elapsed, b.x, b.z, g); }
       else if (me) CameraSys.parkUpdate(elapsed, me.x, me.z, me.facing);
       Render.draw(); UI.update(elapsed, stats); AudioSys.update(elapsed);
+      if (!firstFrame) { firstFrame = true; Boot.ready(); }
       stats.steps = steps; stats.simMs = simMs; stats.frameMs = performance.now() - t0;
       return;
     }
@@ -5667,12 +5752,44 @@ if (Net.active) Net.update(elapsed);
      Render.draw();
      UI.update(elapsed, stats);
      AudioSys.update(elapsed);
+     if (!firstFrame) { firstFrame = true; Boot.ready(); }
      stats.steps = steps; stats.simMs = simMs; stats.frameMs = performance.now() - t0;
    }
   return { init, startGame, enterPark, leavePark, startPark, startParkRemote, pause, resume, quit, stats,
     get paused() { return paused; }, get inPark() { return inPark; } };
 })();
-window.addEventListener('DOMContentLoaded', () => Main.init());
+window.addEventListener('DOMContentLoaded', () => {
+  if (typeof THREE === 'undefined') {
+    Boot.fail('Could not load Three.js',
+      'The 3D library this game runs on did not load, so there is nothing to draw with.',
+      ['Check that you are online.',
+       'An ad blocker or a work network may be blocking cdnjs.cloudflare.com \u2014 allow it and reload.',
+       'If cdnjs itself is down, try again shortly.'],
+      'THREE is not defined');
+    return;
+  }
+  // A canvas that cannot get a WebGL context is the other way this fails on real machines.
+  try {
+    const probe = document.createElement('canvas');
+    const gl = probe.getContext('webgl2') || probe.getContext('webgl') || probe.getContext('experimental-webgl');
+    if (!gl) throw new Error('no WebGL context');
+  } catch (e) {
+    Boot.fail('WebGL is not available',
+      'This browser will not give the page a 3D context, which the game needs for everything it draws.',
+      ['Turn on hardware acceleration in your browser settings.',
+       'Update your graphics drivers, or try a different browser.',
+       'Some remote desktops and virtual machines have no WebGL at all.'],
+      (e && e.message) || 'getContext returned null');
+    return;
+  }
+  Boot.step('Building the arena');
+  try { Main.init(); } catch (e) {
+    Boot.fail('Something broke while starting',
+      'The game got past loading but failed while setting itself up.',
+      ['Reload the page.', 'If it keeps happening, the browser console has the full trace.'],
+      (e && e.message) || String(e));
+  }
+});
 // ==== END MAIN ====
 </script>
 </body>
