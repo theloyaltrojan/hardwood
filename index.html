@@ -243,6 +243,7 @@
   #parkPrompt .sub { display: block; margin-top: 6px; font-size: 12px; color: var(--ink); letter-spacing: 0.1em; text-shadow: 0 2px 6px #000; }
   #parkPrompt .big { display: inline-block; font-family: var(--display); font-size: 92px; line-height: 1; color: var(--accent); text-shadow: 0 6px 24px rgba(0,0,0,0.7); }
   #park.inmatch #parkChat { bottom: 124px; }
+  #park.inmatch #parkTop { display: none; }   /* the scorebug already says what is going on */
   #park.hideprompt #parkPrompt { display: none; }
   #parkChat { position: absolute; left: 18px; bottom: 18px; width: 340px; display: flex; flex-direction: column; gap: 6px; }
   #parkLog { display: flex; flex-direction: column; gap: 2px; max-height: 172px; overflow: hidden; justify-content: flex-end; }
@@ -568,10 +569,10 @@ const CONFIG = {
     perfectBonus: 40, toughBonus: 35, win: 750, loss: 220,
     daily: 300, dailyStreak: 120, dailyMaxStreak: 7,
   },
-  // MyPark: the walkable lobby. `goers` is how many CPU park-goers wander it besides you.
+  // MyPark: the walkable lobby. It is player only, so everyone in it is a real connection.
   park: {
-    walkSpeed: 4.3, runSpeed: 7.2, accel: 17, turnRate: 12, goers: 14,
-    padRadius: 1.25, countdown: 3.2,
+    walkSpeed: 4.3, runSpeed: 7.2, accel: 17, turnRate: 12,
+    padRadius: 1.25, countdown: 3.2, presenceHz: 12,
     chatMax: 60, chatShow: 7, bubbleTime: 5.5,
     camDist: 10.5, camHeight: 6.6, camDamp: 6, camLookY: 1.6,
   },
@@ -3547,9 +3548,9 @@ const Park = (() => {
     });
   }
 
-  // ---------- park-goers ----------
-  const FLAVOUR = ['run it back', 'who got next', 'ball is life', 'i’m open', 'my bad', 'all day',
-    'lets run', 'good look', 'cash', 'put me in'];
+  // ---------- people in the park ----------
+  // Only real players stand here: you, and anyone else connected to the lobby. Nothing in the park is
+  // CPU-driven, so a court fills when actual people step on its pads and not before.
   function makeGoer(def, isPlayer) {
     return { id: goers.length, name: def.name, def, isPlayer: !!isPlayer, remote: null,
       num: def.num, pos: def.pos, height: def.height, ratings: def.ratings, skin: def.skin, hair: def.hair,
@@ -3561,32 +3562,45 @@ const Park = (() => {
       say: '', sayT: 0,
       ai: { tx: 0, tz: 0, idle: 0, wantCourt: -1, think: 0 } };
   }
-  function randomDef(i) {
-    const pos = POSITIONS[(RNG.next() * 5) | 0], t = POS_TEMPLATE[pos], r = {};
-    for (const k of ['speed','accel','handling','threePt','midRange','closeShot','layup','dunk','vertical','block','steal','perimD','interiorD','rebound','strength','pass']) {
-      r[k] = U.clamp(Math.round(t[k] + RNG.gauss() * 7), 35, 99);
-    }
-    return { name: RNG.pick(FIRST_NAMES) + ' ' + RNG.pick(LAST_NAMES), num: 1 + ((RNG.next() * 60) | 0),
-      pos, height: +(t.height + RNG.gauss() * 0.04).toFixed(2), ratings: r,
-      skin: (RNG.next() * 5) | 0, hair: (RNG.next() * 5) | 0, star: false };
-  }
   function spawnGoers() {
     goers = [];
-    RNG.seed((Date.now() & 0xffff) ^ 0x51ed);
     const me = Career.exists() ? Career.playerDef() : { name: 'You', num: 0, pos: 'SG', height: 1.95,
       ratings: PlayerSys.genRoster(0)[1].ratings, skin: 1, hair: 0, star: false };
     player = makeGoer(me, true);
     player.kit = 0; player.x = 0; player.z = 0; player.facing = 0;
     goers.push(player);
-    for (let i = 0; i < PK.goers; i++) {
-      const g = makeGoer(randomDef(i), false);
-      g.kit = 1 + (i % (TEAMS.length - 1));
-      const a = RNG.next() * Math.PI * 2, r = 6 + RNG.next() * 18;
-      g.x = Math.cos(a) * r * 1.6; g.z = Math.sin(a) * r * 0.5;
-      g.ai.idle = RNG.range(0.5, 4);
+  }
+  // Someone else in the lobby walked in, or moved. A remote person is the same entity as you, driven by
+  // what their client reports instead of by the keyboard.
+  function upsertRemote(pid, name, def, st) {
+    let g = goers.find((q) => q.remote === pid);
+    if (!g) {
+      const d = def || { name: name || 'Player', num: 0, pos: 'SG', height: 1.95,
+        ratings: PlayerSys.genRoster(0)[1].ratings, skin: 1, hair: 0, star: false };
+      g = makeGoer(d, false); g.remote = pid; g.name = d.name || name || 'Player';
+      g.kit = 1 + (goers.length % (TEAMS.length - 1));
+      g.x = st ? st.x : 0; g.z = st ? st.z : 0; g.px = g.x; g.pz = g.z;
       goers.push(g);
-      pickTarget(g);
+      if (group) g.mesh = PlayerSys.buildMesh(g, TEAMS[g.kit % TEAMS.length], group, true);
+      say(null, (g.name || 'Someone') + ' came to the park');
     }
+    if (st) { g.x = st.x; g.z = st.z; g.facing = st.f; }
+    return g;
+  }
+  function remoteFor(pid) { return goers.find((q) => q.remote === pid) || null; }
+  function removeRemote(pid) {
+    const i = goers.findIndex((q) => q.remote === pid);
+    if (i < 0) return;
+    const g = goers[i];
+    leavePad(g);
+    if (g.mesh) PlayerSys.disposeMesh(g.mesh, group);
+    goers.splice(i, 1);
+    // pads remember their owner by index, so reindex and rebind after a removal
+    for (let k = 0; k < goers.length; k++) goers[k].id = k;
+    for (const ct of courts) for (const pd of ct.pads) pd.by = -1;
+    for (const q of goers) if (q.pad) q.pad.p.by = q.id;
+    for (const ct of courts) drawSign(ct);
+    say(null, (g.name || 'Someone') + ' left the park');
   }
 
   // ---------- geometry ----------
@@ -3775,32 +3789,6 @@ const Park = (() => {
     const want = g.speed > 0.35 ? ST.MOVE : ST.IDLE;
     if (g.state !== want) { g.state = want; g.stateT = 0; }
   }
-  function pickTarget(g) {
-    const r = RNG.next();
-    if (r < 0.34) {                                  // head for a court pad and wait for a run
-      const open = [];
-      for (const ct of courts) { if (ct.state !== 'open') continue; for (const p of ct.pads) if (p.by < 0) open.push({ ct, p }); }
-      if (open.length) { const c = open[(RNG.next() * open.length) | 0]; g.ai.tx = c.p.px; g.ai.tz = c.p.pz; g.ai.wantCourt = c.ct.id; g.ai.idle = RNG.range(4, 14); return; }
-    }
-    if (r < 0.6 && live) {                           // go watch whatever is running
-      const ct = live.court; toPark(ct, -4.5, RNG.range(-10, 10), _p);
-      g.ai.tx = _p.x; g.ai.tz = _p.z; g.ai.wantCourt = -1; g.ai.idle = RNG.range(6, 16); return;
-    }
-    g.ai.tx = RNG.range(-40, 40); g.ai.tz = RNG.range(-26, 26); g.ai.wantCourt = -1; g.ai.idle = RNG.range(1.5, 6);
-  }
-  function stepGoer(g, dt) {
-    if (g.pad) { moveGoer(g, dt, 0, 0, false); return; }        // locked in, waiting for the tip
-    const dx = g.ai.tx - g.x, dz = g.ai.tz - g.z, d = Math.hypot(dx, dz);
-    if (d < 0.5) {
-      g.ai.idle -= dt;
-      moveGoer(g, dt, 0, 0, false);
-      if (g.ai.idle <= 0) pickTarget(g);
-      if (RNG.next() < dt * 0.06) say(g, RNG.pick(FLAVOUR));
-      return;
-    }
-    const k = d < 1.4 ? d / 1.4 : 1;
-    moveGoer(g, dt, dx / d * k, dz / d * k, d > 9);
-  }
 
   // ---------- pads ----------
   function padUnder(g) {
@@ -3832,6 +3820,7 @@ const Park = (() => {
     for (const ct of courts) {
       if (ct.state !== 'open' && ct.state !== 'ready') continue;
       const full = ct.pads.every((p) => p.by >= 0);
+      if (Net.isGuest) continue;                       // the host owns when a court tips off
       if (full && ct.state === 'open' && !live && !pendingCourt) {
         ct.state = 'ready'; pendingCourt = ct; countdown = PK.countdown; drawSign(ct);
         UI.parkToast('RUN ON', ct.label + ' tipping off');
@@ -3860,6 +3849,20 @@ const Park = (() => {
   }
   // Called by Main once the engine has the match running, so the park can frame it.
   function frameFor(ct) { return { x: ct.x, z: ct.z, rot: ct.rot, mid: MID }; }
+  // The guest side of a tip-off: the host already decided it, so just take the people off the lobby floor.
+  function tipOffRemote(ct, roster) {
+    const members = [];
+    for (const r of roster) {
+      const g = (r.pid === Net.myPid) ? player : remoteFor(r.pid);
+      if (g) members.push(g);
+    }
+    live = { court: ct, members, mine: members.indexOf(player) >= 0 };
+    ct.state = 'live'; drawSign(ct);
+    for (const g of members) {
+      if (!g.mesh) continue;
+      g.mesh.group.visible = false; g.mesh.shadow.visible = false; g.mesh.ring.visible = false;
+    }
+  }
   function endMatch() {
     if (!live) return;
     const ct = live.court;
@@ -3873,6 +3876,59 @@ const Park = (() => {
     ct.state = 'open'; ct.lockT = 0; drawSign(ct);
     live = null;
   }
+
+  // ---------- presence ----------
+  // Each client reports where its own person is; the host owns the pads and the court states, so two
+  // people can never claim the same spot.
+  let sendAcc = 0;
+  function localState() {
+    const p = player; if (!p) return null;
+    return { x: +p.x.toFixed(2), z: +p.z.toFixed(2), f: +p.facing.toFixed(2) };
+  }
+  function pumpPresence(dt) {
+    if (!Net.active || !player) return;
+    sendAcc += dt;
+    const step = 1 / PK.presenceHz;
+    if (sendAcc < step) return;
+    sendAcc = 0;
+    Net.sendPark({ t: 'at', pid: Net.myPid, st: localState() });
+  }
+  function myDef() { return player ? player.def : null; }
+  // The host decides pad ownership. A guest asks; the host answers with the whole court's state.
+  function requestPad(ct, pad) {
+    if (!Net.active || Net.isHost) return false;
+    Net.sendPark({ t: 'pad', court: ct.id, pad: ct.pads.indexOf(pad) });
+    return true;
+  }
+  function requestLeave() {
+    if (!Net.active || Net.isHost) return false;
+    Net.sendPark({ t: 'unpad' });
+    return true;
+  }
+  function padSnapshot() {
+    return courts.map((ct) => ({ id: ct.id, state: ct.state,
+      by: ct.pads.map((pd) => (pd.by >= 0 && goers[pd.by] ? (goers[pd.by].isPlayer ? 'host' : goers[pd.by].remote) : null)) }));
+  }
+  // Guests take the host's word for every pad on every court.
+  function applyPadSnapshot(list, mePid) {
+    if (!Array.isArray(list)) return;
+    for (const g of goers) g.pad = null;
+    for (const ct of courts) for (const pd of ct.pads) pd.by = -1;
+    for (const row of list) {
+      const ct = courts[row.id]; if (!ct) continue;
+      ct.state = row.state;
+      row.by.forEach((pid, i) => {
+        if (pid == null) return;
+        const pd = ct.pads[i]; if (!pd) return;
+        const g = pid === mePid ? player : remoteFor(pid);
+        if (!g) return;
+        pd.by = g.id; g.pad = { ct, p: pd };
+        toPark(ct, pd.ex, pd.ez, _p); g.x = _p.x; g.z = _p.z;
+      });
+      drawSign(ct);
+    }
+  }
+  function courtById(i) { return courts[i] || null; }
 
   // ---------- chat ----------
   function say(g, text) {
@@ -3907,25 +3963,25 @@ const Park = (() => {
       const under = padUnder(player);
       if (player.pad && (!under || under.p !== player.pad.p)) {
         const pp = player.pad.p;
-        if (Math.hypot(player.x - pp.px, player.z - pp.pz) > PK.padRadius * 1.6) leavePad(player);
+        if (Math.hypot(player.x - pp.px, player.z - pp.pz) > PK.padRadius * 1.6) { if (!requestLeave()) leavePad(player); }
       }
-      if (!player.pad && under && inp.action) takePad(player, under.ct, under.p);
+      if (!player.pad && under && inp.action) { if (!requestPad(under.ct, under.p)) takePad(player, under.ct, under.p); }
       player.nearPad = under;
     } else if (player && live && !live.mine) {
       const inp = typing ? NO_INPUT : Input.parkAxes(CameraSys.basis);
       moveGoer(player, dt, inp.mx, inp.mz, inp.sprint);
       player.nearPad = null;
     }
+    // remote people move because their own client said so; derive a speed so the walk cycle still reads
     for (const g of goers) {
       if (g.isPlayer) continue;
-      if (live && live.members.indexOf(g) >= 0) continue;
-      stepGoer(g, dt);
-      if (!g.pad && g.ai.wantCourt >= 0) {
-        const ct = courts[g.ai.wantCourt];
-        if (ct && ct.state === 'open') { const free = ct.pads.find((p) => p.by < 0 && Math.hypot(g.x - p.px, g.z - p.pz) < PK.padRadius); if (free) takePad(g, ct, free); }
-      }
+      g.speed = Math.hypot(g.x - g.px, g.z - g.pz) / Math.max(dt, 1e-4);
+      g.stateT += dt;
+      const want = g.speed > 0.35 ? ST.MOVE : ST.IDLE;
+      if (g.state !== want) { g.state = want; g.stateT = 0; }
     }
     checkCourts(dt);
+    pumpPresence(dt);
   }
   function sync(alpha, dt) {
     for (const g of goers) {
@@ -3949,7 +4005,8 @@ const Park = (() => {
     if (!built) build(scene); else if (group) group.visible = true;
     Render.setSky(0x1d2733, 0.0055);          // open air: lighter haze, and it reaches further than the arena's
     spawnGoers(); buildAvatars(scene); reset(); joined = true;
-    say(null, 'Welcome to the park. Walk onto a pad to get in a run.');
+    say(null, Net.active ? 'Welcome to the park. Walk onto a pad to get in a run.'
+      : 'Welcome to the park. It is player only, so open a Multiplayer lobby and invite people to fill a court.');
   }
   function leave(scene) {
     clearAvatars(); goers = []; player = null; reset();
@@ -3957,7 +4014,8 @@ const Park = (() => {
     if (group) group.visible = false;
   }
   return { enter, leave, step, sync, build, courts, frameFor, endMatch, tipOff,
-    say, sendChat, remoteChat, drawSign, toPark,
+    say, sendChat, remoteChat, drawSign, toPark, upsertRemote, removeRemote, remoteFor, takePad, leavePad,
+    localState, myDef, padSnapshot, applyPadSnapshot, courtById, tipOffRemote,
     get group() { return group; }, get chat() { return chat; }, get player() { return player; },
     get live() { return live; }, get countdown() { return countdown; }, get goers() { return goers; },
     get joined() { return joined; } };
@@ -5012,7 +5070,9 @@ const Net = (() => {
     peer.on('disconnected', () => { if (role === 'host' && peer && !peer.destroyed) { try { peer.reconnect(); } catch (e) { /* ignore */ } } });
   }
   function addGuest(conn) { guests.set(conn.pid, { conn, name: 'joining…', team: -1, playerId: -1, inGame: false, lastSeen: performance.now(), remote: { input: makeInput(), bits: 0, held: 0, seq: -1, rel: null } }); AudioSys.play('ui'); if (panel) renderPanel(panel); }
+  function removeGuestPark(pid) { if (parkPeople.has(pid)) { parkPeople.delete(pid); if (Main.inPark) Park.removeRemote(pid); hostPushRoster(); hostPushPads(); } }
   function removeGuest(pid) {
+    removeGuestPark(pid);
     const gst = guests.get(pid); if (!gst) return; guests.delete(pid);
     if (gst.playerId >= 0 && Game.g.running) { Game.setController(gst.playerId, null); Game.toast(gst.name.toUpperCase() + ' LEFT', 'CPU TAKES OVER'); }
     broadcastLobby();
@@ -5040,11 +5100,7 @@ const Net = (() => {
       if (m.t === 'join') { gst.name = cleanName(m.name); if (gst.team < 0 && !gst.named) gst.team = autoTeam(); gst.named = true; broadcastLobby(); }
       else if (m.t === 'team') setTeam(pid, m.team === 0 || m.team === 1 ? m.team : -1);
       else if (m.t === 'leave') { gst.conn.close(); removeGuest(pid); }
-      else if (m.t === 'park') {
-        // a guest said something in the park: show it here and pass it on to everyone else
-        const d = m.d || {}; const name = cleanName(d.name || gst.name), text = String(d.text || '').slice(0, 120);
-        if (d.t === 'chat' && text) { Park.remoteChat(name, text); broadcast(JSON.stringify({ t: 'park', d: { t: 'chat', name, text } })); }
-      }
+      else if (m.t === 'park') hostPark(pid, gst, m.d || {});
       return;
     }
     toBuffer(data, (buf) => decodeInput(buf, gst.remote));
@@ -5061,6 +5117,98 @@ const Net = (() => {
     }
     broadcast(JSON.stringify({ t: 'start', mode, a, b, roster, quarterLen: Game.settings.quarterLen, makeItTakeIt: Game.settings.makeItTakeIt, difficulty: Game.settings.difficulty }));
     seq = 0;
+  }
+  // ---------- MyPark over the wire ----------
+  // The host is the source of truth for who is in the park, where they are, who holds which pad, and when
+  // a court tips off. Guests report their own position and ask for pads.
+  const parkPeople = new Map();   // pid -> { name, def }
+  function hostPark(pid, gst, d) {
+    const name = cleanName(d.name || gst.name);
+    if (d.t === 'join') {
+      const def = cleanDef(d.def, name);
+      parkPeople.set(pid, { name: (def && def.name) || name, def });
+      if (Main.inPark) Park.upsertRemote(pid, parkPeople.get(pid).name, def, d.st);
+      hostPushRoster();
+      send(gst.conn, JSON.stringify({ t: 'park', d: { t: 'pads', list: Park.padSnapshot(), me: pid } }));
+    } else if (d.t === 'leave') {
+      parkPeople.delete(pid); if (Main.inPark) Park.removeRemote(pid);
+      hostPushRoster(); hostPushPads();
+    } else if (d.t === 'at') {
+      if (!Main.inPark || !d.st) return;
+      Park.upsertRemote(pid, name, (parkPeople.get(pid) || {}).def, d.st);
+      broadcast(JSON.stringify({ t: 'park', d: { t: 'at', pid, st: d.st } }));
+    } else if (d.t === 'pad') {
+      if (!Main.inPark) return;
+      const ct = Park.courtById(d.court | 0); if (!ct || ct.state !== 'open') return;
+      const pd = ct.pads[d.pad | 0]; if (!pd || pd.by >= 0) return;
+      const g = Park.remoteFor(pid); if (!g || g.pad) return;
+      Park.takePad(g, ct, pd); hostPushPads();
+    } else if (d.t === 'unpad') {
+      if (!Main.inPark) return;
+      const g = Park.remoteFor(pid); if (!g) return;
+      Park.leavePad(g); hostPushPads();
+    } else if (d.t === 'chat') {
+      const text = String(d.text || '').slice(0, 120);
+      if (!text) return;
+      Park.remoteChat(name, text);
+      broadcast(JSON.stringify({ t: 'park', d: { t: 'chat', name, text } }));
+    }
+  }
+  function cleanDef(def, name) {
+    if (!def || typeof def !== 'object') return null;
+    const r = {}; const keys = ['speed','accel','handling','threePt','midRange','closeShot','layup','dunk','vertical','block','steal','perimD','interiorD','rebound','strength','pass'];
+    for (const k of keys) r[k] = U.clamp(parseInt(def.ratings && def.ratings[k], 10) || 55, 25, 99);
+    return { name: cleanName(def.name || name), num: U.clamp(parseInt(def.num, 10) || 0, 0, 99),
+      pos: POSITIONS.indexOf(def.pos) >= 0 ? def.pos : 'SG',
+      height: U.clamp(parseFloat(def.height) || 1.95, 1.6, 2.3),
+      ratings: r, skin: U.clamp(parseInt(def.skin, 10) || 0, 0, 4), hair: U.clamp(parseInt(def.hair, 10) || 0, 0, 4), star: false };
+  }
+  function hostPushPads() { broadcast(JSON.stringify({ t: 'park', d: { t: 'pads', list: Park.padSnapshot() } })); }
+  function hostPushRoster() {
+    const people = [];
+    for (const [pid, v] of parkPeople) people.push({ pid, name: v.name, def: v.def });
+    broadcast(JSON.stringify({ t: 'park', d: { t: 'who', people } }));
+  }
+  function parkJoin() {
+    const def = Park.myDef();
+    const d = { t: 'join', name: (def && def.name) || myName, def, st: Park.localState() };
+    if (role === 'host') { parkPeople.set('host', { name: d.name, def }); hostPushRoster(); }
+    else sendPark(d);
+  }
+  function parkLeave() {
+    if (role === 'host') { parkPeople.delete('host'); for (const pid of Array.from(parkPeople.keys())) Park.removeRemote(pid); parkPeople.clear(); }
+    else sendPark({ t: 'leave' });
+  }
+  // A park court filled: tell everyone which court, and who is on which side, then start it here.
+  function hostStartPark(ct, teams) {
+    const g = Game.g; g.locked = true;
+    const roster = [];
+    for (let t = 0; t < 2; t++) for (let i = 0; i < teams[t].length; i++) {
+      const person = teams[t][i];
+      const pid = person.isPlayer ? 'host' : person.remote;
+      roster.push({ pid, team: t, slot: i, name: person.name, def: person.def });
+    }
+    broadcast(JSON.stringify({ t: 'parkstart', court: ct.id, kits: ct.kits, roster,
+      quarterLen: Game.settings.quarterLen, makeItTakeIt: Game.settings.makeItTakeIt, difficulty: Game.settings.difficulty }));
+    seq = 0;
+    return roster;
+  }
+  // Hand control of the on-court players to whoever owns them.
+  function bindParkRoster(roster) {
+    const g = Game.g;
+    for (const r of roster) {
+      const pl = Game.teamPlayers(r.team)[r.slot]; if (!pl) continue;
+      if (r.pid === 'host') {
+        if (role === 'host') { g.humanTeam = r.team; Game.setHuman(pl.id, true); pl.ctlName = ''; }
+        else Game.setController(pl.id, 'host', r.name);
+      } else if (r.pid === myPid) {
+        myPlayerId = pl.id; g.humanTeam = r.team; Game.setHuman(pl.id, true); pl.ctlName = '';
+      } else {
+        const gst = guests.get(r.pid);
+        if (role === 'host' && gst) { gst.playerId = pl.id; gst.inGame = true; gst.remote.bits = 0; gst.remote.rel = null; }
+        Game.setController(pl.id, String(r.pid), r.name);
+      }
+    }
   }
   function reassign(pid, oldId, newId) { const gst = guests.get(pid); if (!gst) return; Game.setController(oldId, null); Game.setController(newId, pid, gst.name); gst.playerId = newId; gst.conn.send(JSON.stringify({ t: 'ctl', playerId: newId })); }
   function hostApplyInputs() {
@@ -5167,7 +5315,27 @@ const Net = (() => {
       }
       case 'ctl': { const pid = parseInt(m.playerId, 10); if (!Number.isFinite(pid) || !PlayerSys.players[pid]) break; myPlayerId = pid; } Game.setHuman(myPlayerId, true); { const me = PlayerSys.players[myPlayerId]; if (me) { me.authX = me.x; me.authZ = me.z; } } break;
       case 'ev': if (m.name === 'bsfx') { if (typeof m.data === 'number' || m.data === 'rim' || m.data === 'board') BallSys.ball.events.push(m.data); } else Game.g.events.push({ name: String(m.name), data: m.data }); break;
-      case 'park': { const d = m.d || {}; if (d.t === 'chat') Park.remoteChat(cleanName(d.name), String(d.text || '').slice(0, 120)); break; }
+      case 'park': {
+        const d = m.d || {};
+        if (d.t === 'chat') Park.remoteChat(cleanName(d.name), String(d.text || '').slice(0, 120));
+        else if (!Main.inPark) break;
+        else if (d.t === 'who') {
+          const seen = {};
+          for (const pp of (d.people || [])) { if (pp.pid === myPid) continue; seen[pp.pid] = 1; Park.upsertRemote(pp.pid, cleanName(pp.name), pp.def, null); }
+          for (const g of Park.goers.slice()) if (g.remote && !seen[g.remote]) Park.removeRemote(g.remote);
+        } else if (d.t === 'at') { if (d.pid !== myPid) Park.upsertRemote(d.pid, null, null, d.st); }
+        else if (d.t === 'pads') Park.applyPadSnapshot(d.list, myPid);
+        break;
+      }
+      case 'parkstart': {
+        if (!Array.isArray(m.roster)) break;
+        const ql = parseInt(m.quarterLen, 10); if (Number.isFinite(ql) && ql >= 30 && ql <= 900) Game.settings.quarterLen = ql;
+        Game.settings.makeItTakeIt = !!m.makeItTakeIt;
+        if (CONFIG.ai.difficulty[m.difficulty]) Game.settings.difficulty = m.difficulty;
+        inGame = true; snaps.length = 0; lastSnapSeq = -1; seq = 0;
+        Main.startParkRemote(m.court | 0, m.kits, m.roster);
+        break;
+      }
       case 'tolobby': if (Game.g.running) Main.quit(); break;
       case 'closed': leaveLobby('the host closed the lobby'); break;
     }
@@ -5331,8 +5499,8 @@ const Net = (() => {
     if (role === 'host') broadcast(JSON.stringify({ t: 'park', d: obj }));
     else if (hostConn) send(hostConn, JSON.stringify({ t: 'park', d: obj }));
   }
-  return { sendPark, renderPanel, status: statusText, update, guestStep, hostApplyInputs, hostStart, enterGuest, forwardEvent, onQuit, reassign, hostCreateLobby, joinLobby, setTeam, setMode, closeLobby, directHost, directAccept, directJoin,
-    get myName() { return myName; }, get active() { return role !== 'none'; }, get isHost() { return role === 'host'; }, get isGuest() { return role === 'guest' && !!hostConn; }, get lobby() { return lobby; }, get guestCount() { return guests.size; }, get directOffer() { return directOffer; }, get directAnswer() { return directAnswer; } };
+  return { sendPark, parkJoin, parkLeave, hostStartPark, bindParkRoster, renderPanel, status: statusText, update, guestStep, hostApplyInputs, hostStart, enterGuest, forwardEvent, onQuit, reassign, hostCreateLobby, joinLobby, setTeam, setMode, closeLobby, directHost, directAccept, directJoin,
+    get myName() { return myName; }, get myPid() { return role === 'host' ? 'host' : myPid; }, get active() { return role !== 'none'; }, get isHost() { return role === 'host'; }, get isGuest() { return role === 'guest' && !!hostConn; }, get lobby() { return lobby; }, get guestCount() { return guests.size; }, get directOffer() { return directOffer; }, get directAnswer() { return directAnswer; } };
 })();
 // ==== END NET ====
 
@@ -5387,35 +5555,53 @@ function startGame(mode, a, b, opts) {
       Render.setMatchFrame(null);
       if (Court.group) Court.group.visible = false;
       Park.enter(Render.scene);
+      if (Net.active) Net.parkJoin();
       CameraSys.parkSnap(Park.player.x, Park.player.z, Park.player.facing);
       UI.hideMenu(); UI.showPark(true); UI.clearToast();
       document.getElementById('final').classList.add('hidden');
     });
   }
   function leavePark() {
+    if (Net.active) Net.parkLeave();
     Game.stop(); Park.leave(Render.scene); Render.setMatchFrame(null);
     if (Court.group) Court.group.visible = true;
     inPark = false; UI.showPark(false); UI.hideHUD(); UI.showMenu(); UI.openPark();
   }
   // A court filled up: build its two sides out of the people on the pads and tip off right there.
+  // A court filled. The host tells everyone, then every client runs the same match on the same court.
   function startPark(ct, teams, kits) {
-    const defs = [teams[0].map((g) => g.def), teams[1].map((g) => g.def)];
+    const roster = Net.isHost ? Net.hostStartPark(ct, teams) : null;
+    buildParkMatch(ct, [teams[0].map((g) => g.def), teams[1].map((g) => g.def)], kits);
+    if (roster) Net.bindParkRoster(roster);
+    else {
+      const all = teams[0].concat(teams[1]);
+      const mine = all.findIndex((g) => g.isPlayer);
+      if (mine >= 0) { const side = mine < ct.per ? 0 : 1; Game.g.humanTeam = side; Game.setHuman(Game.teamPlayers(side)[mine % ct.per].id, true); }
+      else Game.setSpectate(true);
+    }
+    UI.showHUD(); acc = 0;
+  }
+  // The guest side of the same tip-off: the host has already decided the court and the sides.
+  function startParkRemote(courtId, kits, roster) {
+    const ct = Park.courtById(courtId); if (!ct) return;
+    const defs = [[], []];
+    for (const r of roster) defs[r.team][r.slot] = r.def;
+    Park.tipOffRemote(ct, roster);
+    buildParkMatch(ct, defs, kits);
+    Net.bindParkRoster(roster);
+    UI.showHUD(); acc = 0;
+  }
+  function buildParkMatch(ct, defs, kits) {
     const slots = []; for (let i = 0; i < ct.per; i++) slots.push(i);
-    const mine = teams[0].concat(teams[1]).findIndex((g) => g.isPlayer);
-    const kit = kitsFor(kits[0], kits[1]);
     Render.setMatchFrame(Park.frameFor(ct));
     Game.start(ct.mode, kits[0], kits[1], {
       park: true, slots,
       roster(rosters) {
-        for (let t = 0; t < 2; t++) for (let i = 0; i < defs[t].length; i++) rosters[t][i] = defs[t][i];
+        for (let t = 0; t < 2; t++) for (let i = 0; i < defs[t].length; i++) if (defs[t][i]) rosters[t][i] = defs[t][i];
       },
     });
     Render.buildPlayers(Game.g.teams);
     CameraSys.setFrame(Park.frameFor(ct));
-    // you play if you were on a pad, otherwise the run goes on without you and you can watch
-    if (mine >= 0) { const side = mine < ct.per ? 0 : 1; Game.g.humanTeam = side; }
-    else Game.setSpectate(true);
-    UI.showHUD(); acc = 0;
   }
   function pause(silent) { paused = true; if (!silent) UI.showPause(true); }
   function resume() { paused = false; UI.showPause(false); last = performance.now(); acc = 0; }
@@ -5443,8 +5629,9 @@ function startGame(mode, a, b, opts) {
         if (g.running) {
           acc += elapsed; let gs = 0;
           while (acc >= DT && gs < CONFIG.physics.maxSteps) {
-            const human = PlayerSys.players[g.human]; if (human) Input.sample(human.input, CameraSys.basis);
-            Game.step(DT); acc -= DT; gs++;
+            if (Net.isGuest) Net.guestStep(DT);
+            else { const human = PlayerSys.players[g.human]; if (human) Input.sample(human.input, CameraSys.basis); Game.step(DT); }
+            Input.endTick(); acc -= DT; gs++;
           }
           if (gs === CONFIG.physics.maxSteps) acc = 0;
           if (g.state === Game.S.OVER) { Game.stop(); Render.setMatchFrame(null); CameraSys.setFrame(null); Park.endMatch(); UI.hideHUD(); }
@@ -5482,7 +5669,7 @@ if (Net.active) Net.update(elapsed);
      AudioSys.update(elapsed);
      stats.steps = steps; stats.simMs = simMs; stats.frameMs = performance.now() - t0;
    }
-  return { init, startGame, enterPark, leavePark, startPark, pause, resume, quit, stats,
+  return { init, startGame, enterPark, leavePark, startPark, startParkRemote, pause, resume, quit, stats,
     get paused() { return paused; }, get inPark() { return inPark; } };
 })();
 window.addEventListener('DOMContentLoaded', () => Main.init());

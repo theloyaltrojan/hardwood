@@ -37,16 +37,20 @@ timing call.
 Main menu → **MyPark** in the sidebar (or **Go to MyPark** from the career hub). It uses your MyCareer build, so make a
 player first.
 
+**The park is player only.** Nobody in it is CPU-driven, so a court fills when real people step on its
+pads and not before. Alone you can walk the place and stand on a pad, but a run needs someone else: open a
+**Multiplayer** lobby, share the code, and everyone who joins and walks in appears in the park with you.
+
 You walk the park as your own character in third person — WASD to move, Shift to run. Six half courts ring
 a plaza, two each of **1v1**, **2v2** and **3v3**, colour-coded by the paint in the key. Every court has team
 pads behind the midcourt line, one cluster per side. Walk onto a free pad, press **Space** to claim it, and
 when every pad on that court is taken it tips off *on that court* after a short countdown, using the same
 engine and the same controls as every other mode. Step off the pad to drop out before the tip.
 
-Fourteen CPU park-goers walk the place with you, queue for runs of their own and talk. If a court fills
-without you, you are free to walk over and watch it from the sidelines — the game plays out where it stands
-in the lobby, not on a separate screen. When it ends, everyone spills back into the park and the court
-reopens.
+The host owns the pads and decides when a court tips off, so two people can never claim the same spot.
+Everyone on court plays as their own MyCareer build. If a court fills without you, you are free to walk over
+and watch it from the sidelines — the game plays out where it stands in the lobby, not on a separate screen.
+When it ends, everyone spills back into the park and the court reopens.
 
 **Press T to chat.** Messages appear in the log bottom-left and as a bubble over the speaker's head. In a
 multiplayer lobby chat goes to everyone over the same peer connection the games use.
