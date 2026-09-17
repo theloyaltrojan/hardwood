@@ -359,21 +359,27 @@ await test('walking out of a game into the park leaves its players behind', asyn
 });
 
 // ---------------------------------------------------------------- ads
-await test('ships with no ad code until a publisher id is set', async () => {
+await test('fetches no ad code until a slot is about to be filled', async () => {
   const page = await fresh({ headless: false });
-  const r = await page.evaluate(() => {
-    UI.showMenu();
-    return {
-      enabled: Ads.enabled,
-      scripts: [...document.querySelectorAll('script')].filter((s) => /googlesyndication|adsbygoogle/.test(s.src)).length,
-      units: document.querySelectorAll('ins.adsbygoogle').length,
-      client: CONFIG.ads.client,
-    };
-  });
-  check.equal(r.client, '', 'a publisher id was committed to the repo');
-  check.ok(!r.enabled, 'ads report themselves enabled with no publisher id');
-  check.equal(r.scripts, 0, 'an ad script was fetched with no publisher id');
-  check.equal(r.units, 0, 'an ad unit was injected with no publisher id');
+  const adScripts = () => page.evaluate(() =>
+    [...document.querySelectorAll('script')].filter((s) => /googlesyndication|adsbygoogle/.test(s.src)).length);
+  const booted = await adScripts();
+  const cfg = await page.evaluate(() => ({ menu: CONFIG.ads.menuSlot, final: CONFIG.ads.finalSlot }));
+  await page.evaluate(() => { UI.showMenu(); });
+  await page.waitForTimeout(300);
+  const onMenu = await adScripts();
+  await page.evaluate(() => { Main.startGame('5v5', 0, 1); });
+  await page.waitForTimeout(400);
+  const inGame = await adScripts();
+  const units = await page.evaluate(() => document.querySelectorAll('ins.adsbygoogle').length);
+  check.equal(booted, 0, 'the ad library was fetched during boot');
+  check.equal(inGame, 0, 'the ad library was fetched to play a game');
+  // Both slots are empty in the repo, so nothing should have loaded on the menu either. If you have
+  // filled them in, this is the check that says so rather than a failure.
+  if (!cfg.menu && !cfg.final) {
+    check.equal(onMenu, 0, 'an ad script was fetched with no slot ids configured');
+    check.equal(units, 0, 'an ad unit was injected with no slot ids configured');
+  }
   await page.close(); open.delete(page);
 });
 

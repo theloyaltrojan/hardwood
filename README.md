@@ -100,18 +100,21 @@ There is also a **Direct connect** fallback for two players that needs no signal
 
 ## Ads
 
-The game ships with AdSense wired up but switched **off**. With `CONFIG.ads.client` empty nothing is
-fetched and nothing is injected — no script tag, no `<ins>`, no cookie. Fill in three strings near the
-top of `index.html` and the units turn themselves on:
+The publisher id is set. The two slot ids are not, and a slot with no id is skipped — so today the
+page still fetches nothing and injects nothing. Create two responsive display units in the AdSense
+console and paste their ids into `CONFIG.ads` near the top of `index.html`:
 
 ```js
 ads: {
-  client: 'ca-pub-0000000000000000',   // your publisher id
+  client: 'ca-pub-7516114040452296',
   menuSlot: '1234567890',              // a responsive display unit
   finalSlot: '0987654321',             // a second responsive display unit
   ...
 }
 ```
+
+The library itself is only fetched the first time a unit is about to be filled, so booting the game
+and playing it never touch Google at all. A test holds that.
 
 Where they go, and why only there:
 
@@ -133,15 +136,18 @@ Tip Off under the fold. Turn it on to trade that for more fill.
 
 ### Before it pays
 
-Code is the easy part. AdSense also wants:
+Code is the easy part.
 
-- **A domain you own.** `*.github.io` is generally not accepted as the site on a new AdSense account,
-  and you cannot serve `ads.txt` from the root of `theloyaltrojan.github.io` without owning that repo.
-  Point a real domain at Pages with a `CNAME` file and add the site as that domain.
-- **`ads.txt` at the domain root**, containing exactly one line with your own publisher id:
-  `google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0`. It is deliberately *not* in this repo:
-  an `ads.txt` that does not list your real id tells buyers nobody is authorised to sell the inventory,
-  which is worse than having no file at all.
+- **Verification** is handled by the `google-adsense-account` meta tag in `<head>`, plus `ads.txt`.
+  Neither costs a request at runtime, which is why the AdSense snippet is not pasted into the page.
+- **`ads.txt` has to sit at the root of the host**, and this is a project site, so the file in this
+  repo serves at `theloyaltrojan.github.io/hardwood/ads.txt` — which is *not* where a crawler looks.
+  Two ways to fix it, both fine: create a `theloyaltrojan.github.io` repo and put the same one-line
+  file there, or point a domain you own at Pages with a `CNAME`, which makes this repo's root the
+  domain root and the file lands in the right place on its own.
+- **A domain you own** is also the safer answer for approval. AdSense wants a site it can confirm is
+  yours, and `*.github.io` subdomains are frequently rejected on that basis — not guaranteed either
+  way, but a real domain removes the question.
 - **A privacy policy.** [`privacy.html`](privacy.html) is written and linked from the menu footer. Read
   it before you publish — it describes what this build does, and it is yours to stand behind.
 - **A consent message for EEA/UK traffic.** Turn on Google's own CMP under Privacy & messaging in the

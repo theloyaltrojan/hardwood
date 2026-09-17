@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="google-adsense-account" content="ca-pub-7516114040452296">
 <title>Hardwood Legends</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2714%27 fill=%27%23e0702a%27/%3E%3Cpath d=%27M2 16h28M16 2v28%27 stroke=%27%231a0d06%27 stroke-width=%272%27/%3E%3C/svg%3E">
 <style>
@@ -631,7 +632,9 @@ const CONFIG = {
   // is fetched, nothing is injected. Slots only ever live on the main menu and the final whistle,
   // never over a live court. See README for the rest of what AdSense needs before this pays.
   ads: {
-    client: '',                 // 'ca-pub-0000000000000000'
+    client: 'ca-pub-7516114040452296',
+    // Both empty until the units exist in the AdSense console. A slot with no id is skipped, and the
+    // library is only fetched when a slot is actually about to be filled, so today this loads nothing.
     menuSlot: '',               // display unit, responsive — main menu, in the rail or across the bottom
     finalSlot: '',              // display unit, responsive — under the post-game buttons
     minRefreshMs: 60000,        // a new whistle may fill a fresh unit, but not faster than this

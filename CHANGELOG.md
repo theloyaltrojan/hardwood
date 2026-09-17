@@ -12,6 +12,11 @@ All notable changes to Hardwood Legends. Dates are the day the work landed.
   never arrives, so an ad blocker, an offline tab and an unfilled slot all leave the layout untouched.
   The menu unit sits in the dead space beside the nav when the window is tall enough to hold one and is
   skipped rather than pushing Tip Off under the fold. See the README for what AdSense wants beyond code.
+- **Publisher id, `ads.txt` and site verification.** Verification goes through a `google-adsense-account`
+  meta tag rather than pasting Google's snippet into the page, so booting and playing still fetch nothing
+  from Google. The slot ids are still blank, and a slot with no id is skipped, so the build stays inert
+  until the units exist. Note `ads.txt` needs to live at the root of the host to be found, and this is a
+  project site — the README says how to fix that.
 - **A privacy policy** at `privacy.html`, linked from the menu, covering what the game keeps in
   `localStorage`, what MyPark and multiplayer reveal to the people you connect to, and the ad cookies.
 
