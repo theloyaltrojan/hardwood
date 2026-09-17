@@ -140,14 +140,15 @@ Code is the easy part.
 
 - **Verification** is handled by the `google-adsense-account` meta tag in `<head>`, plus `ads.txt`.
   Neither costs a request at runtime, which is why the AdSense snippet is not pasted into the page.
-- **`ads.txt` has to sit at the root of the host**, and this is a project site, so the file in this
-  repo serves at `theloyaltrojan.github.io/hardwood/ads.txt` — which is *not* where a crawler looks.
-  Two ways to fix it, both fine: create a `theloyaltrojan.github.io` repo and put the same one-line
-  file there, or point a domain you own at Pages with a `CNAME`, which makes this repo's root the
-  domain root and the file lands in the right place on its own.
-- **A domain you own** is also the safer answer for approval. AdSense wants a site it can confirm is
+- **`ads.txt` has to sit at the root of the host.** This is a project site, so the copy in this repo
+  serves at `/hardwood/ads.txt`, which is *not* where a crawler looks. The one that counts lives in
+  [`theloyaltrojan.github.io`](https://github.com/theloyaltrojan/theloyaltrojan.github.io) and is live
+  at [theloyaltrojan.github.io/ads.txt](https://theloyaltrojan.github.io/ads.txt). Keep the two in
+  sync, or delete this one — it does no work.
+- **A domain you own** is still the safer answer for approval. AdSense wants a site it can confirm is
   yours, and `*.github.io` subdomains are frequently rejected on that basis — not guaranteed either
-  way, but a real domain removes the question.
+  way, but a real domain removes the question. Point one at Pages with a `CNAME` and this repo's root
+  becomes the domain root, at which case the local `ads.txt` is the one that gets read.
 - **A privacy policy.** [`privacy.html`](privacy.html) is written and linked from the menu footer. Read
   it before you publish — it describes what this build does, and it is yours to stand behind.
 - **A consent message for EEA/UK traffic.** Turn on Google's own CMP under Privacy & messaging in the
