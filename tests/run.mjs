@@ -358,6 +358,62 @@ await test('walking out of a game into the park leaves its players behind', asyn
   await page.close(); open.delete(page);
 });
 
+// ---------------------------------------------------------------- ads
+await test('ships with no ad code until a publisher id is set', async () => {
+  const page = await fresh({ headless: false });
+  const r = await page.evaluate(() => {
+    UI.showMenu();
+    return {
+      enabled: Ads.enabled,
+      scripts: [...document.querySelectorAll('script')].filter((s) => /googlesyndication|adsbygoogle/.test(s.src)).length,
+      units: document.querySelectorAll('ins.adsbygoogle').length,
+      client: CONFIG.ads.client,
+    };
+  });
+  check.equal(r.client, '', 'a publisher id was committed to the repo');
+  check.ok(!r.enabled, 'ads report themselves enabled with no publisher id');
+  check.equal(r.scripts, 0, 'an ad script was fetched with no publisher id');
+  check.equal(r.units, 0, 'an ad unit was injected with no publisher id');
+  await page.close(); open.delete(page);
+});
+
+await test('an ad never sits over a live court', async () => {
+  const page = await fresh({ headless: false });
+  await page.route('**://*.googlesyndication.com/**', (route) => route.abort());
+  await page.evaluate(() => {
+    CONFIG.ads.client = 'ca-pub-0000000000000000';
+    CONFIG.ads.menuSlot = '1111111111'; CONFIG.ads.finalSlot = '2222222222';
+    UI.showMenu();
+  });
+  await page.waitForTimeout(400);
+  // 1280x800 has no room beside the nav, and the bottom bar is off by default, so the menu goes bare.
+  const cramped = await page.evaluate(() => document.querySelectorAll('#menu ins.adsbygoogle').length);
+  // Give the rail the height it needs and the unit appears there instead.
+  await page.setViewportSize({ width: 1500, height: 1050 });
+  await page.evaluate(() => { UI.showMenu(); });
+  await page.waitForTimeout(400);
+  const menu = await page.evaluate(() => {
+    const ins = document.querySelector('#adRail ins.adsbygoogle');
+    const tip = document.getElementById('btnTipoff');
+    return { placed: !!ins, shown: !!(ins && ins.getClientRects().length),
+      tipOff: tip.getBoundingClientRect().bottom <= window.innerHeight };
+  });
+  await page.evaluate(() => { Main.startGame('5v5', 0, 1); });
+  await page.waitForTimeout(600);
+  const live = await page.evaluate(() => ({
+    running: Game.g.running,
+    onScreen: [...document.querySelectorAll('ins.adsbygoogle, #adMenu, #adFinal')]
+      .filter((e) => e.getClientRects().length).length,
+  }));
+  check.equal(cramped, 0, 'a menu unit was taken on a window with no room for one');
+  check.ok(menu.placed, 'the menu unit was never placed');
+  check.ok(menu.shown, 'the menu unit was placed but not on screen');
+  check.ok(menu.tipOff, 'the menu ad pushed Tip Off under the fold');
+  check.ok(live.running, 'the game did not start');
+  check.equal(live.onScreen, 0, 'an ad slot is on screen during play');
+  await page.close(); open.delete(page);
+});
+
 // ---------------------------------------------------------------- performance
 await test('holds its frame budget', async () => {
   const page = await fresh({ headless: false });

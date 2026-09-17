@@ -98,6 +98,58 @@ Players on a team with one human keep auto-switch (control follows the ball); te
 
 There is also a **Direct connect** fallback for two players that needs no signaling server at all: exchange the offer and answer codes by hand.
 
+## Ads
+
+The game ships with AdSense wired up but switched **off**. With `CONFIG.ads.client` empty nothing is
+fetched and nothing is injected — no script tag, no `<ins>`, no cookie. Fill in three strings near the
+top of `index.html` and the units turn themselves on:
+
+```js
+ads: {
+  client: 'ca-pub-0000000000000000',   // your publisher id
+  menuSlot: '1234567890',              // a responsive display unit
+  finalSlot: '0987654321',             // a second responsive display unit
+  ...
+}
+```
+
+Where they go, and why only there:
+
+| Slot | Placement |
+| --- | --- |
+| `menuSlot` | Main menu. A rectangle in the dead space under the nav when the window is tall enough for one, otherwise a banner across the bottom, otherwise nothing. |
+| `finalSlot` | Under the buttons on the final-whistle card. |
+
+Nothing renders over a live court, and nothing renders on the pause menu, where an ad would sit
+next to Resume and Quit and collect misclicks. A unit fills once; a new whistle may fill a fresh one
+no sooner than `minRefreshMs`, because AdSense does not allow refreshing an ad without a user action.
+A slot takes up no space until a unit actually lands in it and gives the space back if the fill never
+arrives, so an ad blocker, an offline tab and an unfilled slot all leave the layout untouched. Two
+tests guard this: one that no ad code exists with no publisher id, one that no slot is ever on screen
+during play.
+
+`bottomBarOnDesktop` is off by default, so a short laptop window carries no menu ad rather than push
+Tip Off under the fold. Turn it on to trade that for more fill.
+
+### Before it pays
+
+Code is the easy part. AdSense also wants:
+
+- **A domain you own.** `*.github.io` is generally not accepted as the site on a new AdSense account,
+  and you cannot serve `ads.txt` from the root of `theloyaltrojan.github.io` without owning that repo.
+  Point a real domain at Pages with a `CNAME` file and add the site as that domain.
+- **`ads.txt` at the domain root**, containing exactly one line with your own publisher id:
+  `google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0`. It is deliberately *not* in this repo:
+  an `ads.txt` that does not list your real id tells buyers nobody is authorised to sell the inventory,
+  which is worse than having no file at all.
+- **A privacy policy.** [`privacy.html`](privacy.html) is written and linked from the menu footer. Read
+  it before you publish — it describes what this build does, and it is yours to stand behind.
+- **A consent message for EEA/UK traffic.** Turn on Google's own CMP under Privacy & messaging in the
+  AdSense console. It needs no code here.
+
+Do not enable Auto ads. They inject units wherever they like, including over the canvas, which is
+both a policy problem and a gameplay one.
+
 ## Dev
 The game has no build step and no dependencies. Open `index.html` and it runs.
 

@@ -2,6 +2,19 @@
 
 All notable changes to Hardwood Legends. Dates are the day the work landed.
 
+## [1.2.0] — 2026-09-16
+
+### Added
+- **Google AdSense, off by default.** Two display slots — one on the main menu, one under the buttons
+  on the final-whistle card — that stay completely inert until a publisher id is filled in: no script
+  fetched, no element injected, no cookie set. Nothing ever renders over a live court or on the pause
+  menu. A slot occupies no space until a unit lands in it and gives the space straight back if the fill
+  never arrives, so an ad blocker, an offline tab and an unfilled slot all leave the layout untouched.
+  The menu unit sits in the dead space beside the nav when the window is tall enough to hold one and is
+  skipped rather than pushing Tip Off under the fold. See the README for what AdSense wants beyond code.
+- **A privacy policy** at `privacy.html`, linked from the menu, covering what the game keeps in
+  `localStorage`, what MyPark and multiplayer reveal to the people you connect to, and the ad cookies.
+
 ## [1.1.0] — 2026-09-16
 
 ### Added

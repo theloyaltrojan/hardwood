@@ -118,7 +118,7 @@
 
   /* ---------- menus ---------- */
   .overlay { position: fixed; inset: 0; z-index: 10; display: grid; grid-template-columns: 400px 1fr; background: linear-gradient(90deg, rgba(11,13,18,0.98) 0, rgba(11,13,18,0.98) 400px, rgba(11,13,18,0.72) 100%); }
-  .rail { position: relative; padding: 44px 36px 32px 44px; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: repeating-linear-gradient(-45deg, transparent 0 22px, rgba(255,255,255,0.018) 22px 23px); }
+  .rail { position: relative; overflow-y: auto; padding: 44px 36px 32px 44px; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: repeating-linear-gradient(-45deg, transparent 0 22px, rgba(255,255,255,0.018) 22px 23px); }
   .wordmark { line-height: 0.85; margin-bottom: 40px; }
   .wordmark .wm-top { display: block; font-family: var(--display); font-size: 30px; letter-spacing: 0.34em; text-transform: uppercase; color: var(--muted); margin-left: 4px; }
   .wordmark .wm-main { display: inline-block; font-family: var(--display); font-size: 84px; text-transform: uppercase; background: var(--accent); color: var(--accent-ink); padding: 6px 16px 0; transform: skewX(var(--skew)); line-height: 0.95; }
@@ -134,6 +134,19 @@
   .rail-foot #verTag { display: block; margin-top: 8px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; opacity: 0.55; }
   .rail-foot b { color: var(--ink); font-weight: 600; }
   .pane-wrap { padding: 44px 48px 32px; overflow: auto; min-width: 0; }
+  /* Ad slots. A slot takes up no space at all until a unit is actually placed in it, and gives the
+     space straight back if the fill never arrives, so the menu and the final card lay out identically
+     whether or not Google ever answers. */
+  #menu { grid-template-rows: 1fr auto; }
+  .adbar { grid-column: 1 / -1; }
+  #adRail.on { margin: 22px 0 8px; border-top: 0; background: none; padding-left: 0; padding-right: 0; text-align: left; }
+  .legal { padding: 7px 16px; border-top: 1px solid var(--line); text-align: center; font-size: 11px; color: var(--muted); }
+  .legal a { color: inherit; }
+  .legal a:hover { color: var(--ink); }
+  .adslot { display: none; max-width: 100%; overflow: hidden; text-align: center; }
+  .adslot.on { display: block; padding: 10px 16px; border-top: 1px solid var(--line); background: rgba(0,0,0,0.28); }
+  .adslot.on::before { content: 'Advertisement'; display: block; margin-bottom: 6px; color: var(--muted); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+  #adFinal.on { margin-top: 18px; background: none; }
   .pane { max-width: 760px; animation: panein 0.22s cubic-bezier(0.2, 0.9, 0.2, 1); }
   @keyframes panein { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
   .pane-title { font-family: var(--display); font-size: 42px; text-transform: uppercase; line-height: 1; margin: 0 0 18px; }
@@ -355,6 +368,7 @@
     .wordmark { margin-bottom: 14px; } .wordmark .wm-main { font-size: 52px; }
     .menu-nav { flex-direction: row; flex-wrap: wrap; gap: 0 10px; } .nav-item { font-size: 22px; padding-left: 16px; } .rail-foot { display: none; }
     .pane-wrap { padding: 20px 16px; } .grid2 { grid-template-columns: 1fr; } .howto { grid-template-columns: 1fr; }
+    #menu { grid-template-rows: auto 1fr auto; }
     .mode { grid-template-columns: 80px 1fr; } .mode svg { display: none; } .mode .mode-big { font-size: 34px; }
     .matchup { grid-template-columns: 1fr; } .matchup .vs { display: none; }
     #scorebug { transform: skewX(var(--skew)) scale(0.85); }
@@ -400,6 +414,7 @@
       <button class="nav-item" data-nav="menuControls">Controls</button>
       <button class="nav-item" data-nav="menuSettings">Settings</button>
     </nav>
+    <div class="adslot" id="adRail" data-slot="menu" data-format="rectangle"></div>
     <div class="rail-foot"><b>One file, no assets.</b> Every court line, jersey, crowd member and sound is generated in code when the page loads.<span id="verTag"></span></div>
   </div>
   <div class="pane-wrap">
@@ -442,6 +457,10 @@
       <div class="pane-title">Multiplayer<small>Host a lobby and share the code, or join a friend's.</small></div>
       <div id="netBody"></div>
     </div>
+  </div>
+  <div class="adbar">
+    <div class="adslot" id="adMenu" data-slot="menu" data-format="horizontal"></div>
+    <div class="legal"><a href="privacy.html">Privacy</a> &middot; ads by Google</div>
   </div>
 </div>
 
@@ -518,6 +537,7 @@
     <div class="title" id="finalTitle">Final</div>
     <div id="finalBody"></div>
     <div class="row"><button class="btn primary" id="btnRematch"><span class="t">Rematch</span></button><button class="btn" id="btnFinalMenu"><span class="t">Main menu</span></button></div>
+    <div class="adslot" id="adFinal" data-slot="final" data-format="rectangle"></div>
   </div>
 </div>
 
@@ -575,7 +595,7 @@ ARCHITECTURE PLAN
  - One file. Modules are plain objects/closures separated by
    "// ==== BEGIN <NAME> ====" markers, in dependency order:
    CONFIG, UTIL, INPUT, AUDIO, COURT, PLAYER, MOVES, BALL, SHOOTING,
-   DUNKS, AI, GAME, CAMERA, RENDER, UI, NET, MAIN.
+   DUNKS, AI, GAME, CAMERA, RENDER, ADS, UI, NET, MAIN.
  - Simulation state is plain numbers on plain objects (no THREE objects)
    so it is deterministic-friendly and serializable for the host-
    authoritative WebRTC retrofit (Phase 8). Every player — human or AI —
@@ -604,8 +624,22 @@ ARCHITECTURE PLAN
 })();
 
 // ==== BEGIN CONFIG ====
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const CONFIG = {
+  // Google AdSense. Paste the publisher id and the two slot ids from your AdSense account and the
+  // units turn themselves on; leave client empty and the game runs with no ad code at all — nothing
+  // is fetched, nothing is injected. Slots only ever live on the main menu and the final whistle,
+  // never over a live court. See README for the rest of what AdSense needs before this pays.
+  ads: {
+    client: '',                 // 'ca-pub-0000000000000000'
+    menuSlot: '',               // display unit, responsive — main menu, in the rail or across the bottom
+    finalSlot: '',              // display unit, responsive — under the post-game buttons
+    minRefreshMs: 60000,        // a new whistle may fill a fresh unit, but not faster than this
+    // On a wide screen the menu unit goes in the dead space between the nav and the rail's footer.
+    // A short laptop has no such space, and off by default it stays ad-free rather than push Tip Off
+    // under the fold. Set true to take the banner anyway: more fill, one small scroll to start a game.
+    bottomBarOnDesktop: false,
+  },
   physics: { hz: 120, maxSteps: 6, gravity: -9.81 },
   court: {
     length: 28.65, width: 15.24, rimHeight: 3.048, rimRadius: 0.2286, rimTube: 0.014,
@@ -4746,6 +4780,95 @@ function init(container) {
 })();
 // ==== END RENDER ====
 
+// ==== BEGIN ADS ====
+// Google AdSense, kept at arm's length from the game.
+//
+// Three rules shape this. AdSense forbids ads that sit over or interfere with what you came for,
+// so units only ever exist on the main menu and the final-whistle card and never on a live court
+// or the pause menu, where they would sit next to Resume and Quit and collect misclicks. It
+// forbids refreshing an ad without a user action, so a unit fills once and a new whistle may fill
+// a fresh one no sooner than CONFIG.ads.minRefreshMs. And the whole thing has to be invisible when
+// it is off: with no publisher id nothing is fetched, nothing is injected, and the slots collapse.
+//
+// An ad blocker, an offline tab or an unfilled slot all land in the same place — an empty div that
+// `.adslot:empty` hides — so the layout never depends on Google answering.
+const Ads = (() => {
+  const A = CONFIG.ads;
+  const on = () => typeof A.client === 'string' && A.client.indexOf('ca-pub-') === 0;
+  const slotId = (name) => (name === 'final' ? A.finalSlot : A.menuSlot);
+  let asked = false;
+  const filled = Object.create(null);           // slot name -> when it last took an impression
+
+  // The library is only fetched the first time a unit is actually shown, so it never competes with
+  // boot or with a live game for bandwidth or main-thread time.
+  function library() {
+    if (asked || !on()) return;
+    asked = true;
+    const sc = document.createElement('script');
+    sc.async = true; sc.crossOrigin = 'anonymous';
+    sc.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + encodeURIComponent(A.client);
+    document.head.appendChild(sc);              // onerror needs no handler: the slot simply stays empty
+  }
+
+  const collapse = (host) => { host.classList.remove('on'); host.innerHTML = ''; };
+
+  // An <ins> can only ever be filled once, so showing a unit again means building a fresh one.
+  function place(host, name) {
+    const ins = document.createElement('ins');
+    ins.className = 'adsbygoogle';
+    ins.style.display = 'block';
+    ins.setAttribute('data-ad-client', A.client);
+    ins.setAttribute('data-ad-slot', slotId(name));
+    ins.setAttribute('data-ad-format', host.dataset.format || 'auto');
+    ins.setAttribute('data-full-width-responsive', 'true');
+    host.innerHTML = '';
+    host.classList.add('on');                   // has to be laid out before AdSense measures it
+    host.appendChild(ins);
+    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); }
+    catch (e) { collapse(host); return; }       // blocked outright
+    // Blocked, offline and unfilled all end the same way: take the space back.
+    setTimeout(() => { if (ins.dataset.adStatus === 'unfilled' || !ins.offsetHeight) collapse(host); }, 4000);
+  }
+
+  // Nothing on the menu is allowed to be pushed under the fold for an ad. On a narrow screen the rail
+  // is a header and the pane is already a scrolling list, so a bar across the bottom costs nothing. On
+  // a wide one the unit goes in the dead space between the nav and the rail's footer — measured, not
+  // guessed, because that gap is what a laptop actually has — and the format is chosen to fit it. Too
+  // short for even a banner and the menu simply carries no ad; the post-game slot still runs.
+  function menuHost() {
+    if (window.innerWidth <= 900) return 'adMenu';
+    const rail = document.querySelector('#menu .rail');
+    const nav = rail && rail.querySelector('.menu-nav');
+    const foot = rail && rail.querySelector('.rail-foot');
+    const host = document.getElementById('adRail');
+    if (!nav || !foot || !host) return '';
+    const gap = foot.offsetTop - (nav.offsetTop + nav.offsetHeight);
+    if (gap >= 300) { host.dataset.format = 'rectangle'; return 'adRail'; }
+    if (gap >= 150) { host.dataset.format = 'horizontal'; return 'adRail'; }
+    return A.bottomBarOnDesktop ? 'adMenu' : '';
+  }
+
+  // `name` is the slot; the host must already be on screen, because AdSense measures the space it
+  // has at push time and a unit pushed inside a hidden overlay is stuck at zero width forever.
+  function show(name) {
+    if (!on() || !slotId(name)) return;
+    const host = document.getElementById(name === 'final' ? 'adFinal' : menuHost());
+    if (!host) return;
+    const last = filled[name] || 0;
+    if (last && Date.now() - last < A.minRefreshMs) return;
+    if (last && host.firstChild) return;        // already carrying a unit: leave it alone
+    library();
+    requestAnimationFrame(() => {               // one frame so the overlay it lives in has laid out
+      const box = host.parentElement || host;   // the host itself is collapsed until a unit lands in it
+      if (!box.offsetWidth) return;
+      filled[name] = Date.now();
+      place(host, name);
+    });
+  }
+  return { show, get enabled() { return on(); } };
+})();
+// ==== END ADS ====
+
 // ==== BEGIN UI ====
 // HUD, menus, keybind editor, settings, toasts, shot meter, name tags, debug overlay, event -> sound/UI routing.
 const UI = (() => {
@@ -4805,7 +4928,7 @@ const UI = (() => {
     const map = { pauseHome: 'btnResume', pauseControls: 'btnPauseControls', pauseSettings: 'btnPauseSettings' };
     for (const k in map) $(map[k]).classList.toggle('sel', k === sub);
   }
-  function showMenu() { el.menu.classList.remove('hidden'); show('menuHome'); el.pause.classList.add('hidden'); el.final.classList.add('hidden'); hideHUD(); gridSide = -1; renderTeamGrid(); renderMatchup(); }
+  function showMenu() { el.menu.classList.remove('hidden'); Ads.show('menu'); show('menuHome'); el.pause.classList.add('hidden'); el.final.classList.add('hidden'); hideHUD(); gridSide = -1; renderTeamGrid(); renderMatchup(); }
   function hideMenu() { el.menu.classList.add('hidden'); }
   function showPause(on) {
     el.pause.classList.toggle('hidden', !on);
@@ -4819,6 +4942,7 @@ const UI = (() => {
     // A career game is already in the books, so replaying it is not on offer.
     $('btnRematch').classList.toggle('hidden', Net.isGuest || Game.g.career);
     $('btnFinalMenu').querySelector('.t').textContent = Game.g.career ? 'Back to MyCareer' : 'Main menu';
+    Ads.show('final');
   }
   function openNet() { showMenu(); show('menuNet'); }
   // Game-start wipe: two slanted slabs cross the screen; the scene swaps while they cover it.
