@@ -359,12 +359,12 @@ await test('walking out of a game into the park leaves its players behind', asyn
 });
 
 // ---------------------------------------------------------------- ads
-await test('fetches no ad code until a slot is about to be filled', async () => {
+await test('a window with no room for a menu unit fetches no ad code at all', async () => {
   const page = await fresh({ headless: false });
   const adScripts = () => page.evaluate(() =>
     [...document.querySelectorAll('script')].filter((s) => /googlesyndication|adsbygoogle/.test(s.src)).length);
   const booted = await adScripts();
-  const cfg = await page.evaluate(() => ({ menu: CONFIG.ads.menuSlot, final: CONFIG.ads.finalSlot }));
+  const cfg = await page.evaluate(() => ({ client: CONFIG.ads.client }));
   await page.evaluate(() => { UI.showMenu(); });
   await page.waitForTimeout(300);
   const onMenu = await adScripts();
@@ -372,14 +372,15 @@ await test('fetches no ad code until a slot is about to be filled', async () => 
   await page.waitForTimeout(400);
   const inGame = await adScripts();
   const units = await page.evaluate(() => document.querySelectorAll('ins.adsbygoogle').length);
-  check.equal(booted, 0, 'the ad library was fetched during boot');
+  // fresh() is 1280x800: too short for a rail unit, and the bottom bar is off on desktop by default,
+  // so this window never takes a menu slot and should therefore never touch Google at all. A taller
+  // window does load the library on the menu — the menu is the boot screen — which is why the check
+  // that matters everywhere is the one below it: playing a game pulls in nothing.
+  check.equal(booted, 0, 'the ad library was fetched on a window with no room for a unit');
+  check.equal(onMenu, 0, 'the menu fetched an ad script on a window with no room for a unit');
+  check.equal(units, 0, 'an ad unit was injected on a window with no room for one');
   check.equal(inGame, 0, 'the ad library was fetched to play a game');
-  // Both slots are empty in the repo, so nothing should have loaded on the menu either. If you have
-  // filled them in, this is the check that says so rather than a failure.
-  if (!cfg.menu && !cfg.final) {
-    check.equal(onMenu, 0, 'an ad script was fetched with no slot ids configured');
-    check.equal(units, 0, 'an ad unit was injected with no slot ids configured');
-  }
+  check.ok(cfg.client.startsWith('ca-pub-'), 'the publisher id is malformed');
   await page.close(); open.delete(page);
 });
 

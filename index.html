@@ -633,10 +633,10 @@ const CONFIG = {
   // never over a live court. See README for the rest of what AdSense needs before this pays.
   ads: {
     client: 'ca-pub-7516114040452296',
-    // Both empty until the units exist in the AdSense console. A slot with no id is skipped, and the
-    // library is only fetched when a slot is actually about to be filled, so today this loads nothing.
-    menuSlot: '',               // display unit, responsive — main menu, in the rail or across the bottom
-    finalSlot: '',              // display unit, responsive — under the post-game buttons
+    // A slot with no id is skipped, and the library is only fetched when a slot is about to be
+    // filled, so an empty one here costs nothing at all.
+    menuSlot: '2295316765',     // "Hardwood Menu" — responsive, in the rail or across the bottom
+    finalSlot: '2738617000',    // "Hardwood Final" — responsive, under the post-game buttons
     minRefreshMs: 60000,        // a new whistle may fill a fresh unit, but not faster than this
     // On a wide screen the menu unit goes in the dead space between the nav and the rail's footer.
     // A short laptop has no such space, and off by default it stays ad-free rather than push Tip Off

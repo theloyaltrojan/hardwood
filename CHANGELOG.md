@@ -16,7 +16,10 @@ All notable changes to Hardwood Legends. Dates are the day the work landed.
   meta tag rather than pasting Google's snippet into the page, so booting and playing still fetch nothing
   from Google. The slot ids are still blank, and a slot with no id is skipped, so the build stays inert
   until the units exist. Note `ads.txt` needs to live at the root of the host to be found, and this is a
-  project site — the README says how to fix that.
+  project site, so the root copy lives in the `theloyaltrojan.github.io` repo instead.
+- **Both slot ids are in.** `2295316765` on the menu, `2738617000` on the final whistle. Verified against
+  live AdSense: both place, both come back `unfilled` while the site waits on review, and both give the
+  space back four seconds later without moving Tip Off or the post-game buttons.
 - **A privacy policy** at `privacy.html`, linked from the menu, covering what the game keeps in
   `localStorage`, what MyPark and multiplayer reveal to the people you connect to, and the ad cookies.
 

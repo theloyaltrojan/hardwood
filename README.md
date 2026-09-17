@@ -113,8 +113,10 @@ ads: {
 }
 ```
 
-The library itself is only fetched the first time a unit is about to be filled, so booting the game
-and playing it never touch Google at all. A test holds that.
+The library itself is only fetched when a unit is about to be filled. The menu is the first screen, so
+on a window with room for the menu unit that happens during boot; on a window without room — a short
+laptop, a phone with `bottomBarOnDesktop` off — nothing is fetched at all, and a test holds that.
+Playing never fetches anything either way, because no unit exists while the clock is running.
 
 Where they go, and why only there:
 
