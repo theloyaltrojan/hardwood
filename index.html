@@ -2123,6 +2123,9 @@ const Career = (() => {
   // ---------- the roster hook ----------
   // Your player takes the starting slot at their position on your club, so the four around you are the
   // same generated team-mates the rest of the league sees.
+  // The coached game is the career's first, not the first game of a page load. A refresh halfway through
+  // it leaves nothing recorded, so the next attempt is still game one and is still coached.
+  function isFirstGame() { return !!c && c.season === 1 && c.gameNo === 0 && !c.history.length && c.phase === 'regular'; }
   function playerDef() {
     const p = c.player;
     // carry the weighted overall through, so the scorebug and the career screen agree on one number
@@ -2172,7 +2175,7 @@ const Career = (() => {
   return { CATS, ARCHETYPES, HEIGHTS, GAMES, CREATE_BASE, CREATE_POOL, CREATE_CAP,
     catOf, archOf, ratingsFrom, overallOf, upgradeCost, capFor, blankBuild, createCost, poolLeft, draftOffers,
     begin, nextGame, playoffGame, upcoming, playoffRounds, recordGame, canUpgrade, upgrade, grade, liveXp,
-    playerDef, applyRoster, applyToSide, strength, seedsFor, save, load, wipe, exists,
+    playerDef, applyRoster, applyToSide, strength, seedsFor, save, load, wipe, exists, isFirstGame,
     get storageOk() { return storageOk; },
     get data() { return c; } };
 })();
@@ -5701,7 +5704,7 @@ const UI = (() => {
     if (!c || Net.active) return;
     if (!up) { renderCareer(); return; }
     const a = up.home ? c.team : up.opp, b = up.home ? up.opp : c.team;
-    hooks.startGame('5v5', a, b, { career: true, sim: !!sim });
+    hooks.startGame('5v5', a, b, { career: true, sim: !!sim, coach: !sim && Career.isFirstGame() });
   }
   function updateHint() {
     const b = Input.binds, L = Input.keyLabel; const k = (a) => '<kbd>' + L(b[a]) + '</kbd>';
@@ -6037,7 +6040,7 @@ const UI = (() => {
     if (debugOn) updateDebug(dt, stats);
   }
   return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, openNet, openCareer, renderCareer,
-    beginOnboarding, endOnboarding, get onboarding() { return onboarding; },
+    beginOnboarding, endOnboarding, startCareerGame, get onboarding() { return onboarding; },
     showPark, openPark, openStore, renderStore, showTutorial, parkToast, parkChatDirty, openChat, closeChat, get chatOpen() { return chatOpen; },
     wipe, update, toast, feedback, toggleDebug, clearToast, get pick() { return pick; }, get mode() { return mode; }, get debugOn() { return debugOn; } };
 })();
@@ -6636,10 +6639,8 @@ const ONBOARD_KEY = 'hw_onboard';
   // The first game off the back of creating a player. It is a real career game against CPUs - the only
   // difference is that the coach is watching it.
   function firstGame() {
-    const up = Career.upcoming();
-    const opp = up ? up.opp : (Career.data.team === 0 ? 1 : 0);
     U.saveLS(ONBOARD_KEY, true);
-    startGame('5v5', Career.data.team, opp, { career: true, coach: true });
+    UI.startCareerGame(false);
   }
 function startGame(mode, a, b, opts) {
 	     lastMode = mode;
