@@ -405,31 +405,42 @@ await test('a first launch goes straight to building a player, with nowhere else
 
 await test('the first game teaches itself and never strands you in slow motion', async () => {
   const page = await fresh();
-  const r = await page.evaluate(() => {
-    Career.wipe();
-    const b = Career.blankBuild('slasher', 'PG'); b.name = 'Rookie'; Career.begin(b, 0);
-    UI.endOnboarding();
-    Game.start('5v5', Career.data.team, 1, { career: true }); Render.buildPlayers(Game.g.teams);
-    const pid = Game.g.careerPid;
-    Coach.begin(); Game.setSpectate(true); Game.g.human = pid; RNG.seed(88);
-    const FRAME = 1 / 60; let acc = 0, worst = 0, run = 0, first = null, minScale = 1;
-    for (let f = 0; f < 60 * 560 && Game.g.state !== Game.S.OVER; f++) {
-      Coach.step(FRAME);
-      const sc = Coach.timeScale; minScale = Math.min(minScale, sc);
-      run = sc < 0.985 ? run + FRAME : 0; worst = Math.max(worst, run);
-      acc += FRAME * sc;
-      while (acc >= 1 / 120) { Game.step(1 / 120); Input.endTick(); acc -= 1 / 120; }
-      const v = Coach.view(); if (v && !first) first = v.title;
+  // The league and every player's AI phase come from Math.random, so RNG.seed does not pin a game down:
+  // each run is a fresh sample. One game can land a lesson short, so judge three.
+  const runs = await page.evaluate(() => {
+    const out = [];
+    for (const seed of [88, 23, 61]) {
+      Career.wipe();
+      const b = Career.blankBuild('slasher', 'PG'); b.name = 'Rookie'; Career.begin(b, 0);
+      UI.endOnboarding();
+      Game.start('5v5', Career.data.team, 1, { career: true }); Render.buildPlayers(Game.g.teams);
+      const pid = Game.g.careerPid;
+      Coach.begin(); Game.setSpectate(true); Game.g.human = pid; RNG.seed(seed);
+      const FRAME = 1 / 60; let acc = 0, worst = 0, run = 0, minScale = 1;
+      for (let f = 0; f < 60 * 560 && Game.g.state !== Game.S.OVER; f++) {
+        Coach.step(FRAME);
+        const sc = Coach.timeScale; minScale = Math.min(minScale, sc);
+        run = sc < 0.985 ? run + FRAME : 0; worst = Math.max(worst, run);
+        acc += FRAME * sc;
+        while (acc >= 1 / 120) { Game.step(1 / 120); Input.endTick(); acc -= 1 / 120; }
+      }
+      const order = Object.keys(Coach.taught || {});
+      out.push({ taught: order.length, order, worst, minScale, firstResolved: order[0] });
     }
-    const order = Object.keys(Coach.taught || {});
-    return { taught: order.length, worst, first, minScale, firstResolved: order[0] };
+    return out;
   });
   // Movement is resolved before anything else - taught, or skipped because you were already moving.
   // The CPU driving the player here is moving from the tip, so it is usually the skip.
-  check.equal(r.firstResolved, 'move', 'something was taught before movement was resolved');
-  check.atLeast(r.taught, 6, 'lessons that got a chance to fire in a full game');
-  check.atMost(r.minScale, 0.6, 'slow motion never actually engaged');
-  check.atMost(r.worst, 9.5, 'longest continuous slow motion in real seconds');
+  // Measured over 36 games on two builds: 5 to 9 lessons a game, and these four in every one of them.
+  // Starvation - a lesson that keeps refiring and blocks the rest - shows up as 2 or 3 and a missing core.
+  for (const r of runs) {
+    check.equal(r.firstResolved, 'move', 'something was taught before movement was resolved');
+    for (const id of ['move', 'pass', 'cross', 'steal']) check.ok(r.order.includes(id), `the ${id} lesson never got its chance`);
+    check.atLeast(r.taught, 4, 'lessons that got a chance to fire in one full game');
+    check.atMost(r.minScale, 0.6, 'slow motion never actually engaged');
+    check.atMost(r.worst, 9.5, 'longest continuous slow motion in real seconds');
+  }
+  check.atLeast(runs.reduce((n, r) => n + r.taught, 0), 15, 'lessons fired across three first games');
   await page.close(); open.delete(page);
 });
 

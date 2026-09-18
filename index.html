@@ -1100,7 +1100,7 @@ const Court = (() => {
   const boardX = (s) => s * (C.length / 2 - C.boardFromBaseline);
   let group = null, floorMat = null, floorTex = null; const rigs = [];
   const nets = [], shotTex = [], shotCtx = [], shotVal = [-1, -1];
-  let crowdBody = null, crowdHead = null, crowdBaseY = null, crowdPhase = null, crowdN = 0, crowdBob = 0, crowdT = 0;
+  let crowdBody = null, crowdHead = null, crowdBaseY = null, crowdHeadY = null, crowdPhase = null, crowdN = 0, crowdBob = 0, crowdT = 0;
   let dirLight = null;
 
 function makeFloorTexture(team) {
@@ -1227,7 +1227,18 @@ function makeBoardTexture() {
 	                  const tex = new THREE.CanvasTexture(cv); tex.encoding = THREE.sRGBEncoding; tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; return tex;
 	                }
 
-function buildHoop(h) {
+// A net is a lattice of cord, not a translucent cone. One diagonal cross per tile, repeated round the
+// cylinder, reads as the diamond mesh; alpha-tested rather than blended, so it is crisp and needs no sorting.
+let netTexCache = null;
+function netTexture() {
+  if (netTexCache) return netTexCache;
+  const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d');
+  g.clearRect(0, 0, 64, 64); g.strokeStyle = '#ffffff'; g.lineWidth = 5; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(64, 64); g.moveTo(64, 0); g.lineTo(0, 64); g.stroke();
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(9, 3); t.anisotropy = 4;
+  return (netTexCache = t);
+}
+function buildHoop(h, team) {
 	                  const s = h.s; const g = new THREE.Group();
 	                  const bx = boardX(s);
 	                  // backboard - glass with slight reflection
@@ -1247,22 +1258,40 @@ function buildHoop(h) {
 	                  const bracket = new THREE.Mesh(new THREE.BoxGeometry(Math.abs(bx - h.x) - C.rimRadius + 0.02, 0.06, 0.12), rimMat);
 	                  bracket.position.set((bx + h.x + s * C.rimRadius) / 2, h.y - 0.02, 0); g.add(bracket);
 	                  // net - physical material with slight transparency
-	                  const netMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, roughness: 0.9 });
-	                  const net = new THREE.Mesh(new THREE.CylinderGeometry(C.rimRadius, 0.18, 0.45, 12, 6, true), netMat);
+	                  const netMat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: netTexture(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9 });
+	                  const net = new THREE.Mesh(new THREE.CylinderGeometry(C.rimRadius, 0.17, 0.45, 24, 6, true), netMat);
 	                  net.position.set(h.x, h.y - 0.22, 0); net.userData.w = 0; g.add(net); nets[h.idx] = net;
-	                  // pole + arm + padding
-	                  const poleMat = new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 0.5, metalness: 0.4 });
-	                  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 3.9, 12), poleMat); pole.position.set(s * (C.length / 2 + 1.3), 1.95, 0); g.add(pole);
-	                  const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 1.9, 12), new THREE.MeshStandardMaterial({ color: 0x3a3f4b, roughness: 0.8 })); pad.position.set(pole.position.x, 0.95, 0); g.add(pad);
-	                  const arm = new THREE.Mesh(new THREE.BoxGeometry(Math.abs(pole.position.x - bx), 0.1, 0.1), poleMat); arm.position.set((pole.position.x + bx) / 2, 3.85, 0); g.add(arm);
-	                  const strut = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.06), poleMat); strut.position.set(bx + s * 0.3, C.boardBottom + 0.06, 0); strut.rotation.z = -s * 0.55; g.add(strut);
+	                  // The stanchion: a padded base unit behind the baseline, a thick padded post rising off its front edge,
+	                  // and a steel arm reaching out to the board. It was a 9cm pipe on a cylinder, which read as a lamp post.
+	                  const padMat = new THREE.MeshStandardMaterial({ color: 0x23272f, roughness: 0.78, metalness: 0.02 });
+	                  const steel = new THREE.MeshStandardMaterial({ color: 0x3a3f49, roughness: 0.42, metalness: 0.55 });
+	                  const rbox = (w, h, d, r) => {                      // a rounded box, extruded from a rounded rectangle
+	                    const sh = new THREE.Shape(), x = -w / 2, z = -d / 2;
+	                    sh.moveTo(x + r, z); sh.lineTo(x + w - r, z); sh.quadraticCurveTo(x + w, z, x + w, z + r);
+	                    sh.lineTo(x + w, z + d - r); sh.quadraticCurveTo(x + w, z + d, x + w - r, z + d);
+	                    sh.lineTo(x + r, z + d); sh.quadraticCurveTo(x, z + d, x, z + d - r); sh.lineTo(x, z + r); sh.quadraticCurveTo(x, z, x + r, z);
+	                    const eg = new THREE.ExtrudeGeometry(sh, { depth: h - r * 2, bevelEnabled: true, bevelSize: r, bevelThickness: r, bevelSegments: 3, curveSegments: 5 });
+	                    eg.rotateX(-Math.PI / 2); eg.translate(0, r, 0); return eg;
+	                  };
+	                  const baseX = s * (C.length / 2 + 1.55), postX = s * (C.length / 2 + 1.02);
+	                  const base = new THREE.Mesh(rbox(1.5, 0.95, 1.12, 0.09), padMat); base.position.set(baseX, 0, 0); g.add(base);
+	                  const band = new THREE.Mesh(rbox(1.52, 0.12, 1.14, 0.03), new THREE.MeshStandardMaterial({ color: team.primary, roughness: 0.7 }));
+	                  band.position.set(baseX, 0.70, 0); g.add(band);
+	                  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.19, 2.40, 24), padMat); post.position.set(postX, 0.95 + 1.20, 0); g.add(post);
+	                  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.155, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), padMat); cap.position.set(postX, 3.35, 0); g.add(cap);
+	                  const pole = post;                                   // kept for the shot clock, which hangs off it
+	                  const armLen = Math.abs(postX - bx);
+	                  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.078, armLen, 16), steel);
+	                  arm.rotation.z = Math.PI / 2; arm.position.set((postX + bx) / 2, 3.38, 0); g.add(arm);
+	                  const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.72, 10), steel);
+	                  strut.position.set(bx + s * 0.34, C.boardBottom + 0.16, 0); strut.rotation.z = -s * 0.62; g.add(strut);
 	                  // shot clock - digital display
 	                  const cv = document.createElement('canvas'); cv.width = 128; cv.height = 64; const ctx = cv.getContext('2d');
 	                  const tex = new THREE.CanvasTexture(cv); shotTex[h.idx] = tex; shotCtx[h.idx] = ctx;
 	                  const scMat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
 	                  const sc = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.35), scMat);
 	                  sc.position.set(bx + s * 0.05, C.boardBottom + C.boardH + 0.3, 0); sc.rotation.y = -s * Math.PI / 2; g.add(sc);
-	                  const scBox = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 0.76), poleMat); scBox.position.set(bx + s * 0.09, sc.position.y, 0); g.add(scBox);
+	                  const scBox = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 0.76), steel); scBox.position.set(bx + s * 0.09, sc.position.y, 0); g.add(scBox);
 	                  drawShotClock(h.idx, 24);
 	                  return g;
 	                }
@@ -1358,11 +1387,26 @@ function buildHoop(h) {
     crowdN = seats.length;
     // A tapered torso instead of a box, and a crowd dark enough to read as a crowd rather than as rows of
     // bright cubes. Broadcast arenas are a bright floor against a dim bowl; the old palette did the opposite.
-    const bodyGeo = new THREE.CylinderGeometry(0.15, 0.21, 0.5, 6); const headGeo = new THREE.SphereGeometry(0.105, 6, 5);
-    const crowdMat = () => new THREE.MeshLambertMaterial({ color: 0xa6acb8 });
+    // A seated upper body - lap, waist, chest, shoulders, a neck - rather than a six-sided cone, and a head
+    // with a hairline. Both carry vertex colour that multiplies with the per-seat colour: the shirt takes
+    // the seat's colour and the lap goes dark, the face takes the seat's skin tone and the hair goes dark.
+    // About 200 triangles a person, across a thousand seats.
+    const V = (x, y) => new THREE.Vector2(x, y);
+    const bodyGeo = new THREE.LatheGeometry([V(0.001, -0.25), V(0.150, -0.25), V(0.158, -0.14), V(0.152, -0.02),
+      V(0.176, 0.10), V(0.198, 0.20), V(0.168, 0.262), V(0.070, 0.292), V(0.050, 0.345)], 10);
+    bodyGeo.scale(1, 1, 0.64);
+    const headGeo = new THREE.SphereGeometry(0.098, 10, 7); headGeo.scale(0.92, 1.08, 1);
+    const tint = (geo, fn) => {
+      const pa = geo.attributes.position, c = new Float32Array(pa.count * 3);
+      for (let i = 0; i < pa.count; i++) { const k = fn(pa.getX(i), pa.getY(i), pa.getZ(i)); c[i * 3] = c[i * 3 + 1] = c[i * 3 + 2] = k; }
+      geo.setAttribute('color', new THREE.BufferAttribute(c, 3));
+    };
+    tint(bodyGeo, (x, y) => (y < -0.13 ? 0.30 : y > 0.28 ? 0.62 : 1));                        // dark lap, shaded neck
+    tint(headGeo, (x, y, z) => (y > 0.030 || (z < -0.030 && y > -0.055) ? 0.16 : 1));         // hair over the top and back
+    const crowdMat = () => new THREE.MeshLambertMaterial({ color: 0xa6acb8, vertexColors: true });
     crowdBody = new THREE.InstancedMesh(bodyGeo, crowdMat(), crowdN);
     crowdHead = new THREE.InstancedMesh(headGeo, crowdMat(), crowdN);
-    crowdBaseY = new Float32Array(crowdN); crowdPhase = new Float32Array(crowdN);
+    crowdBaseY = new Float32Array(crowdN); crowdHeadY = new Float32Array(crowdN); crowdPhase = new Float32Array(crowdN);
     const m = new THREE.Matrix4(), col = new THREE.Color();
     const palette = [teamA.primary, teamA.primary, teamB.primary, 0x2b2f3a, 0x3d4457, 0x5a3b2e, 0x8a8f9c, 0x1f2a44, 0x704a7a];
     const skins = [0xf1c9a5, 0xd9a06f, 0xb5764a, 0x8d5a34, 0x5c3a21];
@@ -1370,13 +1414,18 @@ function buildHoop(h) {
     const dim = (c) => { col.setHex(c); col.multiplyScalar(DIM); return col; };
     let seed = 99; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
     for (let i = 0; i < crowdN; i++) {
-      const st = seats[i]; crowdBaseY[i] = st.y; crowdPhase[i] = rnd() * Math.PI * 2;
+      const st = seats[i]; crowdPhase[i] = rnd() * Math.PI * 2;
       // jitter every seat so the rows stop looking stamped out
       const sc = 0.88 + rnd() * 0.26, jx = (rnd() - 0.5) * 0.16, jz = (rnd() - 0.5) * 0.12;
-      m.makeRotationY(rnd() * 0.5 - 0.25);
-      m.scale(new THREE.Vector3(sc, sc, sc));
-      m.setPosition(st.x + jx, st.y - 0.02, st.z + jz); crowdBody.setMatrixAt(i, m);
-      m.makeTranslation(st.x + jx, st.y + 0.33 * sc, st.z + jz); crowdHead.setMatrixAt(i, m);
+      // Face the floor. The body is wider than it is deep now, and the hair is at the back, so a seat
+      // at the end of the court has to turn toward it: look at the nearest point on the court.
+      const fx = U.clamp(st.x, -L / 2, L / 2) - st.x, fz = U.clamp(st.z, -Wd / 2, Wd / 2) - st.z;
+      const yaw = Math.atan2(fx, fz) + (rnd() - 0.5) * 0.5;
+      crowdBaseY[i] = st.y - 0.02; crowdHeadY[i] = st.y - 0.02 + 0.43 * sc;
+      m.makeRotationY(yaw); m.scale(new THREE.Vector3(sc, sc, sc));
+      m.setPosition(st.x + jx, crowdBaseY[i], st.z + jz); crowdBody.setMatrixAt(i, m);
+      m.makeRotationY(yaw + (rnd() - 0.5) * 0.6); m.scale(new THREE.Vector3(sc, sc, sc));   // heads turn a little on their own
+      m.setPosition(st.x + jx, crowdHeadY[i], st.z + jz); crowdHead.setMatrixAt(i, m);
       crowdBody.setColorAt(i, dim(palette[(rnd() * palette.length) | 0]));
       crowdHead.setColorAt(i, dim(skins[(rnd() * skins.length) | 0]));
     }
@@ -1393,7 +1442,7 @@ function build(scene, teamA, teamB) {
 	              const floor = new THREE.Mesh(new THREE.PlaneGeometry(C.apronX * 2, C.apronZ * 2), floorMat);
 	              floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; group.add(floor);
 	              const outer = new THREE.Mesh(new THREE.PlaneGeometry(90, 70), new THREE.MeshLambertMaterial({ color: 0x0c0f16 })); outer.rotation.x = -Math.PI / 2; outer.position.y = -0.02; group.add(outer);
-	              for (const h of hoops) { const rig = buildHoop(h); rigs[h.idx] = rig; group.add(rig); }
+	              for (const h of hoops) { const rig = buildHoop(h, teamA); rigs[h.idx] = rig; group.add(rig); }
 	              buildStands(group, teamA, teamB);
 	              // Less flat fill, a stronger key: the floor should be the brightest thing in the building.
 	              const hemi = new THREE.HemisphereLight(0xcfe0ff, 0x181410, 0.58); group.add(hemi);
@@ -1418,7 +1467,7 @@ function build(scene, teamA, teamB) {
     if (crowdBody && crowdBob > 0.005) {
       crowdT += dt; crowdBob *= Math.exp(-dt * 0.9);
       const b = crowdBody.instanceMatrix.array, hd = crowdHead.instanceMatrix.array;
-      for (let i = 0; i < crowdN; i++) { const off = 0.16 * crowdBob * Math.abs(Math.sin(crowdT * 9 + crowdPhase[i])); b[i * 16 + 13] = crowdBaseY[i] + off; hd[i * 16 + 13] = crowdBaseY[i] + 0.36 + off; }
+      for (let i = 0; i < crowdN; i++) { const off = 0.16 * crowdBob * Math.abs(Math.sin(crowdT * 9 + crowdPhase[i])); b[i * 16 + 13] = crowdBaseY[i] + off; hd[i * 16 + 13] = crowdHeadY[i] + off; }
       crowdBody.instanceMatrix.needsUpdate = true; crowdHead.instanceMatrix.needsUpdate = true;
     }
     updateParticles(dt);
@@ -1496,7 +1545,7 @@ function build(scene, teamA, teamB) {
   function inBounds(x, z) { return Math.abs(x) <= C.length / 2 && Math.abs(z) <= C.width / 2; }
   function inPaint(x, z, h) { const d = h.s * (h.s * C.length / 2 - x); return d >= 0 && d <= C.keyDepth && Math.abs(z) <= C.paintW / 2; }
   function inFrontcourt(x, h) { return h.s * x > 0; }
-  return { C, hoops, boardX, rigs, build, update, setShotClock, netPulse, crowdCheer, setShadows, isThree, inBounds, inPaint, inFrontcourt, get group() { return group; }, get particles() { return particles; }, initParticles, spawnDust, spawnRimSpark, spawnBurst, updateParticles, resizeParticles };
+  return { C, hoops, boardX, rigs, netTexture, build, update, setShotClock, netPulse, crowdCheer, setShadows, isThree, inBounds, inPaint, inFrontcourt, get group() { return group; }, get particles() { return particles; }, initParticles, spawnDust, spawnRimSpark, spawnBurst, updateParticles, resizeParticles };
 })();
 // ==== END COURT ====
 
@@ -1635,112 +1684,16 @@ const PlayerSys = (() => {
   function costStamina(p, amt) { p.stamina = Math.max(0, p.stamina - amt); if (p.stamina <= 0) p.winded = true; }
 
   // ---- procedural player models ----
-  // A body is a set of lathe/primitive parts merged into ONE vertex-coloured mesh, so a player costs 10 draw
-  // calls instead of 26 while carrying more shape. Limbs stay separate because they articulate: the arm has a
-  // shoulder and an elbow, the leg a hip and a knee, which is what makes the run cycle and shot form read.
-  const SF = 0.98;                     // one build-scale knob for the whole figure
-  const POS_BODY = { PG: { h: 0.97, w: 0.90 }, SG: { h: 0.99, w: 0.94 }, SF: { h: 1.00, w: 0.99 }, PF: { h: 0.99, w: 1.07 }, C: { h: 0.96, w: 1.15 } };
+  // The figure itself is the skinned mesh built further down; these are the pieces every player shares.
   const SKINS = [0xf1c9a5, 0xd9a06f, 0xb5764a, 0x8d5a34, 0x5c3a21];
   const HAIRS = [0x1a1210, 0x241a14, 0x120e0c, 0x2e2119, 0x0e0b0a, 0x4a3324, 0x15100e];
+  const POS_WIDTH = { PG: 0.90, SG: 0.94, SF: 0.99, PF: 1.07, C: 1.15 };   // bigs are built wider, not just taller
   const GEO = {}; const teamMats = {};
-  let bodyMat = null, shadowMat = null;
-
-  // Merge parts into one geometry, baking each part's colour into vertex colours.
-  function mergeParts(parts) {
-    let total = 0; const prepped = [];
-    for (const pt of parts) {
-      if (!pt.geo) continue;
-      const g = pt.geo.index ? pt.geo.toNonIndexed() : pt.geo.clone();
-      if (pt.matrix) g.applyMatrix4(pt.matrix);
-      total += g.attributes.position.count; prepped.push({ g, c: new THREE.Color(pt.color), ao: pt.ao });
-    }
-    const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3);
-    let o = 0;
-    for (const { g, c, ao } of prepped) {
-      const n = g.attributes.position.count, pa = g.attributes.position.array;
-      pos.set(pa, o * 3);
-      if (g.attributes.normal) nor.set(g.attributes.normal.array, o * 3);
-      for (let i = 0; i < n; i++) {
-        const b = (o + i) * 3, k = ao ? ao(pa[i * 3], pa[i * 3 + 1], pa[i * 3 + 2]) : 1;
-        col[b] = c.r * k; col[b + 1] = c.g * k; col[b + 2] = c.b * k;
-      }
-      o += n; g.dispose();
-    }
-    const out = new THREE.BufferGeometry();
-    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-    out.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    return out;
-  }
-  const V2 = (x, y) => new THREE.Vector2(x * SF, y * SF);
-  const at = (x, y, z) => new THREE.Matrix4().makeTranslation(x * SF, y * SF, (z || 0) * SF);
-  function scaled(x, y, z, sx, sy, sz) { const m = new THREE.Matrix4().makeScale(sx, sy, sz == null ? sx : sz); return m.premultiply(at(x, y, z)); }
-  // tilt then spin then place - used for braids, locs and the kit's side panels
-  const posed = (x, y, z, rx, ry) => {
-    const m = new THREE.Matrix4().makeRotationX(rx || 0);
-    if (ry) m.premultiply(new THREE.Matrix4().makeRotationY(ry));
-    return m.premultiply(at(x, y, z));
-  };
-  // Contact shading. A crease is just a darker vertex colour, so the whole body
-  // still merges into one draw call: darkest at yDark, untouched at yLight.
-  const ao = (yDark, yLight, k) => {
-    const a = yDark * SF, b = yLight * SF;
-    return (x, y) => 1 - k * (1 - U.clamp((y - a) / (b - a), 0, 1));
-  };
+  let shadowMat = null;
 
   function initGeo() {
-    // torso: waist -> chest -> shoulders -> neck opening
-    GEO.torso = new THREE.LatheGeometry([V2(0.146, 0.92), V2(0.162, 0.97), V2(0.182, 1.04), V2(0.200, 1.12), V2(0.212, 1.21), V2(0.216, 1.29), V2(0.209, 1.37), V2(0.186, 1.43), V2(0.138, 1.47), V2(0.096, 1.495)], 20);
-    GEO.shorts = new THREE.LatheGeometry([V2(0.156, 0.695), V2(0.190, 0.712), V2(0.205, 0.756), V2(0.217, 0.83), V2(0.209, 0.92), V2(0.170, 0.985)], 18);
-    // kit trim. All of it merges into the body, so a full uniform is still one draw call.
-    GEO.collar = new THREE.TorusGeometry(0.101 * SF, 0.013 * SF, 5, 18); GEO.collar.rotateX(Math.PI / 2); GEO.collar.translate(0, 1.487 * SF, 0);
-    GEO.waistband = new THREE.CylinderGeometry(0.173 * SF, 0.212 * SF, 0.062 * SF, 18, 1, true); GEO.waistband.translate(0, 0.954 * SF, 0);
-    GEO.jerseyPanel = new THREE.LatheGeometry([V2(0.181, 1.02), V2(0.204, 1.12), V2(0.216, 1.21), V2(0.220, 1.29), V2(0.2156, 1.34)], 4, -0.13, 0.26);
-    GEO.shortStripe = new THREE.LatheGeometry([V2(0.200, 0.73), V2(0.209, 0.756), V2(0.221, 0.83), V2(0.2148, 0.90), V2(0.201, 0.94)], 4, -0.155, 0.31);
-    // the gusset closes the gap between the short legs
-    GEO.gusset = new THREE.SphereGeometry(0.135 * SF, 10, 8); GEO.gusset.scale(1, 0.75, 0.9);
-    GEO.neck = new THREE.CylinderGeometry(0.058 * SF, 0.068 * SF, 0.12 * SF, 10); GEO.neck.translate(0, 1.52 * SF, 0);
-    GEO.deltoid = new THREE.SphereGeometry(0.072 * SF, 16, 12);
-    GEO.head = new THREE.SphereGeometry(0.112 * SF, 14, 11);
-    GEO.jaw = new THREE.SphereGeometry(0.092 * SF, 10, 7, 0, Math.PI * 2, Math.PI * 0.42, Math.PI * 0.58);
-    GEO.ear = new THREE.SphereGeometry(0.030 * SF, 6, 5);
-    GEO.nose = new THREE.ConeGeometry(0.017 * SF, 0.042 * SF, 6); GEO.nose.rotateX(Math.PI / 2);
-    GEO.eye = new THREE.SphereGeometry(0.014 * SF, 6, 5);
-    GEO.brow = new THREE.BoxGeometry(0.036 * SF, 0.010 * SF, 0.012 * SF);
-    GEO.mouth = new THREE.BoxGeometry(0.034 * SF, 0.007 * SF, 0.012 * SF);
-    // hair variants
-    // phi = PI/2 faces +Z, so sweeping around from there leaves an opening over the face
-    GEO.hairFade = new THREE.SphereGeometry(0.124 * SF, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
-    GEO.hairAfro = new THREE.SphereGeometry(0.150 * SF, 16, 11, Math.PI / 2 + 0.88, Math.PI * 2 - 1.76, 0, Math.PI * 0.80);
-    GEO.hairTop = new THREE.SphereGeometry(0.128 * SF, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.42);
-    GEO.band = new THREE.TorusGeometry(0.114 * SF, 0.019 * SF, 6, 18); GEO.band.rotateX(Math.PI / 2);
-    GEO.braid = new THREE.CylinderGeometry(0.013 * SF, 0.009 * SF, 0.24 * SF, 5); GEO.braid.rotateX(Math.PI / 2);
-    GEO.loc = new THREE.CylinderGeometry(0.014 * SF, 0.011 * SF, 0.13 * SF, 5); GEO.loc.translate(0, -0.055 * SF, 0);
-    // arm: upper (shoulder -> elbow), fore (elbow -> hand). Both hang down -Y from their pivot.
-    GEO.upperArm = new THREE.CylinderGeometry(0.052 * SF, 0.044 * SF, 0.29 * SF, 10); GEO.upperArm.translate(0, -0.145 * SF, 0);
-    GEO.sleeve = new THREE.CylinderGeometry(0.066 * SF, 0.058 * SF, 0.13 * SF, 10); GEO.sleeve.translate(0, -0.055 * SF, 0);
-    GEO.armTrim = new THREE.TorusGeometry(0.0595 * SF, 0.0062 * SF, 5, 14); GEO.armTrim.rotateX(Math.PI / 2); GEO.armTrim.translate(0, -0.1185 * SF, 0);
-    GEO.elbow = new THREE.SphereGeometry(0.044 * SF, 9, 7);
-    GEO.foreArm = new THREE.CylinderGeometry(0.044 * SF, 0.036 * SF, 0.27 * SF, 10); GEO.foreArm.translate(0, -0.135 * SF, 0);
-    GEO.wristband = new THREE.TorusGeometry(0.040 * SF, 0.012 * SF, 5, 12); GEO.wristband.rotateX(Math.PI / 2);
-    GEO.hand = new THREE.SphereGeometry(0.048 * SF, 9, 7);
-    // leg: thigh (hip -> knee), shin (knee -> foot)
-    GEO.thigh = new THREE.CylinderGeometry(0.088 * SF, 0.072 * SF, 0.40 * SF, 10); GEO.thigh.translate(0, -0.20 * SF, 0);
-    GEO.knee = new THREE.SphereGeometry(0.068 * SF, 9, 7);
-    GEO.shin = new THREE.CylinderGeometry(0.066 * SF, 0.050 * SF, 0.36 * SF, 10); GEO.shin.translate(0, -0.18 * SF, 0);
-    GEO.sock = new THREE.CylinderGeometry(0.058 * SF, 0.052 * SF, 0.09 * SF, 10); GEO.sock.translate(0, -0.325 * SF, 0);
-    // a shoe, not a brick: heel counter, midfoot, rounded toe box, foam midsole, rubber outsole
-    GEO.shoeHeel = new THREE.BoxGeometry(0.120 * SF, 0.088 * SF, 0.142 * SF); GEO.shoeHeel.translate(0, -0.350 * SF, -0.028 * SF);
-    GEO.shoeMid = new THREE.BoxGeometry(0.116 * SF, 0.062 * SF, 0.124 * SF); GEO.shoeMid.translate(0, -0.363 * SF, 0.032 * SF);
-    GEO.shoeToe = new THREE.SphereGeometry(0.070 * SF, 9, 7); GEO.shoeToe.scale(0.84, 0.60, 1.28); GEO.shoeToe.translate(0, -0.352 * SF, 0.086 * SF);
-    GEO.midsole = new THREE.BoxGeometry(0.132 * SF, 0.040 * SF, 0.268 * SF); GEO.midsole.translate(0, -0.414 * SF, 0.040 * SF);
-    GEO.outsole = new THREE.BoxGeometry(0.136 * SF, 0.015 * SF, 0.274 * SF); GEO.outsole.translate(0, -0.4415 * SF, 0.040 * SF);
-    // jersey number ring: thetaStart puts u=0.25 on +Z (chest) and u=0.75 on -Z (back)
-    // 20 segments and a quarter-turn start means its vertices land exactly on the torso's
-    GEO.numRing = new THREE.LatheGeometry([V2(0.2085, 1.15), V2(0.2170, 1.22), V2(0.2205, 1.29), V2(0.2144, 1.36)], 20, -Math.PI / 2, Math.PI * 2);
-    GEO.shadow = new THREE.CircleGeometry(0.46 * SF, 16); GEO.shadow.rotateX(-Math.PI / 2);
-    GEO.ring = new THREE.RingGeometry(0.50 * SF, 0.62 * SF, 24); GEO.ring.rotateX(-Math.PI / 2);
-    bodyMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.74, metalness: 0.03, envMapIntensity: 0.35 });
+    GEO.shadow = new THREE.CircleGeometry(0.45, 16); GEO.shadow.rotateX(-Math.PI / 2);
+    GEO.ring = new THREE.RingGeometry(0.49, 0.61, 24); GEO.ring.rotateX(-Math.PI / 2);
     shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false });
   }
   function matsFor(team) {
@@ -1762,100 +1715,414 @@ const PlayerSys = (() => {
     const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t;
   }
 
+  // ---------- the figure ----------
+  // Each player is one sculpted, skinned body. The eight pivots the animator has always driven -
+  // shoulders, elbows, hips, knees - are bones now rather than rigid groups, so an elbow or a knee bends
+  // the skin around it instead of hinging two cylinders at a ball joint. The animator never knew the
+  // difference: it still writes armL.rotation and shinR.rotation, they just happen to be Bones.
+  //
+  // It is modelled at true size for a 1.93m athlete, so `height / 1.93` gives real heights against a
+  // real rim. The old figure was built 1.75m tall and scaled as if it were 1.93m, which is most of why
+  // everyone read short, stocky and big-headed: head about one seventh of height instead of one eighth,
+  // and arms a third of it where a real arm is closer to half.
+  //
+  // Two draw calls a body - matte cloth and slightly glossier skin - where the rigid rig used ten.
+  const FIG = {
+    hipX: 0.092, hipY: 0.975, kneeY: 0.522,
+    shX: 0.196, shY: 1.552, shZ: -0.014, elY: 1.218, wrY: 0.944,
+    headY: 1.798, headZ: 0.004, headW: 0.080, headH: 0.120, headD: 0.101,
+  };
+  const BONE = { root: 0, armL: 1, foreL: 2, armR: 3, foreR: 4, legL: 5, shinL: 6, legR: 7, shinR: 8 };
+  let skinMat = null, clothMat = null, figGeo = null;
+  const sstep = (e0, e1, x) => { const t = U.clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+  // contact shading: darkest at yDark, untouched at yLight, in either direction
+  const shade = (yDark, yLight, k) => (x, y) => 1 - k * (1 - sstep(yDark, yLight, y));
+
+  // Profiles are rings of [y, rx, rz, cx, cz], bottom to top: an elliptical cross-section per height,
+  // and where its centre sits. Limb rings put cx relative to the joint, measured outward.
+  const TORSO = [
+    [0.930, 0.148, 0.115, 0, 0.004], [1.000, 0.150, 0.118, 0, 0.006], [1.080, 0.146, 0.114, 0, 0.008],
+    [1.160, 0.150, 0.117, 0, 0.010], [1.240, 0.158, 0.122, 0, 0.014], [1.310, 0.166, 0.128, 0, 0.020],
+    [1.380, 0.172, 0.134, 0, 0.024], [1.436, 0.1739, 0.1322, 0, 0.0203], [1.444, 0.1739, 0.1314, 0, 0.0192],
+    [1.490, 0.174, 0.124, 0, 0.010], [1.525, 0.172, 0.112, 0, 0.000], [1.550, 0.160, 0.098, 0, -0.008],
+    [1.559, 0.150, 0.089, 0, -0.009], [1.566, 0.136, 0.082, 0, -0.0098], [1.588, 0.080, 0.067, 0, -0.008],
+  ];
+  const SHORTS_HIP = [
+    [0.860, 0.168, 0.130, 0, -0.006], [0.900, 0.178, 0.138, 0, -0.010], [0.950, 0.176, 0.136, 0, -0.008],
+    [1.000, 0.163, 0.127, 0, -0.002], [1.026, 0.158, 0.123, 0, 0.002], [1.033, 0.156, 0.122, 0, 0.004], [1.056, 0.151, 0.119, 0, 0.004],
+  ];
+  const SHORTS_LEG = [
+    [0.590, 0.101, 0.105, 0.008, 0.004], [0.605, 0.102, 0.106, 0.008, 0.004], [0.680, 0.105, 0.109, 0.006, 0.002],
+    [0.760, 0.108, 0.112, 0.004, -0.002], [0.830, 0.108, 0.112, -0.002, -0.006], [0.885, 0.100, 0.110, -0.012, -0.008],
+  ];
+  const NECK = [[1.552, 0.084, 0.072, 0, -0.014], [1.588, 0.071, 0.065, 0, -0.012], [1.630, 0.065, 0.063, 0, -0.008], [1.680, 0.062, 0.062, 0, -0.004], [1.728, 0.060, 0.061, 0, 0.000]];
+  // shoulder cap down to the wrist in one piece, so the elbow bends skin rather than meeting a sphere.
+  // Deltoid out to the side, bicep forward, the flat of the forearm turned to face the thigh.
+  const ARM = [
+    [0.944, 0.024, 0.033, 0.000, 0.000], [0.965, 0.025, 0.034, 0.000, 0.000], [1.000, 0.030, 0.036, 0.000, 0.001],
+    [1.050, 0.035, 0.041, 0.001, 0.003], [1.100, 0.041, 0.046, 0.002, 0.005], [1.150, 0.046, 0.049, 0.003, 0.006],
+    [1.190, 0.047, 0.049, 0.002, 0.002], [1.218, 0.044, 0.046, 0.000, -0.004], [1.245, 0.046, 0.048, 0.000, 0.000],
+    [1.290, 0.050, 0.055, 0.000, 0.008], [1.340, 0.055, 0.062, 0.001, 0.012], [1.395, 0.057, 0.064, 0.002, 0.013],
+    [1.440, 0.060, 0.063, 0.004, 0.008], [1.480, 0.064, 0.063, 0.007, 0.004], [1.520, 0.065, 0.062, 0.011, 0.002],
+    [1.555, 0.064, 0.060, 0.012, 0.000], [1.575, 0.060, 0.056, 0.008, -0.003], [1.588, 0.052, 0.050, 0.002, -0.005],
+    [1.596, 0.036, 0.036, -0.006, -0.006], [1.600, 0.014, 0.014, -0.012, -0.006],
+  ];
+  // palm to the thigh, so thin across and wide front to back; the fingers curl in toward the body
+  const HAND = [
+    [0.768, 0.006, 0.012, -0.014, 0.002], [0.776, 0.011, 0.022, -0.012, 0.002], [0.792, 0.014, 0.032, -0.009, 0.001],
+    [0.815, 0.016, 0.038, -0.006, 0.000], [0.845, 0.018, 0.043, -0.003, 0.000], [0.880, 0.019, 0.044, -0.001, 0.000],
+    [0.915, 0.019, 0.040, 0.000, 0.000], [0.944, 0.021, 0.031, 0.000, 0.000],
+  ];
+  const THUMB = [[0.866, 0.007, 0.008, -0.006, 0.050], [0.884, 0.010, 0.011, -0.003, 0.046], [0.905, 0.012, 0.013, 0.000, 0.040], [0.926, 0.012, 0.014, 0.002, 0.032]];
+  // quad at the front of the thigh, the kneecap forward of the joint, the calf behind the shin
+  const LEG = [
+    [0.085, 0.033, 0.037, 0.000, 0.004], [0.120, 0.033, 0.036, 0.000, 0.000], [0.170, 0.035, 0.039, 0.000, -0.004],
+    [0.230, 0.043, 0.047, 0.001, -0.008], [0.290, 0.052, 0.057, 0.002, -0.013], [0.350, 0.058, 0.064, 0.002, -0.017],
+    [0.400, 0.059, 0.064, 0.002, -0.016], [0.450, 0.056, 0.058, 0.001, -0.008], [0.490, 0.054, 0.055, 0.000, 0.002],
+    [0.522, 0.056, 0.056, 0.000, 0.012], [0.550, 0.062, 0.063, 0.000, 0.013], [0.590, 0.070, 0.074, 0.002, 0.012],
+    [0.640, 0.079, 0.084, 0.003, 0.010], [0.700, 0.086, 0.090, 0.004, 0.006], [0.760, 0.088, 0.092, 0.004, 0.002],
+  ];
+  const SOCK = [[0.066, 0.040, 0.047, 0.000, 0.004], [0.120, 0.039, 0.044, 0.000, 0.000], [0.180, 0.041, 0.045, 0.000, -0.004], [0.228, 0.047, 0.052, 0.000, -0.008]];
+  // a high-top: the collar wraps the ankle, the sole is a flat slab, the upper sits on it
+  const COLLAR = [[0.040, 0.047, 0.060, 0, -0.010], [0.095, 0.045, 0.056, 0, -0.012], [0.130, 0.044, 0.052, 0, -0.010], [0.144, 0.043, 0.050, 0, -0.008]];
+  const OUTSOLE = [[0.000, 0.052, 0.142, 0, 0.058], [0.011, 0.054, 0.145, 0, 0.058]];
+  const MIDSOLE = [[0.011, 0.054, 0.145, 0, 0.058], [0.022, 0.056, 0.147, 0, 0.058], [0.036, 0.053, 0.143, 0, 0.058]];
+
+  const place = (rings, x0, z0, side) => rings.map((r) => [r[0], r[1], r[2], side * (x0 + r[3]), z0 + r[4]]);
+  // bridge to nostrils, heights relative to the head's centre, depth measured forward of it
+  const NOSE = [[0.010, 0.006, 0.006, 0, 0.080], [-0.005, 0.007, 0.009, 0, 0.082], [-0.020, 0.009, 0.013, 0, 0.084],
+    [-0.032, 0.012, 0.016, 0, 0.085], [-0.040, 0.013, 0.012, 0, 0.084], [-0.045, 0.008, 0.006, 0, 0.081]].reverse();
+
+  // A tube through elliptical rings. A lathe can only ever be round and centred; this is what lets a
+  // thigh have a quad at the front and a calf that sits behind the shin. No seam is duplicated, so the
+  // normals are smooth all the way round, and each vertex remembers its angle so paint can find a side.
+  function ringTube(rings, segs, capBottom, capTop) {
+    const pos = [], ang = [], idx = [], n = rings.length;
+    for (const r of rings) for (let s = 0; s < segs; s++) {
+      const a = (s / segs) * Math.PI * 2;
+      pos.push(r[3] + Math.sin(a) * r[1], r[0], r[4] + Math.cos(a) * r[2]); ang.push(a);
+    }
+    for (let i = 0; i < n - 1; i++) for (let s = 0; s < segs; s++) {
+      const a = i * segs + s, a1 = i * segs + (s + 1) % segs;
+      idx.push(a, a1, a + segs, a + segs, a1, a1 + segs);
+    }
+    const cap = (ri, up) => {
+      const r = rings[ri], c = pos.length / 3;
+      pos.push(r[3], r[0] + (up ? 0.001 : -0.001), r[4]); ang.push(0);
+      for (let s = 0; s < segs; s++) {
+        const v = ri * segs + s, v1 = ri * segs + (s + 1) % segs;
+        if (up) idx.push(c, v, v1); else idx.push(c, v1, v);
+      }
+    };
+    if (capBottom) cap(0, false);
+    if (capTop) cap(n - 1, true);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('ang', new THREE.Float32BufferAttribute(ang, 1));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  }
+  // A tube along a polyline, for braids and locs that follow the skull or hang off it.
+  function curveTube(pts, r, segs) {
+    const pos = [], idx = [], n = pts.length, t = new THREE.Vector3(), nn = new THREE.Vector3(), bb = new THREE.Vector3(), up = new THREE.Vector3();
+    for (let i = 0; i < n; i++) {
+      t.copy(pts[Math.min(n - 1, i + 1)]).sub(pts[Math.max(0, i - 1)]).normalize();
+      up.set(0, 1, 0); if (Math.abs(t.y) > 0.9) up.set(1, 0, 0);
+      nn.crossVectors(t, up).normalize(); bb.crossVectors(t, nn).normalize();
+      const rr = typeof r === 'function' ? r(i / (n - 1)) : r;
+      for (let s = 0; s < segs; s++) {
+        const a = (s / segs) * Math.PI * 2, c = Math.cos(a) * rr, sn = Math.sin(a) * rr;
+        pos.push(pts[i].x + nn.x * c + bb.x * sn, pts[i].y + nn.y * c + bb.y * sn, pts[i].z + nn.z * c + bb.z * sn);
+      }
+    }
+    for (let i = 0; i < n - 1; i++) for (let s = 0; s < segs; s++) {
+      const a = i * segs + s, a1 = i * segs + (s + 1) % segs;
+      idx.push(a, a + segs, a1, a + segs, a1 + segs, a1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  }
+  // A point on the skull, from normalised coordinates, pushed out by `k`.
+  const skull = (x, y, z, k) => new THREE.Vector3(x * FIG.headW * k, FIG.headY + y * FIG.headH * k, FIG.headZ + z * FIG.headD * k);
+
+  // A sphere sculpted into a head: the jaw narrows to a chin that comes forward, the face is flatter than
+  // a ball, a brow ridge shades sockets set into it, cheekbones stand out, and the skull runs further back
+  // than the face comes forward. The seam is turned to the back, where the hair covers it.
+  function headGeometry() {
+    const g = new THREE.SphereGeometry(1, 42, 32); g.rotateY(-Math.PI / 2);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      if (y < 0) { const t = -y; x *= 1 - 0.18 * t * t; }
+      if (y < -0.5 && z > 0) z += 0.12 * (-y - 0.5) * z;
+      if (z > 0.35) z = 0.35 + (z - 0.35) * 0.70;
+      z += 0.30 * Math.exp(-((y - 0.24) ** 2) / 0.010) * Math.max(0, z - 0.3);
+      for (const ex of [-0.37, 0.37]) z -= 0.14 * Math.exp(-((x - ex) ** 2 + (y - 0.10) ** 2) / 0.016) * Math.max(0, z);
+      const ck = Math.exp(-((y + 0.02) ** 2) / 0.02) * Math.max(0, Math.abs(x) - 0.42) * Math.max(0, z);
+      x += Math.sign(x) * ck * 0.28;
+      if (z < 0) z *= 1.07;
+      p.setXYZ(i, x, y, z);
+    }
+    g.scale(FIG.headW, FIG.headH, FIG.headD); g.translate(0, FIG.headY, FIG.headZ);
+    g.computeVertexNormals();
+    return g;
+  }
+  // A small ellipsoid, for the features too small to be worth sculpting.
+  function blob(rx, ry, rz, x, y, z, rotX, w, h) {
+    const g = new THREE.SphereGeometry(1, w || 12, h || 9); g.rotateY(-Math.PI / 2);
+    g.scale(rx, ry, rz); if (rotX) g.rotateX(rotX); g.translate(x, y, z);
+    return g;
+  }
+  function footGeometry(x0) {
+    const g = new THREE.SphereGeometry(1, 28, 16); g.rotateY(-Math.PI / 2);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i); let y = p.getY(i);
+      if (y < -0.15) y = -0.15 + (y + 0.15) * 0.2;         // flat underneath, where it sits on the sole
+      if (z > 0.45) y *= 1 - 0.35 * (z - 0.45) / 0.55;    // the toe box drops toward the tip
+      if (z < -0.6 && y > 0) y *= 1.08;                   // the heel counter stands a little taller
+      p.setXYZ(i, x, y, z);
+    }
+    g.scale(0.050, 0.046, 0.138); g.translate(x0, 0.052, 0.056); g.computeVertexNormals();
+    return g;
+  }
+  // The number band: the jersey's own chest profile, 4mm proud of it, with the number wrapped round at
+  // front and back. It has UVs, which the baked body does not, so it is a mesh of its own.
+  function numberBand() {
+    const rows = TORSO.filter((r) => r[0] >= 1.18 && r[0] <= 1.47), segs = 48;
+    const y0 = rows[0][0], y1 = rows[rows.length - 1][0], pos = [], uv = [], idx = [];
+    for (const r of rows) for (let s = 0; s <= segs; s++) {
+      const u = s / segs, a = (u - 0.25) * Math.PI * 2;
+      pos.push(r[3] + Math.sin(a) * (r[1] + 0.004), r[0], r[4] + Math.cos(a) * (r[2] + 0.004));
+      uv.push(u, (r[0] - y0) / (y1 - y0));
+    }
+    const row = segs + 1;
+    for (let i = 0; i < rows.length - 1; i++) for (let s = 0; s < segs; s++) {
+      const a = i * row + s; idx.push(a, a + 1, a + row, a + row, a + 1, a + row + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  }
+  // Hair, one list of pieces per style, fitted to the head. A cap is tilted back so the hairline sits high
+  // at the front and low at the back, which a level cut cannot do.
+  function hairCap(thetaLen, kx, ky, kz, dy, dz, tilt) {
+    const g = new THREE.SphereGeometry(1, 32, 18, 0, Math.PI * 2, 0, thetaLen); g.rotateY(-Math.PI / 2);
+    g.rotateX(tilt == null ? -0.30 : tilt);
+    g.scale(FIG.headW * kx, FIG.headH * ky, FIG.headD * kz); g.translate(0, FIG.headY + dy, FIG.headZ + dz);
+    return g;
+  }
+  function hairStyles() {
+    const fade = () => hairCap(Math.PI * 0.54, 1.06, 1.04, 1.06, 0.002, -0.004);
+    const styles = [];
+    styles[0] = [fade()];
+    styles[1] = [hairCap(Math.PI * 0.62, 1.42, 1.30, 1.36, 0.020, -0.010, -0.24)];
+    const band = new THREE.TorusGeometry(1, 0.11, 6, 40); band.rotateX(Math.PI / 2);
+    band.scale(FIG.headW * 1.02, 0.14, FIG.headD * 0.99); band.translate(0, FIG.headY + FIG.headH * 0.40, FIG.headZ - 0.004);
+    styles[2] = [hairCap(Math.PI * 0.50, 1.05, 1.02, 1.05, 0.004, -0.004), band];
+    styles[3] = [hairCap(Math.PI * 0.47, 1.07, 1.06, 1.07, 0.004, -0.004)];
+    styles[4] = [];
+    // braids: rows running front to back over the skull
+    const braids = [hairCap(Math.PI * 0.50, 1.03, 1.02, 1.03, 0.002, -0.004)];
+    for (let k = -2; k <= 2; k++) {
+      const xn = k * 0.22, rr = Math.sqrt(Math.max(0, 1 - xn * xn)), pts = [];
+      // an arc in the y-z plane from the hairline, over the crown, down to the nape
+      for (let i = 0; i <= 12; i++) { const ph = 0.42 + (i / 12) * 3.10; pts.push(skull(xn, rr * Math.sin(ph), rr * Math.cos(ph), 1.07)); }
+      braids.push(curveTube(pts, 0.0085, 6));
+    }
+    styles[5] = braids;
+    // locs: short strands hanging off a cap round the back and sides
+    const locs = [hairCap(Math.PI * 0.48, 1.05, 1.04, 1.05, 0.004, -0.004)];
+    for (let k = 0; k < 11; k++) {
+      const a = 0.9 + k * ((Math.PI * 2 - 1.8) / 10), sx = Math.sin(a), sz = Math.cos(a), pts = [];
+      for (let i = 0; i <= 5; i++) {
+        const d = i / 5;
+        pts.push(skull(sx * (0.99 + d * 0.14), 0.10 - d * 1.05, sz * (0.99 + d * 0.12), 1.05));
+      }
+      locs.push(curveTube(pts, (u) => 0.0105 - u * 0.0035, 6));
+    }
+    styles[6] = locs;
+    return styles;
+  }
+
+  function buildFigureGeometry() {
+    const F = figGeo = { L: {}, R: {} };
+    F.torso = ringTube(TORSO, 60, false, false);
+    F.shortsHip = ringTube(SHORTS_HIP, 36, false, false);
+    F.neck = ringTube(NECK, 20, false, false);
+    F.head = headGeometry();
+    F.nose = ringTube(NOSE.map((r) => [FIG.headY + r[0], r[1], r[2], r[3], FIG.headZ + r[4]]), 14, true, true);
+    F.lips = blob(0.021, 0.006, 0.008, 0, FIG.headY - 0.061, FIG.headZ + 0.073);
+    F.band = numberBand();
+    F.hair = hairStyles();
+    for (const side of [-1, 1]) {
+      const S = side < 0 ? F.L : F.R;
+      S.arm = ringTube(place(ARM, FIG.shX, FIG.shZ, side), 22, true, true);
+      S.hand = ringTube(place(HAND, FIG.shX, FIG.shZ, side), 16, true, true);
+      S.thumb = ringTube(place(THUMB, FIG.shX, FIG.shZ, side), 10, true, true);
+      S.leg = ringTube(place(LEG, FIG.hipX, 0, side), 24, true, false);
+      S.shortsLeg = ringTube(place(SHORTS_LEG, FIG.hipX, 0, side), 44, false, false);
+      S.sock = ringTube(place(SOCK, FIG.hipX, 0, side), 20, false, false);
+      S.collar = ringTube(place(COLLAR, FIG.hipX, 0, side), 22, false, false);
+      S.outsole = ringTube(place(OUTSOLE, FIG.hipX, 0, side), 26, true, true);
+      S.midsole = ringTube(place(MIDSOLE, FIG.hipX, 0, side), 26, false, true);
+      S.foot = footGeometry(side * FIG.hipX);
+      S.ear = blob(0.0095, 0.026, 0.017, side * (FIG.headW + 0.002), FIG.headY - 0.006, FIG.headZ - 0.010);
+      S.eye = blob(0.0125, 0.0066, 0.0065, side * 0.030, FIG.headY + 0.012, FIG.headZ + 0.066);
+      S.iris = blob(0.0056, 0.0056, 0.003, side * 0.030, FIG.headY + 0.012, FIG.headZ + 0.0715, 0, 10, 8);
+      const brow = new THREE.BoxGeometry(0.026, 0.0055, 0.006); brow.rotateZ(side * -0.10);
+      brow.translate(side * 0.030, FIG.headY + 0.031, FIG.headZ + 0.086); S.brow = brow;
+    }
+    skinMat = new THREE.MeshStandardMaterial({ vertexColors: true, skinning: true, roughness: 0.55, metalness: 0.0 });
+    clothMat = new THREE.MeshStandardMaterial({ vertexColors: true, skinning: true, roughness: 0.84, metalness: 0.0 });
+  }
+
+  // Skin weights. Joints blend across a short zone so the skin folds round them instead of creasing.
+  const WT = {
+    root: () => [[BONE.root, 1]],
+    fore: (side) => () => [[side < 0 ? BONE.foreL : BONE.foreR, 1]],
+    shin: (side) => () => [[side < 0 ? BONE.shinL : BONE.shinR, 1]],
+    arm: (side) => (x, y) => {
+      const a = side < 0 ? BONE.armL : BONE.armR, f = side < 0 ? BONE.foreL : BONE.foreR;
+      const wf = sstep(FIG.elY + 0.04, FIG.elY - 0.04, y), wr = sstep(FIG.shY - 0.06, FIG.shY + 0.05, y);
+      return [[a, Math.max(0, 1 - wf - wr)], [f, wf], [BONE.root, wr]];
+    },
+    leg: (side) => (x, y) => {
+      const l = side < 0 ? BONE.legL : BONE.legR, s = side < 0 ? BONE.shinL : BONE.shinR;
+      const ws = sstep(FIG.kneeY + 0.045, FIG.kneeY - 0.045, y), wr = sstep(FIG.hipY - 0.20, FIG.hipY - 0.02, y);
+      return [[l, Math.max(0, 1 - ws - wr)], [s, ws], [BONE.root, wr]];
+    },
+  };
+
+  // Merge parts into one skinned geometry: position, normal, colour with the contact shading baked in,
+  // and up to four bone weights per vertex. `paint` colours by height and by angle round a tube, which is
+  // how a side stripe or a waistband gets drawn without a texture.
+  const _bc = new THREE.Color();
+  function bake(parts) {
+    let nv = 0, ni = 0;
+    for (const pt of parts) { nv += pt.geo.attributes.position.count; ni += pt.geo.index.count; }
+    const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3);
+    const si = new Uint16Array(nv * 4), sw = new Float32Array(nv * 4);
+    const idx = new (nv > 65535 ? Uint32Array : Uint16Array)(ni);
+    let vo = 0, io = 0;
+    for (const pt of parts) {
+      const g = pt.geo, pa = g.attributes.position.array, na = g.attributes.normal.array;
+      const aa = g.attributes.ang ? g.attributes.ang.array : null, cnt = g.attributes.position.count;
+      let base = pt.color;
+      for (let i = 0; i < cnt; i++) {
+        const x = pa[i * 3], y = pa[i * 3 + 1], z = pa[i * 3 + 2], o = (vo + i) * 3;
+        pos[o] = x; pos[o + 1] = y; pos[o + 2] = z;
+        nor[o] = na[i * 3]; nor[o + 1] = na[i * 3 + 1]; nor[o + 2] = na[i * 3 + 2];
+        _bc.set(pt.paint ? pt.paint(x, y, z, aa ? aa[i] : 0) : base);
+        const k = pt.ao ? pt.ao(x, y, z) : 1;
+        col[o] = _bc.r * k; col[o + 1] = _bc.g * k; col[o + 2] = _bc.b * k;
+        const w = pt.w(x, y, z).filter((e) => e[1] > 1e-4).sort((a, b) => b[1] - a[1]).slice(0, 4);
+        let sum = 0; for (const e of w) sum += e[1];
+        const q = (vo + i) * 4;
+        for (let j = 0; j < 4; j++) { si[q + j] = j < w.length ? w[j][0] : 0; sw[q + j] = j < w.length ? w[j][1] / (sum || 1) : 0; }
+      }
+      const ia = g.index.array; for (let j = 0; j < ia.length; j++) idx[io + j] = ia[j] + vo;
+      io += ia.length; vo += cnt;
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    out.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+    out.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+    out.setIndex(new THREE.BufferAttribute(idx, 1));
+    return out;
+  }
+
   // `standalone` keeps the mesh out of the match's teardown list: the park owns its avatars and
   // disposes them itself, so starting or ending a game never reaches into the lobby.
   function buildMesh(p, team, scene, standalone) {
-    if (!GEO.torso) initGeo();
-    const skin = SKINS[p.skin], hairCol = HAIRS[(p.hair == null ? p.skin : p.hair) % HAIRS.length];
+    if (!GEO.shadow) initGeo();
+    if (!figGeo) buildFigureGeometry();
+    const F = figGeo, skin = SKINS[p.skin];
+    const style = (p.hair == null ? p.skin : p.hair) % HAIRS.length, hairCol = HAIRS[style];
     const jersey = team.primary, trim = team.secondary;
-    const pb = POS_BODY[p.pos] || POS_BODY.PG;
-    const style = (p.hair == null ? p.skin : p.hair) % HAIRS.length;
-    const g = new THREE.Group();
+    // a white midsole and a dark outsole on every shoe; the upper is the team's
+    const shoe = team.dark ? jersey : 0x1d2027;
+    const sk = [], cl = [];
+    const S = (geo, color, w, more) => sk.push(Object.assign({ geo, color, w }, more));
+    const C = (geo, color, w, more) => cl.push(Object.assign({ geo, color, w }, more));
 
-    // --- body: one merged, vertex-coloured mesh ---
-    const parts = [
-      { geo: GEO.torso, color: jersey, ao: ao(0.92, 1.10, 0.28) },
-      { geo: GEO.shorts, color: trim, ao: ao(0.695, 0.84, 0.24) },
-      { geo: GEO.gusset, color: trim, matrix: at(0, 0.80), ao: ao(0.72, 0.85, 0.34) },
-      { geo: GEO.collar, color: trim }, { geo: GEO.waistband, color: jersey },
-      { geo: GEO.jerseyPanel, color: trim, matrix: posed(0, 0, 0, 0, Math.PI / 2) },
-      { geo: GEO.jerseyPanel, color: trim, matrix: posed(0, 0, 0, 0, -Math.PI / 2) },
-      { geo: GEO.shortStripe, color: jersey, matrix: posed(0, 0, 0, 0, Math.PI / 2) },
-      { geo: GEO.shortStripe, color: jersey, matrix: posed(0, 0, 0, 0, -Math.PI / 2) },
-      { geo: GEO.neck, color: skin, ao: ao(1.58, 1.47, 0.34) },
-      { geo: GEO.deltoid, color: jersey, matrix: scaled(-0.204, 1.392, 0, 1.14, 1.06, 1.0) },
-      { geo: GEO.deltoid, color: jersey, matrix: scaled(0.204, 1.392, 0, 1.14, 1.06, 1.0) },
-      { geo: GEO.head, color: skin, matrix: scaled(0, 1.655, 0, 1, 1.1, 0.98) },
-      { geo: GEO.jaw, color: skin, matrix: scaled(0, 1.655, 0.008, 0.94, 1.0, 1.0), ao: ao(1.585, 1.675, 0.26) },
-      { geo: GEO.ear, color: skin, matrix: scaled(-0.100, 1.652, 0, 0.7, 1.1, 0.55) },
-      { geo: GEO.ear, color: skin, matrix: scaled(0.100, 1.652, 0, 0.7, 1.1, 0.55) },
-      { geo: GEO.nose, color: skin, matrix: at(0, 1.645, 0.100) },
-      { geo: GEO.eye, color: 0x241b14, matrix: scaled(-0.044, 1.666, 0.097, 1.05, 0.8, 0.55) },
-      { geo: GEO.eye, color: 0x241b14, matrix: scaled(0.044, 1.666, 0.097, 1.05, 0.8, 0.55) },
-      { geo: GEO.brow, color: hairCol, matrix: at(-0.044, 1.694, 0.099) },
-      { geo: GEO.brow, color: hairCol, matrix: at(0.044, 1.694, 0.099) },
-      { geo: GEO.mouth, color: skin, ao: () => 0.52, matrix: at(0, 1.606, 0.094) },
-    ];
-    if (style === 0) parts.push({ geo: GEO.hairFade, color: hairCol, matrix: scaled(0, 1.668, -0.024, 1.0, 0.95, 1.0) });
-    else if (style === 1) parts.push({ geo: GEO.hairAfro, color: hairCol, matrix: scaled(0, 1.688, -0.012, 1.0, 0.95, 1.0) });
-    else if (style === 2) { parts.push({ geo: GEO.hairFade, color: hairCol, matrix: scaled(0, 1.672, -0.024, 1.0, 0.90, 1.0) }); parts.push({ geo: GEO.band, color: trim, matrix: at(0, 1.712) }); }
-    else if (style === 3) parts.push({ geo: GEO.hairTop, color: hairCol, matrix: scaled(0, 1.674, -0.018, 1.02, 0.86, 1.02) });
-    else if (style === 5) {
-      parts.push({ geo: GEO.hairFade, color: hairCol, matrix: scaled(0, 1.666, -0.024, 0.97, 0.86, 0.97) });
-      for (let k = -2; k <= 2; k++) parts.push({ geo: GEO.braid, color: hairCol, matrix: posed(k * 0.046, 1.722 - Math.abs(k) * 0.019, -0.022, 0.20, k * -0.26) });
-    } else if (style === 6) {
-      parts.push({ geo: GEO.hairTop, color: hairCol, matrix: scaled(0, 1.672, -0.020, 1.03, 0.85, 1.03) });
-      for (let k = 0; k < 8; k++) {
-        const a = 0.72 + k * ((Math.PI * 2 - 1.44) / 7);
-        parts.push({ geo: GEO.loc, color: hairCol, matrix: posed(Math.sin(a) * 0.104, 1.700, Math.cos(a) * 0.104, -0.35, a) });
-      }
+    // skin
+    S(F.head, skin, WT.root, { ao: shade(FIG.headY - 0.115, FIG.headY - 0.07, 0.20) });
+    S(F.neck, skin, WT.root, { ao: shade(1.735, 1.62, 0.34) });
+    S(F.nose, skin, WT.root); S(F.lips, skin, WT.root, { ao: () => 0.70 });
+    for (const side of [-1, 1]) {
+      const X = side < 0 ? F.L : F.R;
+      S(X.ear, skin, WT.root, { ao: () => 0.86 });
+      S(X.eye, 0xe9e4da, WT.root); S(X.iris, 0x1d1510, WT.root); S(X.brow, hairCol, WT.root);
+      // the armpit, low on the inside of the shoulder - not the top of it, which the key light hits
+      S(X.arm, skin, WT.arm(side), { ao: (x, y) => 1 - 0.30 * sstep(1.34, 1.42, y) * sstep(1.56, 1.50, y) * sstep(0.03, -0.02, Math.abs(x) - FIG.shX) });
+      S(X.hand, skin, WT.fore(side)); S(X.thumb, skin, WT.fore(side));
+      S(X.leg, skin, WT.leg(side), { ao: shade(0.600, 0.545, 0.26) });
     }
-    // style 4 is bald: head only
-    const bodyGeo = mergeParts(parts);
-    const body = new THREE.Mesh(bodyGeo, bodyMat); g.add(body);
 
-    // --- jersey number ring ---
-    const numMat = new THREE.MeshBasicMaterial({ map: numberTexture(p.num, team), transparent: true, alphaTest: 0.45, side: THREE.DoubleSide });
-    const numMesh = new THREE.Mesh(GEO.numRing, numMat); g.add(numMesh);
+    // cloth: a tank top with trim at the neck, the armholes and down the sides
+    C(F.torso, jersey, WT.root, {
+      ao: shade(0.94, 1.08, 0.30),
+      paint: (x, y, z, a) => {
+        if (y > 1.5625) return trim;
+        const side = Math.abs(Math.sin(a));
+        if (y > 1.44 && side > 0.94) return trim;
+        return side > 0.972 ? trim : jersey;
+      },
+    });
+    C(F.shortsHip, jersey, WT.root, { ao: shade(0.86, 0.92, 0.22), paint: (x, y) => (y > 1.0295 ? trim : jersey) });
+    for (const side of [-1, 1]) {
+      const X = side < 0 ? F.L : F.R;
+      C(X.shortsLeg, jersey, WT.leg(side), {
+        ao: shade(0.59, 0.64, 0.18),
+        paint: (x, y, z, a) => (y < 0.604 || Math.sin(a) * side > 0.94 ? trim : jersey),
+      });
+      C(X.sock, 0xf1efe9, WT.shin(side), { ao: shade(0.07, 0.12, 0.12) });
+      C(X.collar, shoe, WT.shin(side), { paint: (x, y) => (y > 0.132 ? trim : shoe) });
+      C(X.foot, shoe, WT.shin(side), { paint: (x, y, z) => (Math.abs(x - side * FIG.hipX) > 0.040 && y > 0.05 && y < 0.07 && z > -0.02 && z < 0.12 ? trim : shoe) });
+      C(X.midsole, 0xf3f1ec, WT.shin(side));
+      C(X.outsole, 0x1b1d24, WT.shin(side));
+    }
+    for (const h of F.hair[style]) C(h, hairCol, WT.root);
+    if (style === 2) cl[cl.length - 1].color = trim;   // the headband is the team's, not the hair's
 
-    // --- articulated limbs ---
-    const armGeo = mergeParts([{ geo: GEO.upperArm, color: skin }, { geo: GEO.sleeve, color: jersey }, { geo: GEO.armTrim, color: trim },
-      { geo: GEO.elbow, color: skin, matrix: at(0, -0.29) }]);
-    const foreGeo = mergeParts([{ geo: GEO.foreArm, color: skin, ao: ao(0, -0.09, 0.22) }, { geo: GEO.wristband, color: trim, matrix: at(0, -0.245) },
-      { geo: GEO.hand, color: skin, matrix: scaled(0, -0.295, 0.01, 1, 0.85, 0.8) }]);
-    const thighGeo = mergeParts([{ geo: GEO.thigh, color: skin, ao: ao(-0.145, -0.27, 0.30) }, { geo: GEO.knee, color: skin, matrix: at(0, -0.40) }]);
-    const shinGeo = mergeParts([{ geo: GEO.shin, color: skin, ao: ao(0, -0.09, 0.18) }, { geo: GEO.sock, color: 0xf2f2ee },
-      { geo: GEO.shoeHeel, color: jersey }, { geo: GEO.shoeMid, color: jersey }, { geo: GEO.shoeToe, color: jersey },
-      { geo: GEO.midsole, color: 0xf4f2ec }, { geo: GEO.outsole, color: 0x1b1d24 }]);
-    const mkArm = (side) => {
-      const a = new THREE.Group(); a.position.set(side * 0.215 * SF, 1.415 * SF, 0);
-      a.add(new THREE.Mesh(armGeo, bodyMat));
-      const fore = new THREE.Group(); fore.position.set(0, -0.29 * SF, 0);
-      fore.add(new THREE.Mesh(foreGeo, bodyMat)); a.add(fore);
-      a.rotation.z = -side * 0.11; a.userData.fore = fore; return a;
-    };
-    const mkLeg = (side) => {
-      const l = new THREE.Group(); l.position.set(side * 0.098 * SF, 0.84 * SF, 0);
-      l.add(new THREE.Mesh(thighGeo, bodyMat));
-      const shin = new THREE.Group(); shin.position.set(0, -0.40 * SF, 0);
-      shin.add(new THREE.Mesh(shinGeo, bodyMat)); l.add(shin);
-      l.userData.shin = shin; return l;
-    };
-    const armL = mkArm(-1), armR = mkArm(1), legL = mkLeg(-1), legR = mkLeg(1);
-    g.add(armL, armR, legL, legR);
+    const skinGeo = bake(sk), clothGeo = bake(cl);
+    const g = new THREE.Group();
+    const bones = [], mk = (parent, x, y, z) => { const b = new THREE.Bone(); b.position.set(x, y, z); if (parent) parent.add(b); bones.push(b); return b; };
+    const root = mk(null, 0, 0, 0);
+    const armL = mk(root, -FIG.shX, FIG.shY, FIG.shZ), foreL = mk(armL, 0, FIG.elY - FIG.shY, 0);
+    const armR = mk(root, FIG.shX, FIG.shY, FIG.shZ), foreR = mk(armR, 0, FIG.elY - FIG.shY, 0);
+    const legL = mk(root, -FIG.hipX, FIG.hipY, 0), shinL = mk(legL, 0, FIG.kneeY - FIG.hipY, 0);
+    const legR = mk(root, FIG.hipX, FIG.hipY, 0), shinR = mk(legR, 0, FIG.kneeY - FIG.hipY, 0);
+    const skinMesh = new THREE.SkinnedMesh(skinGeo, skinMat), clothMesh = new THREE.SkinnedMesh(clothGeo, clothMat);
+    const numMat = new THREE.MeshStandardMaterial({ map: numberTexture(p.num, team), transparent: true, alphaTest: 0.45, roughness: 0.8, metalness: 0 });
+    const numMesh = new THREE.Mesh(F.band, numMat);
+    g.add(root, skinMesh, clothMesh, numMesh);
+    // bind in the rest pose, at the origin and unscaled, before anything moves it
+    g.updateMatrixWorld(true);
+    const skeleton = new THREE.Skeleton(bones);
+    skinMesh.bind(skeleton); clothMesh.bind(skeleton);
+    // the bounding sphere is the bind pose's, which an arm raised to shoot can leave
+    skinMesh.frustumCulled = clothMesh.frustumCulled = numMesh.frustumCulled = false;
 
     const sc = p.height / 1.93;
-    const girth = sc * (0.93 + 0.14 * p.ratings.strength / 99) * pb.w;
-    const heightS = sc * pb.h;
+    const girth = sc * (0.93 + 0.14 * p.ratings.strength / 99) * (POS_WIDTH[p.pos] || POS_WIDTH.PG);
+    const heightS = sc;   // modelled at true size now: listed height is rendered height
     g.scale.set(girth, heightS, girth);
-    if (CONFIG.render.shadows) g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    if (CONFIG.render.shadows) { skinMesh.castShadow = clothMesh.castShadow = true; }
     scene.add(g);
     const mats = matsFor(team);
     const shadow = new THREE.Mesh(GEO.shadow, shadowMat); shadow.position.y = 0.012; scene.add(shadow);
     const ring = new THREE.Mesh(GEO.ring, mats.ring); ring.position.y = 0.02; ring.visible = false; scene.add(ring);
-    p.mesh = { group: g, body, armL, armR, legL, legR, foreL: armL.userData.fore, foreR: armR.userData.fore,
-      shinL: legL.userData.shin, shinR: legR.userData.shin, shadow, ring, legPhase: 0, leanX: 0, leanZ: 0, crouch: 0, yawOff: 0, sc, girthS: girth, heightS,
-      owned: [bodyGeo, armGeo, foreGeo, thighGeo, shinGeo], numMat };
+    p.mesh = { group: g, body: skinMesh, armL, armR, legL, legR, foreL, foreR, shinL, shinR, shadow, ring,
+      legPhase: 0, leanX: 0, leanZ: 0, crouch: 0, yawOff: 0, sc, girthS: girth, heightS,
+      owned: [skinGeo, clothGeo], numMat, skeleton };
     if (!standalone) liveMeshes.push(p.mesh);
     return p.mesh;
   }
@@ -1864,12 +2131,14 @@ const PlayerSys = (() => {
     parent.remove(m.group); parent.remove(m.shadow); parent.remove(m.ring);
     for (const geo of m.owned) geo.dispose();
     if (m.numMat) { if (m.numMat.map) m.numMat.map.dispose(); m.numMat.dispose(); }
+    if (m.skeleton) m.skeleton.dispose();   // each body owns a bone texture
   }
   function destroyMeshes() {
     for (const m of liveMeshes) {
       for (const o of [m.group, m.shadow, m.ring]) if (o.parent) o.parent.remove(o);
       for (const geo of m.owned) geo.dispose();          // per-player merged geometry
       if (m.numMat) { if (m.numMat.map) m.numMat.map.dispose(); m.numMat.dispose(); }
+      if (m.skeleton) m.skeleton.dispose();
     }
     liveMeshes.length = 0;
     for (const p of players) p.mesh = null;
@@ -2300,6 +2569,7 @@ const Moves = (() => {
 const BallSys = (() => {
   const BC = CONFIG.ball, CC = CONFIG.court, G = CONFIG.physics.gravity, R = BC.radius;
   const BS = { HELD: 0, SHOT: 1, PASS: 2, LOOSE: 3, DUNK: 4, DEAD: 5 };
+  const FIG_SCALE = 1.93 / 1.75;   // true-size figure over the one the hold heights were tuned to
   const ball = {
     x: 0, y: R, z: 0, px: 0, py: R, pz: 0, vx: 0, vy: 0, vz: 0, state: BS.DEAD, holder: -1, lastTouch: -1, lastTeam: -1,
     touchedRim: false, touchedBoard: false, releaseT: 0, scored: false, scoredHoop: -1, passTarget: -1, passT: 0,
@@ -2327,14 +2597,18 @@ const BallSys = (() => {
     const ST = PlayerSys.ST; const s = p.state;
     const fx = Math.sin(p.facing), fz = Math.cos(p.facing), rx = -Math.cos(p.facing), rz = Math.sin(p.facing);
     const h = p.height / 1.93;
-    let lateral = p.hand * 0.25, fwd = 0.3, y = p.y + h * 1.15, amp = 0;
+    // Heights of body landmarks - where you hold it, the shot's set point, a pass, an inbound - were tuned to
+    // the old figure, built 1.75m tall. The figure is modelled at true size now, so those scale with it or
+    // the ball would sit at the chin during a jumper. Rim-relative heights, the dunk and the layup, do not.
+    const b = h * FIG_SCALE;
+    let lateral = p.hand * 0.25, fwd = 0.3, y = p.y + b * 1.15, amp = 0;
     const dribbling = s === ST.IDLE || s === ST.MOVE || s === ST.SIDESTEP || s === ST.CROSSOVER || s === ST.STEPBACK || s === ST.SPIN || s === ST.LAND || s === ST.STUMBLE;
     if (dribbling && !p.airborne) {
       const spd = p.speed;
       const freq = 1.75 + Math.min(spd, 7) * 0.13 + (s === ST.CROSSOVER ? 1.4 : 0);
       const prevPhase = p.dribblePhase; p.dribblePhase += freq * dt;
       if (Math.floor(p.dribblePhase) !== Math.floor(prevPhase)) { ball.dribbleFloor = true; ball.events.push(-(1 + spd)); }
-      const handH = (s === ST.CROSSOVER ? 0.5 : 0.9 - Math.min(spd, 7) * 0.04) * h;
+      const handH = (s === ST.CROSSOVER ? 0.5 : 0.9 - Math.min(spd, 7) * 0.04) * b;
       p.dribbleH = handH;
       lateral = p.hand * 0.4; fwd = 0.28; y = R; amp = handH;
       if (s === ST.CROSSOVER) { const k = U.clamp(p.stateT / p.stateDur, 0, 1); lateral = U.lerp(p.handFrom * 0.4, p.hand * 0.4, k); fwd = 0.34 + 0.2 * Math.sin(k * Math.PI); }
@@ -2344,14 +2618,14 @@ const BallSys = (() => {
     } else if (s === ST.SHOOT) {
       const k = U.clamp(p.stateT / 0.3, 0, 1); const rel = p.shot.released;
       const relK = rel ? U.clamp((p.stateT - p.shot.relT) / 0.22, 0, 1) : 0;
-      lateral = p.hand * 0.12; fwd = 0.18 + 0.1 * k; y = p.y + h * (U.lerp(1.32, 1.74, k) + 0.34 * relK);
+      lateral = p.hand * 0.12; fwd = 0.18 + 0.1 * k; y = p.y + b * (U.lerp(1.32, 1.74, k) + 0.34 * relK);
     } else if (s === ST.PUMP) {
-      const k = Math.sin(U.clamp(p.stateT / p.stateDur, 0, 1) * Math.PI); lateral = p.hand * 0.12; fwd = 0.2; y = h * U.lerp(1.15, 1.85, k);
-    } else if (s === ST.HESI) { lateral = p.hand * 0.4; fwd = 0.25; y = h * 0.95; }
+      const k = Math.sin(U.clamp(p.stateT / p.stateDur, 0, 1) * Math.PI); lateral = p.hand * 0.12; fwd = 0.2; y = b * U.lerp(1.15, 1.85, k);
+    } else if (s === ST.HESI) { lateral = p.hand * 0.4; fwd = 0.25; y = b * 0.95; }
     else if (s === ST.DUNK) { const k = U.clamp(p.stateT / Math.max(0.01, p.dunk.slamAt), 0, 1); lateral = p.dunk.kind === 'two' ? 0 : p.hand * 0.22; fwd = 0.25 + 0.25 * k; y = p.y + h * U.lerp(1.30, 2.06, k); }
     else if (s === ST.LAYUP) { const k = U.clamp(p.stateT / Math.max(0.01, p.dunk.slamAt), 0, 1); lateral = p.hand * 0.2; fwd = 0.3; y = p.y + h * U.lerp(1.30, 1.96, k); }
-    else if (s === ST.PASS) { lateral = 0; fwd = 0.35; y = h * 1.3; }
-    else if (s === ST.INBOUND) { lateral = 0; fwd = 0.15; y = h * 2.05; }
+    else if (s === ST.PASS) { lateral = 0; fwd = 0.35; y = b * 1.3; }
+    else if (s === ST.INBOUND) { lateral = 0; fwd = 0.15; y = b * 2.05; }
     // The bounce phase keeps its value when the dribble stops, so the arc holds still while `amp` fades out
     // and the ball rises into the next pose instead of dropping out from under it.
     const bt = 2 * (p.dribblePhase - Math.floor(p.dribblePhase)) - 1, bounce = 1 - bt * bt;
@@ -4111,8 +4385,18 @@ const Park = (() => {
     for (const tz of [-14, 0, 14]) for (const tx of [-53, 53]) SPOTS.push([tx, tz + (rnd() - 0.5) * 3]);
     const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.24, 3.1, 6),
       new THREE.MeshLambertMaterial({ color: 0x4a3627 }), SPOTS.length);
-    const leaves = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.5, 0),
-      new THREE.MeshLambertMaterial({ color: 0x2f5d38, flatShading: true }), SPOTS.length);
+    // A canopy, not a gem: a subdivided sphere with its surface pushed in and out so it reads as clumps
+    // of leaves. The one-level icosahedron with flat shading was twenty facets on a stick.
+    // an indexed sphere, so recomputed normals come out smooth; an icosahedron is non-indexed in r128
+    // and would go straight back to flat facets
+    const canopy = new THREE.SphereGeometry(1.5, 18, 13), cp = canopy.attributes.position;
+    for (let i = 0; i < cp.count; i++) {
+      const x = cp.getX(i), y = cp.getY(i), z = cp.getZ(i);
+      const k = 1 + 0.13 * Math.sin(x * 3.1 + 0.4) * Math.sin(y * 3.7) * Math.sin(z * 2.9 + 1.1) + 0.06 * Math.sin(x * 7 + y * 5);
+      cp.setXYZ(i, x * k, y * k * (y < 0 ? 0.82 : 1), z * k);   // flatter underneath, where a crown thins out
+    }
+    canopy.computeVertexNormals();
+    const leaves = new THREE.InstancedMesh(canopy, new THREE.MeshLambertMaterial({ color: 0x2f5d38 }), SPOTS.length);
     trunks.frustumCulled = leaves.frustumCulled = false;
     SPOTS.forEach(([tx, tz], i) => {
       const hh = 0.85 + rnd() * 0.4;
@@ -4218,17 +4502,23 @@ const Park = (() => {
     const g = new THREE.Group();
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x353b46, roughness: 0.6, metalness: 0.4 });
     const bx = C.length / 2 - C.boardFromBaseline;
-    const board = new THREE.Mesh(new THREE.PlaneGeometry(C.boardW * 0.86, C.boardH * 0.86),
-      new THREE.MeshStandardMaterial({ color: 0xdfe4ea, roughness: 0.7, side: THREE.DoubleSide }));
-    board.position.set(bx, C.boardBottom + C.boardH * 0.43, 0); board.rotation.y = -Math.PI / 2; g.add(board);
-    const sq = new THREE.Mesh(new THREE.PlaneGeometry(0.59, 0.45),
-      new THREE.MeshBasicMaterial({ color: 0xd1202a, transparent: true, opacity: 0.85, side: THREE.DoubleSide }));
-    sq.position.set(bx - 0.012, C.rimHeight + 0.30, 0); sq.rotation.y = -Math.PI / 2; g.add(sq);
+    // A board with some thickness to it, painted: a border round the edge and the shooter's square drawn as
+    // an outline. It was a paper-thin plane with a filled red rectangle, which no real backboard has.
+    const bw = C.boardW * 0.86, bh = C.boardH * 0.86, fcv = document.createElement('canvas'); fcv.width = 256; fcv.height = 150;
+    const fg = fcv.getContext('2d'); fg.fillStyle = '#e3e7ec'; fg.fillRect(0, 0, 256, 150);
+    fg.strokeStyle = '#c9212b'; fg.lineWidth = 9; fg.strokeRect(5, 5, 246, 140);
+    fg.lineWidth = 6; fg.strokeRect(128 - 42, 150 - 12 - 64, 84, 64);
+    const face = new THREE.CanvasTexture(fcv); face.encoding = THREE.sRGBEncoding; face.anisotropy = 4;
+    const edge = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, roughness: 0.6, metalness: 0.3 });
+    const faceMat = new THREE.MeshStandardMaterial({ map: face, roughness: 0.65 });
+    const board = new THREE.Mesh(new THREE.BoxGeometry(0.04, bh, bw), [faceMat, faceMat, edge, edge, edge, edge]);
+    board.position.set(bx, C.boardBottom + bh / 2, 0); g.add(board);
     const rim = new THREE.Mesh(new THREE.TorusGeometry(C.rimRadius, C.rimTube * 1.3, 8, 24),
       new THREE.MeshStandardMaterial({ color: 0xe06a1a, roughness: 0.4, metalness: 0.6 }));
     rim.position.set(C.length / 2 - C.rimFromBaseline, C.rimHeight, 0); rim.rotation.x = Math.PI / 2; g.add(rim);
-    const net = new THREE.Mesh(new THREE.CylinderGeometry(C.rimRadius, 0.15, 0.40, 10, 3, true),
-      new THREE.MeshStandardMaterial({ color: 0xb9c0cb, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, roughness: 0.9, metalness: 0.5 }));
+    // a chain net, the kind that lives outdoors: the same lattice in steel
+    const net = new THREE.Mesh(new THREE.CylinderGeometry(C.rimRadius, 0.15, 0.40, 24, 3, true),
+      new THREE.MeshStandardMaterial({ color: 0xb9c0cb, map: Court.netTexture(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.45, metalness: 0.75 }));
     net.position.set(rim.position.x, C.rimHeight - 0.2, 0); g.add(net);
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.10, 4.0, 10), poleMat);
     pole.position.set(C.length / 2 + 0.7, 2.0, 0); g.add(pole);
@@ -4960,12 +5250,13 @@ const CameraSys = (() => {
     // Whatever rig the camera has backed behind is between it and the play, so hide it. 2K does the
     // same thing; a backboard filling a third of the screen is worse than a missing one you cannot
     // see through anyway. Always restore both when the camera is not behind either.
+    // Hide any rig the camera is behind, judged by where the camera actually is. Choosing the rig from
+    // possession got it wrong for a second after every turnover: possession flips at once, but the camera
+    // is still swinging round from behind the old basket, so the pole it was staring through stayed up.
     if (Court.rigs && Court.rigs.length) {
-      for (const rig of Court.rigs) if (rig) rig.visible = true;
-      if (mode === 'behind') {
-        const near = Court.hoops[1 - g.hoopOf[g.possession]];
-        const rig = near && Court.rigs[near.idx];
-        if (rig && near.s * (pos.x - Court.boardX(near.s)) > -0.6) rig.visible = false;
+      for (const h of Court.hoops) {
+        const rig = Court.rigs[h.idx]; if (!rig) continue;
+        rig.visible = !(mode === 'behind' && h.s * (pos.x - Court.boardX(h.s)) > -0.6);
       }
     }
     const wantFov = mode === 'behind' ? CC.behindFov : CC.fov;
