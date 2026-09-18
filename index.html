@@ -715,6 +715,10 @@ const CONFIG = {
     // plus a drive bonus compounded into a team that only ever drove and laid it in.
     zoneBias: { three: 1.22, mid: 1.02, close: 0.82 },
     driveBias: 0.84,      // a drive still collapses the defence, but it no longer beats a good look
+    // A thumb on the scale toward the person holding the controller, and only when they are actually
+    // open: at humanCovered metres of space it is worth nothing, at humanOpen it is worth humanBias.
+    // Team-mates who never look for you is the loudest complaint about CPU team-mates anywhere.
+    humanBias: 0.55, humanCovered: 1.4, humanOpen: 4.2,
     spreadMin: 2.9,       // two defenders this close to the same spot are stacked, not defending
     spreadPush: 1.25,      // how hard the second one slides off it
     blockedLane: 0.5,     // a covered passing lane is a risk, not a wall
