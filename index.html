@@ -625,7 +625,7 @@ ARCHITECTURE PLAN
 })();
 
 // ==== BEGIN CONFIG ====
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const CONFIG = {
   // Google AdSense. Paste the publisher id and the two slot ids from your AdSense account and the
   // units turn themselves on; leave client empty and the game runs with no ad code at all — nothing
@@ -1828,7 +1828,7 @@ const PlayerSys = (() => {
     const shadow = new THREE.Mesh(GEO.shadow, shadowMat); shadow.position.y = 0.012; scene.add(shadow);
     const ring = new THREE.Mesh(GEO.ring, mats.ring); ring.position.y = 0.02; ring.visible = false; scene.add(ring);
     p.mesh = { group: g, body, armL, armR, legL, legR, foreL: armL.userData.fore, foreR: armR.userData.fore,
-      shinL: legL.userData.shin, shinR: legR.userData.shin, shadow, ring, legPhase: 0, leanX: 0, leanZ: 0, crouch: 0, sc, girthS: girth, heightS,
+      shinL: legL.userData.shin, shinR: legR.userData.shin, shadow, ring, legPhase: 0, leanX: 0, leanZ: 0, crouch: 0, yawOff: 0, sc, girthS: girth, heightS,
       owned: [bodyGeo, armGeo, foreGeo, thighGeo, shinGeo], numMat };
     if (!standalone) liveMeshes.push(p.mesh);
     return p.mesh;
@@ -4028,6 +4028,69 @@ const Park = (() => {
       say: '', sayT: 0,
       ai: { tx: 0, tz: 0, idle: 0, wantCourt: -1, think: 0 } };
   }
+  // A city around the fence. The park had lights and benches and still read as empty, because there was
+  // nothing past the chain-link to give the place a horizon - you were standing in a lit box in the void.
+  // Everything here is instanced or merged, one material each, and none of it moves or takes a light.
+  function buildScenery(g) {
+    let sd = 20250917; const rnd = () => { sd = (sd * 1103515245 + 12345) & 0x7fffffff; return sd / 0x7fffffff; };
+
+    // skyline: a ring of blocks past the fence, with a window texture so they read as buildings at night
+    const wcv = document.createElement('canvas'); wcv.width = 32; wcv.height = 64;
+    const wg = wcv.getContext('2d');
+    wg.fillStyle = '#0a0d14'; wg.fillRect(0, 0, 32, 64);
+    for (let y = 2; y < 62; y += 5) for (let x = 2; x < 30; x += 5) {
+      if (rnd() > 0.62) { wg.fillStyle = rnd() > 0.5 ? '#ffd79a' : '#9fc4ff'; wg.globalAlpha = 0.35 + rnd() * 0.5; wg.fillRect(x, y, 3, 3); }
+    }
+    wg.globalAlpha = 1;
+    const wtex = new THREE.CanvasTexture(wcv); wtex.encoding = THREE.sRGBEncoding;
+    wtex.wrapS = wtex.wrapT = THREE.RepeatWrapping; wtex.repeat.set(2, 4);
+    const towers = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({ map: wtex, toneMapped: false }), 46);
+    towers.frustumCulled = false;
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pv = new THREE.Vector3();
+    for (let i = 0; i < 46; i++) {
+      const a = (i / 46) * Math.PI * 2 + rnd() * 0.06;
+      const r = 74 + rnd() * 46, h = 14 + rnd() * rnd() * 54, w = 8 + rnd() * 12;
+      pv.set(Math.sin(a) * r, h / 2 - 1, Math.cos(a) * r);
+      sc.set(w, h, w * (0.7 + rnd() * 0.6));
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), a);
+      towers.setMatrixAt(i, m4.compose(pv, q, sc));
+    }
+    towers.instanceMatrix.needsUpdate = true; g.add(towers);
+
+    // trees along the walkways - trunk and canopy, two instanced meshes for the whole park
+    const SPOTS = [];
+    for (const tx of [-44, -30, -17, 17, 30, 44]) for (const tz of [-26, 26]) SPOTS.push([tx + (rnd() - 0.5) * 3, tz + (rnd() - 0.5) * 3]);
+    for (const tz of [-14, 0, 14]) for (const tx of [-53, 53]) SPOTS.push([tx, tz + (rnd() - 0.5) * 3]);
+    const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.24, 3.1, 6),
+      new THREE.MeshLambertMaterial({ color: 0x4a3627 }), SPOTS.length);
+    const leaves = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.5, 0),
+      new THREE.MeshLambertMaterial({ color: 0x2f5d38, flatShading: true }), SPOTS.length);
+    trunks.frustumCulled = leaves.frustumCulled = false;
+    SPOTS.forEach(([tx, tz], i) => {
+      const hh = 0.85 + rnd() * 0.4;
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * 3);
+      trunks.setMatrixAt(i, m4.compose(pv.set(tx, 1.55 * hh, tz), q, sc.set(1, hh, 1)));
+      leaves.setMatrixAt(i, m4.compose(pv.set(tx, 3.4 * hh, tz), q, sc.set(hh, hh * 0.9, hh)));
+    });
+    trunks.instanceMatrix.needsUpdate = true; leaves.instanceMatrix.needsUpdate = true;
+    g.add(trunks); g.add(leaves);
+
+    // bleachers: three steps of concrete down each long side of the plaza, so there is somewhere to watch from
+    const stepMat = new THREE.MeshLambertMaterial({ color: 0x555b66 });
+    const steps = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), stepMat, 24);
+    steps.frustumCulled = false;
+    let n = 0;
+    // Down the two ends of the plaza, running along z and stepping up as they go outward. Deliberately
+    // not behind a backboard: a stand there just hides the hoop you are shooting at.
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+    for (const side of [-1, 1]) for (const bz of [-16, 16]) for (let k = 0; k < 4; k++) {
+      steps.setMatrixAt(n++, m4.compose(
+        pv.set(side * (54 + k * 0.95), 0.22 + k * 0.42, bz), q, sc.set(13, 0.44 + k * 0.84, 0.95)));
+    }
+    steps.count = n; steps.instanceMatrix.needsUpdate = true; g.add(steps);
+  }
+
   function spawnGoers() {
     goers = [];
     const me = Career.exists() ? Career.playerDef() : { name: 'You', num: 0, pos: 'SG', height: 1.95,
@@ -4200,6 +4263,7 @@ const Park = (() => {
       b.position.set(bx, 0.45, bz); group.add(b);
       for (const o of [-1.3, 1.3]) { const lgm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.45, 0.45), benchMat); lgm.position.set(bx + o, 0.22, bz); group.add(lgm); }
     }
+    buildScenery(group);
     group.add(new THREE.HemisphereLight(0x9fc0ff, 0x2d3326, 1.45));
     const sun = new THREE.DirectionalLight(0xffd9a8, 1.6); sun.position.set(28, 26, 16); group.add(sun);
     const back = new THREE.DirectionalLight(0x6e8cff, 0.5); back.position.set(-20, 14, -18); group.add(back);
@@ -4805,7 +4869,10 @@ function init(container) {
       const a = -0.18 - 0.22 * bh, e = -(1.05 - 0.75 * bh), az = 0.30;
       if (hand > 0) { aR = a; eR = e; azR = az; } else { aL = a; eL = e; azL = -az; }
     }
-    _w = inMove ? Math.sin(k * Math.PI) : 0;
+    // A real move is a fast commit and a slower recovery. Sin(k*PI) spends exactly as long arriving as
+    // leaving, which is most of why these read as floaty: the shape peaks a third of the way in now.
+    _w = inMove ? (k < 0.32 ? Math.sin(k / 0.32 * Math.PI / 2) : Math.cos((k - 0.32) / 0.68 * Math.PI / 2)) : 0;
+    let yawOff = 0;
     switch (s) {
       case ST.CROSSOVER: {
         const d = p.hand; // the ball is going to this hand, so the body sells the other way first
@@ -4813,19 +4880,19 @@ function init(container) {
         azL = bl(azL, -0.42); azR = bl(azR, 0.42);
         lL = bl(lL, -d * 0.24); lR = bl(lR, d * 0.24); kL = bl(kL, 0.58); kR = bl(kR, 0.58);
         lzL = bl(lzL, -0.18); lzR = bl(lzR, 0.18);
-        leanZ = d * 0.20 * _w; crouch = 0.05 * _w; break;
+        leanZ = d * 0.20 * _w; crouch = 0.05 * _w; yawOff = -d * 0.42 * _w; break;
       }
       case ST.SIDESTEP: {
         // wide base, weight driven out over the pushing foot
         const lat = -Math.sign(p.moveDir.x * Math.cos(fac) - p.moveDir.z * Math.sin(fac) || 1);
         lL = bl(lL, 0.08); lR = bl(lR, 0.08); kL = bl(kL, 0.52); kR = bl(kR, 0.52);
         lzL = bl(lzL, -0.30); lzR = bl(lzR, 0.30);
-        leanZ = lat * 0.24 * _w; crouch = 0.06 * _w; break;
+        leanZ = lat * 0.24 * _w; crouch = 0.06 * _w; yawOff = lat * 0.26 * _w; break;
       }
       case ST.STEPBACK: {
         // lead leg kicks out as the hips travel back behind it
         lL = bl(lL, -0.52); lR = bl(lR, -0.16); kL = bl(kL, 0.62); kR = bl(kR, 0.28);
-        lzL = bl(lzL, -0.14); lzR = bl(lzR, 0.14); leanX = bl(leanX, -0.30); break;
+        lzL = bl(lzL, -0.14); lzR = bl(lzR, 0.14); leanX = bl(leanX, -0.30); yawOff = p.hand * 0.30 * _w; break;
       }
       case ST.SPIN: {
         yaw = fac + p.hand * Math.PI * 2 * (k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k));
@@ -4837,7 +4904,7 @@ function init(container) {
       }
       case ST.HESI: {
         lL = bl(lL, -0.16); lR = bl(lR, 0.16); kL = bl(kL, 0.62); kR = bl(kR, 0.62);
-        lzL = bl(lzL, -0.20); lzR = bl(lzR, 0.20); leanX = bl(leanX, -0.12); crouch = 0.11 * _w; break;
+        lzL = bl(lzL, -0.20); lzR = bl(lzR, 0.20); leanX = bl(leanX, -0.12); crouch = 0.11 * _w; yawOff = p.hand * 0.18 * _w; break;
       }
       case ST.PUMP: {
         aL = bl(aL, -1.45); aR = bl(aR, -1.55); eL = bl(eL, -1.5); eR = bl(eR, -1.6);
@@ -4889,7 +4956,8 @@ function init(container) {
     // the torso damps too: lean and crouch used to be written raw, so every state change snapped it
     const eb = 1 - Math.exp(-dt * 16);
     m.leanX += (leanX + bodyX - m.leanX) * eb; m.leanZ += (leanZ - m.leanZ) * eb; m.crouch += (crouch - m.crouch) * eb;
-    grp.rotation.set(m.leanX, yaw, m.leanZ, 'YXZ');
+    m.yawOff += (yawOff - m.yawOff) * eb;
+    grp.rotation.set(m.leanX, yaw + m.yawOff, m.leanZ, 'YXZ');
     const sy = (1 - m.crouch) * (1 + 0.012 * Math.sin(t * 2.2 + p.id));
     grp.scale.set(m.girthS, m.heightS * sy, m.girthS);
   }

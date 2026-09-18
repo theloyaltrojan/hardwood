@@ -2,6 +2,45 @@
 
 All notable changes to Hardwood Legends. Dates are the day the work landed.
 
+## [1.3.0] — 2026-09-17
+
+Seventeen changes asked for in one go. The measurements are in the commits.
+
+### Added
+- **A real over-the-shoulder camera**, now the default. 11.5m down the floor from the ball at 3.8m,
+  looking past the handler at the rim. It backs out through the baseline when it needs the room and
+  hides whatever hoop rig it ends up behind, which is what 2K does.
+- **Thirty clubs** — real cities, invented nicknames, no borrowed marks. Kit separation holds across
+  all 870 ordered pairings.
+- **A skyline, trees and bleachers in MyPark.** It had lights and benches and still read as empty
+  because there was no horizon past the fence. All instanced, one material each; the park holds 60 FPS.
+- **Stamina tiers for the AI.** Every trip names what sprinting is worth to it, so bots conserve.
+
+### Changed
+- **Overall is weighted by position.** A flat mean over sixteen ratings moved by an eighth of a point
+  per upgrade and looked broken.
+- **Shot selection.** 75% of shots came from the paint against about 40% in a real game. Now 39/28/33.
+- **Progression is slower and earned.** Steeper curve — 39 XP at rating 40, 1365 at 85 — with XP off
+  the box score as you play.
+- **Nothing pays in the gym.** One player, no defence, no clock. The workout paid 600 on every replay,
+  which made it the fastest money in the game; it is an onboarding bonus and pays once.
+- **The workout runs itself the first time you press Tip Off**, and lives in Controls after that. It
+  and MyPark are out of the play menu.
+- **Dribble moves snap.** A symmetric sine envelope spent as long arriving as leaving; it peaks a third
+  of the way in now, and the shoulders turn into the change of direction.
+- **Name tags are people only.** Release effects fire on an excellent release, not only a perfect one.
+- **Defaults**: camera behind, control follows the ball, gym ball return 1.5s.
+
+### Fixed
+- **Multiplayer had no ICE servers at all.** Two public STUN entries and a candidate pool of 4 —
+  most of why connecting was slow and why managed Chromebooks could not connect. Without a TURN relay,
+  a locked-down school network can still block it entirely.
+- **CPU team-mates could not pass to you.** The human pass bias read three CONFIG values that were
+  never defined, so the expected value came out NaN and the person holding the controller was never
+  a candidate. The exact opposite of the intent.
+- **Defenders stacking on the same patch of floor** — 40% of the time a defender's nearest team-mate
+  was inside 1.8m, now 33%.
+
 ## [1.2.0] — 2026-09-16
 
 ### Added
