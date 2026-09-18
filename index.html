@@ -777,18 +777,29 @@ const CONFIG = {
   },
   camera: {
     broadcastHeight: 10.8, broadcastDist: 19.5, followX: 0.86, lookY: 1.1, lookZ: 0.28, damp: 4.5, lookDamp: 6, fov: 42, halfCourtZoom: 0.86,
-    // Behind your player and well up over them, looking at the rim they are attacking. High enough to see
-    // the floor spacing past your own man - the low version put him in the way of everything.
-    behindDist: 12.5,        // how far back down the floor the camera sits from your player
-    behindHeight: 7.2,       // and how high
-    behindFollowZ: 0.5,      // how much it slides sideways with you
-    behindLookAhead: 5.0,    // the look point sits past you, toward the rim
-    behindLookY: 1.0, behindLookZ: 0.4,
-    behindFov: 46,
+    // 2K's end-court camera, fitted to a 2K20 frame (Lakers-Rockets, James at the top of the centre circle) by
+    // solving a pinhole camera against the court's own lines: half court, the arc, the free-throw line and
+    // circle, the baseline, the rim and the baseline's width. It came out 5.4m up, 9.8m back, pitched 20
+    // degrees and 41.5 degrees tall, to within 4 pixels of every landmark.
+    behindDist: 9.8,         // how far back down the floor the camera sits from your player
+    behindHeight: 5.4,       // and how high
+    behindFollowZ: 0.65,     // how much it slides sideways with you; not all the way, so the rim stays in shot
+    behindLookAhead: 2.3,    // the look point sits past you, toward the rim; with the two above, a 20 degree pitch
+    behindLookY: 1.0, behindLookZ: 0.55,
+    behindFov: 41.5,         // vertical, as three.js measures it: 68 degrees across at 16:9
+    behindMinHFov: 62,       // and never narrower than this across, so a tall window still shows both sidelines
+    // Framed on you, not the ball - but never with the ball out of shot behind you. When it trails you by
+    // more than the slack (back on defence, a pass back to a trailer), the camera dollies back and slides
+    // its look point with it, holding the 20 degree pitch. Solved, not guessed: this keeps a low dribble,
+    // your feet and head and the rim ahead all at least 3.5 degrees inside the frame out to a 20m trail.
+    // Rising instead only made it worse - higher up, the ball drops out of the bottom sooner.
+    behindBallSlack: 2.5, behindBallBack: 0.95, behindBallLook: 1.0,
+    // a trailing ball is usually across the floor as well, so the aim also slides that way, ramping in over
+    // the first few metres of trail so an ordinary possession never sways with the ball
+    behindBallSide: 0.5, behindBallSideRamp: 4,
     behindDamp: 3.2,         // calmer than broadcast: it follows a person, not a ball that can move at 12 m/s
     behindSwing: 2.4,        // how fast it swings round to the other end when possession changes
     behindLimit: 20.5,       // it may sit outside the baseline, but not out of the building
-    behindFov: 50,           // wider than broadcast: close camera, so keep the floor readable
   },
   render: { shadows: false, crowd: true, pixelRatioCap: 1.5, exposure: 1.1, vignette: 0.55, fogDensity: 0.016 },
   audio: { volume: 0.8 },
@@ -1101,6 +1112,8 @@ const Court = (() => {
   let group = null, floorMat = null, floorTex = null; const rigs = [];
   const nets = [], shotTex = [], shotCtx = [], shotVal = [-1, -1];
   let crowdBody = null, crowdHead = null, crowdBaseY = null, crowdHeadY = null, crowdPhase = null, crowdN = 0, crowdBob = 0, crowdT = 0;
+  // which end each seat and each row of stand is at (0 for the far sideline), and the end hidden from the camera
+  let crowdEnd = null, endRows = { '-1': [], '1': [] }, hiddenEnd = 0, standEdge = Infinity;
   let dirLight = null;
 
 function makeFloorTexture(team) {
@@ -1309,16 +1322,18 @@ function buildHoop(h, team) {
     const standMat = new THREE.MeshLambertMaterial({ color: 0x1b2230 });
     const rows = 7;
     const seats = []; // {x,y,z}
-    const addRow = (geo, x, y, z) => { const m = new THREE.Mesh(geo, standMat); m.position.set(x, y, z); m.receiveShadow = false; scene.add(m); };
+    const addRow = (geo, x, y, z) => { const m = new THREE.Mesh(geo, standMat); m.position.set(x, y, z); m.receiveShadow = false; scene.add(m); return m; };
+    endRows = { '-1': [], '1': [] }; hiddenEnd = 0; crowdEnd = null;
+    standEdge = L / 2 + 3.4 - 0.525;   // the inside face of the first row behind either baseline
     for (let i = 0; i < rows; i++) {
       const y = 0.3 + i * 0.62, depth = 1.05;
       // far sideline
       addRow(new THREE.BoxGeometry(L + 10, 0.6, depth), 0, y, -(Wd / 2 + 2.4 + i * depth));
-      for (let x = -(L / 2 + 4.5); x <= L / 2 + 4.5; x += 0.52) seats.push({ x, y: y + 0.3, z: -(Wd / 2 + 2.4 + i * depth) });
+      for (let x = -(L / 2 + 4.5); x <= L / 2 + 4.5; x += 0.52) seats.push({ x, y: y + 0.3, z: -(Wd / 2 + 2.4 + i * depth), end: 0 });
       // baselines
       for (const sgn of [-1, 1]) {
-        addRow(new THREE.BoxGeometry(depth, 0.6, Wd + 3.5), sgn * (L / 2 + 3.4 + i * depth), y, 0);
-        for (let z = -(Wd / 2 + 1.5); z <= Wd / 2 + 1.5; z += 0.52) seats.push({ x: sgn * (L / 2 + 3.4 + i * depth), y: y + 0.3, z });
+        endRows[sgn].push(addRow(new THREE.BoxGeometry(depth, 0.6, Wd + 3.5), sgn * (L / 2 + 3.4 + i * depth), y, 0));
+        for (let z = -(Wd / 2 + 1.5); z <= Wd / 2 + 1.5; z += 0.52) seats.push({ x: sgn * (L / 2 + 3.4 + i * depth), y: y + 0.3, z, end: sgn });
       }
     }
     // LED ribbon around the front of the bowl, in the home colours
@@ -1407,6 +1422,7 @@ function buildHoop(h, team) {
     crowdBody = new THREE.InstancedMesh(bodyGeo, crowdMat(), crowdN);
     crowdHead = new THREE.InstancedMesh(headGeo, crowdMat(), crowdN);
     crowdBaseY = new Float32Array(crowdN); crowdHeadY = new Float32Array(crowdN); crowdPhase = new Float32Array(crowdN);
+    crowdEnd = new Int8Array(crowdN); for (let i = 0; i < crowdN; i++) crowdEnd[i] = seats[i].end;
     const m = new THREE.Matrix4(), col = new THREE.Color();
     const palette = [teamA.primary, teamA.primary, teamB.primary, 0x2b2f3a, 0x3d4457, 0x5a3b2e, 0x8a8f9c, 0x1f2a44, 0x704a7a];
     const skins = [0xf1c9a5, 0xd9a06f, 0xb5764a, 0x8d5a34, 0x5c3a21];
@@ -1467,10 +1483,36 @@ function build(scene, teamA, teamB) {
     if (crowdBody && crowdBob > 0.005) {
       crowdT += dt; crowdBob *= Math.exp(-dt * 0.9);
       const b = crowdBody.instanceMatrix.array, hd = crowdHead.instanceMatrix.array;
-      for (let i = 0; i < crowdN; i++) { const off = 0.16 * crowdBob * Math.abs(Math.sin(crowdT * 9 + crowdPhase[i])); b[i * 16 + 13] = crowdBaseY[i] + off; hd[i * 16 + 13] = crowdHeadY[i] + off; }
-      crowdBody.instanceMatrix.needsUpdate = true; crowdHead.instanceMatrix.needsUpdate = true;
+      writeSeats(b, hd);
     }
     updateParticles(dt);
+  }
+  // Seat heights, with the cheer bounce on top, and the end the camera is sitting in sunk out of sight.
+  const SUNK = -60;
+  function writeSeats(b, hd) {
+    for (let i = 0; i < crowdN; i++) {
+      if (hiddenEnd !== 0 && crowdEnd[i] === hiddenEnd) { b[i * 16 + 13] = hd[i * 16 + 13] = SUNK; continue; }
+      const off = 0.16 * crowdBob * Math.abs(Math.sin(crowdT * 9 + crowdPhase[i]));
+      b[i * 16 + 13] = crowdBaseY[i] + off; hd[i * 16 + 13] = crowdHeadY[i] + off;
+    }
+    crowdBody.instanceMatrix.needsUpdate = true; crowdHead.instanceMatrix.needsUpdate = true;
+  }
+  // When the camera backs out past a baseline - an inbound from your own end, you on the baseline - it ends
+  // up inside that end's stand, and the rows it is sitting among fill the bottom of the frame with the backs
+  // of heads. Hide that end, the way the backboard is hidden when the camera is behind it. camX is null
+  // when the camera is not behind the play at all, which shows everything.
+  function cullStands(camX) {
+    // two thresholds, not one: it hides once the camera is past the first row's face and only comes back once
+    // it is well inside again, so a camera easing back and forth across the edge cannot flick an end on and off
+    let want = 0;
+    if (camX != null) {
+      const side = Math.sign(camX), out = Math.abs(camX);
+      want = (hiddenEnd === side ? out > standEdge - 1.2 : out > standEdge - 0.3) ? side : 0;
+    }
+    if (want === hiddenEnd) return;
+    hiddenEnd = want;
+    for (const k of ['-1', '1']) for (const r of endRows[k]) r.visible = +k !== hiddenEnd;
+    if (crowdBody && crowdEnd) writeSeats(crowdBody.instanceMatrix.array, crowdHead.instanceMatrix.array);
   }
   // ---- particles: footstep dust and rim sparks, drawn as ONE pooled Points cloud (no per-frame allocation) ----
   const PARTICLE_MAX = 200;
@@ -1545,7 +1587,7 @@ function build(scene, teamA, teamB) {
   function inBounds(x, z) { return Math.abs(x) <= C.length / 2 && Math.abs(z) <= C.width / 2; }
   function inPaint(x, z, h) { const d = h.s * (h.s * C.length / 2 - x); return d >= 0 && d <= C.keyDepth && Math.abs(z) <= C.paintW / 2; }
   function inFrontcourt(x, h) { return h.s * x > 0; }
-  return { C, hoops, boardX, rigs, netTexture, build, update, setShotClock, netPulse, crowdCheer, setShadows, isThree, inBounds, inPaint, inFrontcourt, get group() { return group; }, get particles() { return particles; }, initParticles, spawnDust, spawnRimSpark, spawnBurst, updateParticles, resizeParticles };
+  return { C, hoops, boardX, rigs, netTexture, build, update, cullStands, setShotClock, netPulse, crowdCheer, setShadows, isThree, inBounds, inPaint, inFrontcourt, get group() { return group; }, get particles() { return particles; }, initParticles, spawnDust, spawnRimSpark, spawnBurst, updateParticles, resizeParticles };
 })();
 // ==== END COURT ====
 
@@ -2100,7 +2142,10 @@ const PlayerSys = (() => {
     const armR = mk(root, FIG.shX, FIG.shY, FIG.shZ), foreR = mk(armR, 0, FIG.elY - FIG.shY, 0);
     const legL = mk(root, -FIG.hipX, FIG.hipY, 0), shinL = mk(legL, 0, FIG.kneeY - FIG.hipY, 0);
     const legR = mk(root, FIG.hipX, FIG.hipY, 0), shinR = mk(legR, 0, FIG.kneeY - FIG.hipY, 0);
-    const skinMesh = new THREE.SkinnedMesh(skinGeo, skinMat), clothMesh = new THREE.SkinnedMesh(clothGeo, clothMat);
+    // its own copies of the shared materials, so this body can be faded on its own when it is in the camera's
+    // way; a clone shares the compiled shader, and opacity and transparency are not part of its key
+    const mySkin = skinMat.clone(), myCloth = clothMat.clone();
+    const skinMesh = new THREE.SkinnedMesh(skinGeo, mySkin), clothMesh = new THREE.SkinnedMesh(clothGeo, myCloth);
     const numMat = new THREE.MeshStandardMaterial({ map: numberTexture(p.num, team), transparent: true, alphaTest: 0.45, roughness: 0.8, metalness: 0 });
     const numMesh = new THREE.Mesh(F.band, numMat);
     g.add(root, skinMesh, clothMesh, numMesh);
@@ -2122,7 +2167,7 @@ const PlayerSys = (() => {
     const ring = new THREE.Mesh(GEO.ring, mats.ring); ring.position.y = 0.02; ring.visible = false; scene.add(ring);
     p.mesh = { group: g, body: skinMesh, armL, armR, legL, legR, foreL, foreR, shinL, shinR, shadow, ring,
       legPhase: 0, leanX: 0, leanZ: 0, crouch: 0, yawOff: 0, sc, girthS: girth, heightS,
-      owned: [skinGeo, clothGeo], numMat, skeleton };
+      owned: [skinGeo, clothGeo], numMat, skeleton, fadeMats: [mySkin, myCloth], fade: 1 };
     if (!standalone) liveMeshes.push(p.mesh);
     return p.mesh;
   }
@@ -2132,6 +2177,7 @@ const PlayerSys = (() => {
     for (const geo of m.owned) geo.dispose();
     if (m.numMat) { if (m.numMat.map) m.numMat.map.dispose(); m.numMat.dispose(); }
     if (m.skeleton) m.skeleton.dispose();   // each body owns a bone texture
+    if (m.fadeMats) for (const mt of m.fadeMats) mt.dispose();
   }
   function destroyMeshes() {
     for (const m of liveMeshes) {
@@ -2139,6 +2185,7 @@ const PlayerSys = (() => {
       for (const geo of m.owned) geo.dispose();          // per-player merged geometry
       if (m.numMat) { if (m.numMat.map) m.numMat.map.dispose(); m.numMat.dispose(); }
       if (m.skeleton) m.skeleton.dispose();
+      if (m.fadeMats) for (const mt of m.fadeMats) mt.dispose();
     }
     liveMeshes.length = 0;
     for (const p of players) p.mesh = null;
@@ -5213,6 +5260,9 @@ const CameraSys = (() => {
   function setMode(m) { mode = m; }
   function update(dt, focusX, focusZ, g) {
     if (!g.running) { // menu idle orbit
+      // it circles the whole arena, so anything the behind camera hid for the last frame of a game comes back
+      if (Court.rigs) for (const r of Court.rigs) if (r) r.visible = true;
+      Court.cullStands(null);
       menuT += dt; const a = menuT * 0.08; pos.x = Math.sin(a) * 24; pos.z = Math.cos(a) * 24; pos.y = 9 + Math.sin(menuT * 0.3) * 1.5; look.x = 0; look.y = 1.5; look.z = 0;
       cam.position.set(pos.x, pos.y, pos.z); cam.lookAt(look.x, look.y, look.z); return;
     }
@@ -5231,11 +5281,19 @@ const CameraSys = (() => {
       const want = s > 0 ? Math.PI : 0;
       let dy = want - camYaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       camYaw += dy * (1 - Math.exp(-CC.behindSwing * dt));
-      tx = U.clamp(focusX + Math.cos(camYaw) * CC.behindDist, -CC.behindLimit, CC.behindLimit);
+      // how far the ball trails you, toward this camera, past what the standard framing already shows. Only
+      // once the camera is round behind you: mid-swing it is side-on, and aiming back at the ball from there
+      // looks away from you entirely. Squared, so it comes in over the last part of the swing, not the first.
+      const align = Math.max(0, -Math.cos(camYaw) * s);
+      const bl = BallSys.ball, back = align * align * Math.max(0, s * (focusX - bl.x) - CC.behindBallSlack);
+      const dist = CC.behindDist + back * CC.behindBallBack;
+      tx = U.clamp(focusX + Math.cos(camYaw) * dist, -CC.behindLimit, CC.behindLimit);
       ty = CC.behindHeight;
-      tz = focusZ * CC.behindFollowZ + Math.sin(camYaw) * CC.behindDist;
-      lx = focusX + s * CC.behindLookAhead;
+      tz = focusZ * CC.behindFollowZ + Math.sin(camYaw) * dist;
+      lx = focusX + s * (CC.behindLookAhead - back * CC.behindBallLook);
       ly = CC.behindLookY; lz = focusZ * CC.behindLookZ;
+      const side = (bl.z - focusZ) * CC.behindBallSide * Math.min(1, back / CC.behindBallSideRamp);
+      tz += side; lz += side;
       basis.fx = s; basis.fz = 0; basis.rx = 0; basis.rz = s;
     } else {
       const zoom = half ? CC.halfCourtZoom : 1;
@@ -5259,7 +5317,11 @@ const CameraSys = (() => {
         rig.visible = !(mode === 'behind' && h.s * (pos.x - Court.boardX(h.s)) > -0.6);
       }
     }
-    const wantFov = mode === 'behind' ? CC.behindFov : CC.fov;
+    Court.cullStands(mode === 'behind' ? pos.x : null);
+    // three.js fov is vertical, so a narrower window loses the sidelines first; widen it until it covers them
+    const wantFov = mode === 'behind'
+      ? Math.max(CC.behindFov, 2 * Math.atan(Math.tan(CC.behindMinHFov * Math.PI / 360) / cam.aspect) * 180 / Math.PI)
+      : CC.fov;
     if (cam.fov !== wantFov) { cam.fov = U.damp(cam.fov, wantFov, 6, dt); if (Math.abs(cam.fov - wantFov) < 0.05) cam.fov = wantFov; cam.updateProjectionMatrix(); }
     if (shake > 0) { shake -= dt; pos.y += Math.sin(g.time * 90) * 0.08 * shake; }
     if (frame) {
@@ -5311,7 +5373,8 @@ const CameraSys = (() => {
   }
   function addShake(t) { shake = t; }
   return { init, update, setMode, basis, snap, addShake, setFrame, parkUpdate, parkSnap,
-    get cam() { return cam; }, get mode() { return mode; } };
+    get cam() { return cam; }, get mode() { return mode; },
+    get eye() { return pos; } };   // where the lens is in simulation space, before a park court's transform
 })();
 // ==== END CAMERA ====
 
@@ -5559,7 +5622,38 @@ function init(container) {
     else if (b.state === BallSys.BS.HELD) { ballMesh.rotation.y += dt * 2; }
     if (b.state !== BallSys.BS.HELD && by < 0.35 && b.vy < -2.2) Court.spawnDust(bx, bz, 2);
     lastBx = bx; lastBz = bz;
+    fadeBlockers(dt);
     Court.update(dt);
+  }
+  // Anyone standing between the lens and you, or the ball, is ghosted, as 2K does it. The camera sits behind
+  // you, so in a half-court set it is usually your own team-mates in the way. Everything is in simulation
+  // space, so it holds on a park court too. A body is a vertical capsule: it blocks a sight line when the
+  // line passes within reach of its axis, somewhere between the floor and the top of its head.
+  const FADE = { to: 0.28, reach: 0.36, rate: 12 };
+  function sightBlocked(q, e, tx, ty, tz) {
+    const dx = tx - e.x, dz = tz - e.z, L2 = dx * dx + dz * dz; if (L2 < 1e-4) return false;
+    const t = ((q.x - e.x) * dx + (q.z - e.z) * dz) / L2;
+    if (t <= 0 || t >= 0.98) return false;   // behind the lens, or level with what it is looking at
+    const ox = e.x + dx * t - q.x, oz = e.z + dz * t - q.z;
+    if (ox * ox + oz * oz > FADE.reach * FADE.reach) return false;
+    const y = e.y + (ty - e.y) * t; return y > q.y && y < q.y + q.height;
+  }
+  function fadeBlockers(dt) {
+    const g = Game.g, me = PlayerSys.players[g.human], b = BallSys.ball, e = CameraSys.eye;
+    const on = !!(g.running && CameraSys.mode === 'behind' && me);
+    const holder = b.holder >= 0 ? PlayerSys.players[b.holder] : null;
+    for (const p of PlayerSys.players) {
+      const m = p.mesh; if (!m || !m.fadeMats) continue;
+      let want = 1;
+      if (on && p !== me && (sightBlocked(p, e, me.x, me.y + me.height * 0.62, me.z) || sightBlocked(p, e, me.x, me.y + me.height * 0.9, me.z)
+        || (holder !== me && holder !== p && sightBlocked(p, e, b.x, b.y, b.z)))) want = FADE.to;
+      if (m.fade === want) continue;
+      m.fade = U.damp(m.fade, want, FADE.rate, dt); if (Math.abs(m.fade - want) < 0.01) m.fade = want;
+      for (const mt of m.fadeMats) { mt.opacity = m.fade; mt.transparent = m.fade < 1; }
+      // the number is alpha-tested at 0.45, so fading it with the body would pop it out entirely at that
+      // point; it only dims, and a ghosted player can still be told apart
+      if (m.numMat) m.numMat.opacity = Math.max(m.fade, 0.65);
+    }
   }
   function draw() { renderer.render(scene, cam); }
   function project(x, y, z, out) { _v.set(x, y, z).project(cam); out.x = (_v.x * 0.5 + 0.5) * window.innerWidth; out.y = (-_v.y * 0.5 + 0.5) * window.innerHeight; out.visible = _v.z < 1; return out; }
