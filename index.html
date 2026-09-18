@@ -738,11 +738,11 @@ const CONFIG = {
     broadcastHeight: 10.8, broadcastDist: 19.5, followX: 0.86, lookY: 1.1, lookZ: 0.28, damp: 4.5, lookDamp: 6, fov: 42, halfCourtZoom: 0.86,
     // over the shoulder of whoever has it, looking at the rim they are attacking
     behindDist: 11.5,        // how far back down the floor the camera sits from the ball
-    behindHeight: 4.9,       // and how high - low enough that players have height on screen
+    behindHeight: 3.8,       // and how high - low enough that players have height on screen
     behindFollowZ: 0.62,     // how much it slides sideways with the ball
-    behindLookAhead: 5.2,    // the look point sits past the ball, toward the rim
-    behindLookY: 2.0, behindLookZ: 0.45,
-    behindBoardGap: 1.1,     // how far in front of the defensive backboard the camera has to stop
+    behindLookAhead: 4.0,    // the look point sits past the ball, toward the rim
+    behindLookY: 2.95, behindLookZ: 0.45,
+    behindLimit: 20.5,       // it may sit outside the baseline, but not out of the building
     behindFov: 50,           // wider than broadcast: close camera, so keep the floor readable
   },
   render: { shadows: false, crowd: true, pixelRatioCap: 1.5, exposure: 1.1, vignette: 0.55, fogDensity: 0.016 },
@@ -1030,7 +1030,7 @@ const Court = (() => {
     { x: +(C.length / 2 - C.rimFromBaseline), y: C.rimHeight, z: 0, s: 1, idx: 1 },
   ];
   const boardX = (s) => s * (C.length / 2 - C.boardFromBaseline);
-  let group = null, floorMat = null, floorTex = null;
+  let group = null, floorMat = null, floorTex = null; const rigs = [];
   const nets = [], shotTex = [], shotCtx = [], shotVal = [-1, -1];
   let crowdBody = null, crowdHead = null, crowdBaseY = null, crowdPhase = null, crowdN = 0, crowdBob = 0, crowdT = 0;
   let dirLight = null;
@@ -1325,7 +1325,7 @@ function build(scene, teamA, teamB) {
 	              const floor = new THREE.Mesh(new THREE.PlaneGeometry(C.apronX * 2, C.apronZ * 2), floorMat);
 	              floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; group.add(floor);
 	              const outer = new THREE.Mesh(new THREE.PlaneGeometry(90, 70), new THREE.MeshLambertMaterial({ color: 0x0c0f16 })); outer.rotation.x = -Math.PI / 2; outer.position.y = -0.02; group.add(outer);
-	              for (const h of hoops) group.add(buildHoop(h));
+	              for (const h of hoops) { const rig = buildHoop(h); rigs[h.idx] = rig; group.add(rig); }
 	              buildStands(group, teamA, teamB);
 	              // Less flat fill, a stronger key: the floor should be the brightest thing in the building.
 	              const hemi = new THREE.HemisphereLight(0xcfe0ff, 0x181410, 0.58); group.add(hemi);
@@ -1428,7 +1428,7 @@ function build(scene, teamA, teamB) {
   function inBounds(x, z) { return Math.abs(x) <= C.length / 2 && Math.abs(z) <= C.width / 2; }
   function inPaint(x, z, h) { const d = h.s * (h.s * C.length / 2 - x); return d >= 0 && d <= C.keyDepth && Math.abs(z) <= C.paintW / 2; }
   function inFrontcourt(x, h) { return h.s * x > 0; }
-  return { C, hoops, boardX, build, update, setShotClock, netPulse, crowdCheer, setShadows, isThree, inBounds, inPaint, inFrontcourt, get group() { return group; }, get particles() { return particles; }, initParticles, spawnDust, spawnRimSpark, spawnBurst, updateParticles, resizeParticles };
+  return { C, hoops, boardX, rigs, build, update, setShotClock, netPulse, crowdCheer, setShadows, isThree, inBounds, inPaint, inFrontcourt, get group() { return group; }, get particles() { return particles; }, initParticles, spawnDust, spawnRimSpark, spawnBurst, updateParticles, resizeParticles };
 })();
 // ==== END COURT ====
 
@@ -4529,11 +4529,12 @@ const CameraSys = (() => {
     let tx, ty, tz, lx, ly, lz;
     if (mode === 'behind') {
       // Sit down the floor from the ball, on the far side from the rim being attacked, and look past
-      // the ball at that rim. The stop is the defensive backboard, not the apron: retreat past that and
-      // the camera is staring at the back of a board from two metres away with the play hidden behind it.
-      const s = h.s, lim = Math.abs(Court.boardX(1)) - CC.behindBoardGap;
-      tx = focusX - s * CC.behindDist;
-      tx = s > 0 ? Math.max(tx, -lim) : Math.min(tx, lim);
+      // the ball at that rim. It keeps the full setback even when that puts it behind the baseline -
+      // clamping it inside the court instead left the camera two metres behind the handler, pitched
+      // thirty-five degrees down, with him off the bottom of the frame. Backing out through the
+      // baseline is what a rec camera does; the rig in the way gets culled below instead.
+      const s = h.s;
+      tx = U.clamp(focusX - s * CC.behindDist, -CC.behindLimit, CC.behindLimit);
       ty = CC.behindHeight;
       tz = focusZ * CC.behindFollowZ;
       lx = focusX + s * CC.behindLookAhead;
@@ -4547,6 +4548,17 @@ const CameraSys = (() => {
     }
     pos.x = U.damp(pos.x, tx, CC.damp, dt); pos.y = U.damp(pos.y, ty, CC.damp, dt); pos.z = U.damp(pos.z, tz, CC.damp, dt);
     look.x = U.damp(look.x, lx, CC.lookDamp, dt); look.y = U.damp(look.y, ly, CC.lookDamp, dt); look.z = U.damp(look.z, lz, CC.lookDamp, dt);
+    // Whatever rig the camera has backed behind is between it and the play, so hide it. 2K does the
+    // same thing; a backboard filling a third of the screen is worse than a missing one you cannot
+    // see through anyway. Always restore both when the camera is not behind either.
+    if (Court.rigs && Court.rigs.length) {
+      for (const rig of Court.rigs) if (rig) rig.visible = true;
+      if (mode === 'behind') {
+        const near = Court.hoops[1 - g.hoopOf[g.possession]];
+        const rig = near && Court.rigs[near.idx];
+        if (rig && near.s * (pos.x - Court.boardX(near.s)) > -0.6) rig.visible = false;
+      }
+    }
     const wantFov = mode === 'behind' ? CC.behindFov : CC.fov;
     if (cam.fov !== wantFov) { cam.fov = U.damp(cam.fov, wantFov, 6, dt); if (Math.abs(cam.fov - wantFov) < 0.05) cam.fov = wantFov; cam.updateProjectionMatrix(); }
     if (shake > 0) { shake -= dt; pos.y += Math.sin(g.time * 90) * 0.08 * shake; }
