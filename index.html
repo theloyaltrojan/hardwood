@@ -263,6 +263,8 @@
   #coinBar { position: fixed; top: 16px; right: 18px; z-index: 7; background: rgba(10,12,17,0.82); padding: 6px 16px 4px; transform: skewX(var(--skew)); pointer-events: none; }
   #coinBar > * { display: block; transform: skewX(var(--unskew)); }
   #coinBar .pop { font-size: 12px; color: var(--ok); letter-spacing: 0.08em; min-height: 15px; }
+  #coinBar .xp { font-family: var(--display); font-size: 13px; letter-spacing: 0.08em; color: var(--ok); }
+  #coinBar .xp b { font-size: 18px; }
   .st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 8px; }
   .st-card { position: relative; background: var(--panel2); border-left: 5px solid var(--line); padding: 10px 12px 11px; display: flex; flex-direction: column; gap: 3px; }
   .st-card.owned { border-left-color: var(--ok); }
@@ -488,7 +490,7 @@
   </div>
 </div>
 
-<div id="coinBar" class="hidden"><span class="coins">◆ <b id="coinNum">0</b></span><span class="pop" id="coinPop"></span></div>
+<div id="coinBar" class="hidden"><span class="coins">◆ <b id="coinNum">0</b></span><span class="xp hidden" id="xpChip">+<b id="xpNum">0</b> XP</span><span class="pop" id="coinPop"></span></div>
 
 <div id="park" class="hidden">
   <div id="parkTop"><span class="t">MyPark</span><span class="s" id="parkSub"></span></div>
@@ -735,6 +737,16 @@ const CONFIG = {
     starting: 500, two: 55, three: 95, dunk: 130, block: 110, steal: 85, assist: 45,
     perfectBonus: 40, toughBonus: 35, win: 750, loss: 220,
     daily: 300, dailyStreak: 120, dailyMaxStreak: 7,
+  },
+  // MyCareer XP. Priced against Career.upgradeCost: the two together are the whole progression pace.
+  // Everything here is read off the box score, so what pays is what you actually did on the floor.
+  xp: {
+    pts: 9, reb: 11, ast: 14, stl: 22, blk: 22, fgm: 5, tpm: 6, ftm: 3,
+    to: 15, miss: 4,                     // subtracted, so a careless night costs you rather than just paying less
+    win: 240, loss: 80, floor: 40,
+    grade: { 'A+': 260, A: 170, 'B+': 100, B: 50, 'C+': 20, C: 0, D: 0 },
+    playoffMul: 1.5,                     // the games that matter pay like it
+    offseason: 500,                      // summer work: the one payment not earned on the floor
   },
   // MyPark: the walkable lobby. It is player only, so everyone in it is a real connection.
   park: {
@@ -1841,6 +1853,7 @@ const PlayerSys = (() => {
 // The whole career lives in one plain object saved to localStorage, so closing the tab loses nothing.
 const Career = (() => {
   const KEY = 'hw_career', VERSION = 2;
+  const X = CONFIG.xp;
   const GAMES = 12;                 // regular season length
   const CREATE_BASE = 50, CREATE_POOL = 110, CREATE_CAP = 82;   // a rookie lands a little under the league's starters
   // Six categories the player actually sets, each expanding into the sim's real ratings.
@@ -1891,8 +1904,10 @@ const Career = (() => {
     for (const cat of CATS) { const k = w[cat.id] || 0; s += cats[cat.id] * k; tw += k; }
     return Math.round(tw ? s / tw : 0);
   }
-  // Upgrades get steeply more expensive, so the last few points of a maxed category are a season's work.
-  function upgradeCost(v) { return Math.round(14 + Math.pow(Math.max(0, v - 38), 1.36)); }
+  // Upgrades get steeply more expensive, so the last few points of a maxed category really are a season's
+  // work: about 160 XP a point at 50, 700 at 70, 1500 at 88. The old 1.36 curve maxed a category inside one
+  // season, which made the build a formality — every career ended up as the same 99-everything player.
+  function upgradeCost(v) { return Math.round(26 + Math.pow(Math.max(0, v - 36), 1.85)); }
   function capFor(catId) { return archOf(c.player.arch).caps[catId]; }
 
   // ---------- league strength (for simming everyone else's games) ----------
@@ -2022,15 +2037,22 @@ const Career = (() => {
       ovr: overallOf(c.player.cats, c.player.pos), champ: !!won });
     c.season++; c.gameNo = 0; c.phase = 'regular'; c.bracket = null; c.playoffRound = 0;
     c.record = [0, 0]; c.seasonTotals = blankTotals();
-    c.xp += 600;  c.xpTotal += 600;            // offseason training
+    c.xp += X.offseason; c.xpTotal += X.offseason;   // offseason training
     newSchedule(); save();
   }
 
-  // ---------- after a game ----------
-  function gradeXp(s, won) {
-    const raw = s.pts * 10 + s.reb * 12 + s.ast * 15 + s.stl * 24 + s.blk * 24 + s.fgm * 6 - s.to * 16
-      - Math.max(0, s.fga - s.fgm) * 4;
-    return Math.max(40, Math.round(raw + (won ? 220 : 70)));
+  // ---------- XP and grading ----------
+  // The box-score half of a night's XP. It takes no win flag and reads a live stat line exactly as well as a
+  // final one, which is what lets the HUD run it every frame and show the number climb while you are playing.
+  function liveXp(s) {
+    const raw = s.pts * X.pts + s.reb * X.reb + s.ast * X.ast + s.stl * X.stl + s.blk * X.blk
+      + s.fgm * X.fgm + s.tpm * X.tpm + s.ftm * X.ftm - s.to * X.to - Math.max(0, s.fga - s.fgm) * X.miss;
+    return Math.max(0, Math.round(raw));
+  }
+  // ...and the half that cannot exist until there is a result: the win, and how the night graded out.
+  function resultXp(s, won, playoff) {
+    const total = liveXp(s) + (won ? X.win : X.loss) + (X.grade[grade(s, won)] || 0);
+    return Math.max(X.floor, Math.round(total * (playoff ? X.playoffMul : 1)));
   }
   function grade(s, won) {
     const v = s.pts + s.reb * 1.2 + s.ast * 1.5 + (s.stl + s.blk) * 2.4 - s.to * 2 - Math.max(0, s.fga - s.fgm) * 0.6 + (won ? 6 : 0);
@@ -2045,9 +2067,11 @@ const Career = (() => {
     const box = { gp: 1, pts: stats.pts, reb: stats.reb, ast: stats.ast, stl: stats.stl, blk: stats.blk,
       fgm: stats.fgm, fga: stats.fga, tpm: stats.tpm, tpa: stats.tpa, ftm: stats.ftm, fta: stats.fta, to: stats.to, w: won ? 1 : 0, l: won ? 0 : 1 };
     for (const k in box) { c.totals[k] += box[k]; c.seasonTotals[k] += box[k]; }
-    const xp = gradeXp(box, won);
-    c.xp += xp; c.xpTotal += xp;
+    // Banked here and nowhere else. The HUD meter is a preview of liveXp against this same stat line, so
+    // walking out at half time with a good quarter banks nothing: there is no partial game worth farming.
     const playoff = c.phase === 'playoffs';
+    const xp = resultXp(box, won, playoff);
+    c.xp += xp; c.xpTotal += xp;
     const g = c.lastGame = { opp: playoff ? c.bracket.next.opp : c.schedule[c.gameNo].opp, won, myScore, oppScore,
       xp, grade: grade(box, won), box, playoff, round: playoff ? c.playoffRound : -1, season: c.season };
     if (playoff) { advanceBracket(won); }
@@ -2122,7 +2146,7 @@ const Career = (() => {
   load();
   return { CATS, ARCHETYPES, HEIGHTS, GAMES, CREATE_BASE, CREATE_POOL, CREATE_CAP,
     catOf, archOf, ratingsFrom, overallOf, upgradeCost, capFor, blankBuild, createCost, poolLeft, draftOffers,
-    begin, nextGame, playoffGame, upcoming, playoffRounds, recordGame, canUpgrade, upgrade, grade,
+    begin, nextGame, playoffGame, upcoming, playoffRounds, recordGame, canUpgrade, upgrade, grade, liveXp,
     playerDef, applyRoster, applyToSide, strength, seedsFor, save, load, wipe, exists,
     get storageOk() { return storageOk; },
     get data() { return c; } };
@@ -5013,7 +5037,7 @@ const Ads = (() => {
 const UI = (() => {
   const $ = (id) => document.getElementById(id);
   const el = {};
-  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'menuCareer', 'careerBody', 'teamGrid', 'menuPark', 'parkBody', 'menuStore', 'storeBody', 'coinBar', 'coinNum', 'coinPop', 'tut', 'tutStep', 'tutTitle', 'tutBody', 'tutGoal', 'tutBar', 'tutSkipKey', 'park', 'parkSub', 'parkPrompt', 'parkLog', 'parkInput', 'parkTags', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'jerseyA', 'jerseyB', 'pnum', 'tipnote', 'pauseScore', 'wipe', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
+  const ids = ['hud', 'scorebug', 'barA', 'barB', 'abbrA', 'abbrB', 'scoreA', 'scoreB', 'possA', 'possB', 'period', 'clock', 'fouls', 'shotclock', 'playerbox', 'pname', 'psub', 'stamina', 'meter', 'feedback', 'tags', 'toast', 'hint', 'debug', 'menu', 'menuHome', 'menuControls', 'menuSettings', 'menuNet', 'menuCareer', 'careerBody', 'teamGrid', 'menuPark', 'parkBody', 'menuStore', 'storeBody', 'coinBar', 'coinNum', 'coinPop', 'xpChip', 'xpNum', 'tut', 'tutStep', 'tutTitle', 'tutBody', 'tutGoal', 'tutBar', 'tutSkipKey', 'park', 'parkSub', 'parkPrompt', 'parkLog', 'parkInput', 'parkTags', 'pause', 'pauseHome', 'pauseControls', 'pauseSettings', 'firstrun', 'final', 'finalTitle', 'finalBody', 'jerseyA', 'jerseyB', 'pnum', 'tipnote', 'pauseScore', 'wipe', 'bindList', 'bindList2', 'bindList3', 'settingsList', 'settingsList2', 'netBody'];
   let debugOn = false, pick = U.loadLS('hw_pick', [0, 1]), last = {}, tagEls = [], meterVisible = false, hudVisible = false, mode = U.loadLS('hw_mode', '5v5');
   if (!Array.isArray(pick) || pick.length !== 2 || pick[0] === pick[1]) pick = [0, 1];
   const _pt = { x: 0, y: 0, visible: false };
@@ -5640,7 +5664,7 @@ const UI = (() => {
     parkPrompt(); parkTags();
   }
   // The coin readout rides along wherever you can actually earn: in a game, or out in the park.
-  let coinShown = -1, coinPopT = 0;
+  let coinShown = -1, coinPopT = 0, xpShown = -1;
   const WHY = { bucket: 'bucket', three: 'three', dunk: 'dunk', block: 'block', steal: 'steal', assist: 'assist', win: 'win', played: 'played' };
   function showTutorial(on) { el.tut.classList.toggle('hidden', !on); if (on) el.tutSkipKey.textContent = Input.keyLabel(Input.binds.pause); }
   let tutKey = '';
@@ -5665,6 +5689,11 @@ const UI = (() => {
     el.coinBar.classList.toggle('hidden', !on);
     if (!on) { Bank.takeFeed(); return; }
     if (Bank.coins !== coinShown) { coinShown = Bank.coins; el.coinNum.textContent = coinFmt(coinShown); }
+    // The career XP meter, straight off the live box score: a rebound is progress you watch happen instead
+    // of a number you read on the final screen. Ten adds a frame, against a sim that is already doing more.
+    const mine = Game.g.career && Game.g.careerPid >= 0 ? PlayerSys.players[Game.g.careerPid] : null;
+    el.xpChip.classList.toggle('hidden', !mine);
+    if (mine) { const n = Career.liveXp(mine.stats); if (n !== xpShown) { xpShown = n; el.xpNum.textContent = n; } }
     const feed = Bank.takeFeed();
     if (feed.length) {
       const last = feed[feed.length - 1];
