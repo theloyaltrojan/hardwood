@@ -745,6 +745,9 @@ const CONFIG = {
     holdAfter: 1.2,      // how long a completed prompt stays up
     easeRate: 7,         // how fast the world slows down and speeds back up
     openMate: 3.2,       // a team-mate with this much space counts as open
+    perQuarter: 3,       // hard cap, so a quarter is mostly basketball
+    quietGame: 16,       // seconds of game clock between lessons
+    stuckAfter: 9,       // failsafe: never leave the world slow longer than this, whatever happens
   },
   game: { shotClock: 24, halfShotClock: 14, offRebClock: 14, quarterLen: 120, quarters: 4, halfCourtTarget: 21, deadBallDelay: 0.85, inboundDelay: 0.35, practiceReturn: 1.5, ftRoutine: 1.2, foulOutLimit: 6, reachInFoulChance: 0.18, shootingFoulChance: 0.15 },
   // Coins. Everything the store sells is cosmetic, so these numbers only pace how long a look takes to earn.
@@ -3519,6 +3522,7 @@ const Passing = (() => {
     const line = Game.teamPlayers(p.team).slice().sort(bySlot);
     const m = line[n - 1];
     if (!m || m === p || m.state === ST.STUMBLE || m.state === ST.FALL) return false;
+    if (p.human) Coach.note('icon');
     throwPass(p, m, g);
     return true;
   }
@@ -4708,10 +4712,78 @@ const Tutorial = (() => {
 const Coach = (() => {
   const CC = CONFIG.coach;
   let on = false, cur = null, t = 0, hold = 0, scale = 1, cooldown = 0, taught = null, finishedT = -1;
+  let lastAt = -999, thisQuarter = 0, quarter = -1, slowT = 0;
 
   // Every lesson is a condition, a line of copy and a way to know you did it. Nothing here can be
-  // failed: an unmet lesson times out, the world speeds back up and the game carries on.
-  const LESSONS = [];
+  // failed: an unmet lesson times out, the world speeds back up and the game carries on. Ordering is
+  // by dependency, not by clock: a lesson waits for the situation where its mechanic is the answer,
+  // which is why there is no lesson about dunking before you have taken a shot.
+  const ST = PlayerSys.ST, BS = BallSys.BS;
+  const key = (a) => Input.keyLabel(Input.binds[a]);
+  const done = (id) => taught[id];
+  const LESSONS = [
+    { id: 'move', title: 'Get on the floor', slowmo: 0.55, timeoutSec: 7,
+      body: () => key('up') + key('left') + key('down') + key('right') + ' to move, ' + key('sprint') + ' to sprint.',
+      goal: 'Move',
+      trigger: (c) => c.live && c.g.time > 1.5,
+      satisfied: (c) => c.p.speed > 2.6 || c.hasBall },
+
+    { id: 'shoot', title: 'Take the open one', slowmo: 0.25, timeoutSec: 9,
+      body: () => 'Hold ' + key('shoot') + ' to start the meter and let go in the green.',
+      goal: 'Put one up',
+      trigger: (c) => c.hasBall && c.near > 2.0 && c.rim > 3.8 && c.rim < 7.6 && c.g.shotClock > 5,
+      satisfied: (c) => c.p.state === ST.SHOOT },
+
+    { id: 'pass', title: 'Give it up', slowmo: 0.3, timeoutSec: 7,
+      body: () => key('pass') + ' passes to whoever is best placed.',
+      goal: 'Find a team-mate',
+      trigger: (c) => c.hasBall && c.near < 1.9 && c.openMate && c.p.cd.pass <= 0,
+      satisfied: (c) => c.ball.state === BS.PASS && c.ball.passer === c.p.id },
+
+    // A tail on the pass lesson rather than an interruption of its own: the moment you have passed,
+    // the line swaps to the next thing you can do with that button. No slowdown, no separate stop.
+    { id: 'icon', title: 'Pick the man', slowmo: 1, timeoutSec: 6, follows: 'pass',
+      body: () => 'Next time, 1 to 5 passes to that position whoever is closest. 1 is the point guard, 5 the centre.',
+      goal: 'Pass with a number',
+      trigger: () => true,
+      satisfied: () => !!seen.icon },
+
+    { id: 'cross', title: 'Lose him', slowmo: 0.25, timeoutSec: 7,
+      body: () => 'Flick a dribble move across you to cross over. Time it while he is mirroring you and he goes down.',
+      goal: 'Cross over',
+      trigger: (c) => c.hasBall && c.canMove && c.moving && c.near < 2.0 && c.rim > 4.5,
+      satisfied: (c) => c.p.state === ST.CROSSOVER || c.p.state === ST.SIDESTEP },
+
+    { id: 'spin', title: 'Go past him', slowmo: 0.25, timeoutSec: 7,
+      body: () => 'Flick a dribble move toward the rim to spin past a defender who is sitting in front of you.',
+      goal: 'Spin',
+      trigger: (c) => done('cross') && c.hasBall && c.canMove && c.near < 1.7 && c.rim > 2.5 && c.rim < 7.5,
+      satisfied: (c) => c.p.state === ST.SPIN },
+
+    { id: 'stepback', title: 'Make room', slowmo: 0.25, timeoutSec: 7,
+      body: () => 'Flick a dribble move away from the rim to step back into a shot.',
+      goal: 'Step back',
+      trigger: (c) => done('cross') && c.hasBall && c.canMove && c.near < 1.6 && c.rim < 8.5 && c.g.shotClock > 6,
+      satisfied: (c) => c.p.state === ST.STEPBACK },
+
+    { id: 'dunk', title: 'Finish it', slowmo: 0.35, timeoutSec: 6,
+      body: () => 'Sprint at the rim and shoot to dunk it.',
+      goal: 'Get to the rim',
+      trigger: (c) => done('shoot') && c.hasBall && c.rim > 3.2 && c.rim < 8.5 && c.p.speed > 3.2 && c.near > 1.4,
+      satisfied: (c) => c.p.state === ST.DUNK || c.p.state === ST.LAYUP },
+
+    { id: 'contest', title: 'Put a hand up', slowmo: 0.22, timeoutSec: 5,
+      body: () => key('shoot') + ' contests on defence. A hand in the face is most of a miss.',
+      goal: 'Contest',
+      trigger: (c) => c.onD && c.carrier && c.carrier.state === ST.SHOOT && U.dist(c.p.x, c.p.z, c.carrier.x, c.carrier.z) < 3.0,
+      satisfied: (c) => c.p.airborne || c.p.armsUp },
+
+    { id: 'steal', title: 'Take it off him', slowmo: 0.3, timeoutSec: 6,
+      body: () => key('steal') + ' goes for the strip. Miss and you are out of position, so pick your moment.',
+      goal: 'Go for it',
+      trigger: (c) => c.onD && c.carrier && c.p.cd.steal <= 0 && U.dist(c.p.x, c.p.z, c.carrier.x, c.carrier.z) < 1.7,
+      satisfied: (c) => c.p.cd.steal > 0 },
+  ];
 
   const me = () => PlayerSys.players[Game.g.human] || null;
   const ctx = () => {
@@ -4727,40 +4799,68 @@ const Coach = (() => {
       if (q === p) continue;
       if (Passing.nearestOppDist(q) > CC.openMate) { openMate = q; break; }
     }
-    return { g, p, h, ball, near, openMate,
+    const carrier = ball.holder >= 0 ? PlayerSys.players[ball.holder] : null;
+    let openMates = 0;
+    for (const q of Game.teamPlayers(p.team)) if (q !== p && Passing.nearestOppDist(q) > CC.openMate) openMates++;
+    return { g, p, h, ball, near, openMate, openMates, carrier,
       mine: g.possession === p.team, hasBall: !!p.hasBall,
-      rim: U.dist(p.x, p.z, h.x, h.z), live: g.state === Game.S.PLAY };
+      onD: g.possession !== p.team && !p.hasBall,
+      rim: U.dist(p.x, p.z, h.x, h.z), live: g.state === Game.S.PLAY,
+      moving: p.speed > 1.4, canMove: p.cd.move <= 0 && !p.airborne };
   };
 
   function begin() {
     on = true; cur = null; t = 0; scale = 1; cooldown = CC.openingDelay; finishedT = -1;
     taught = Object.create(null);
+    for (const k in seen) delete seen[k];
+    lastAt = -999; thisQuarter = 0; quarter = -1; slowT = 0;
   }
   function end() { on = false; cur = null; scale = 1; }
 
   // dt here is real seconds, not sim time, so a timeout is a timeout however slow the world is running.
   function step(dt) {
     if (!on) { scale = 1; return; }
+    // Failsafe first, before anything can decide to keep the world slow. Whatever else goes wrong -
+    // a satisfied condition that can never be met, a state the triggers did not anticipate - nobody
+    // ends up stuck in slow motion.
+    slowT = scale < 0.985 ? slowT + dt : 0;
+    if (slowT > CC.stuckAfter) { if (cur) taught[cur.id] = 'timeout'; clear(); slowT = 0; }
+
     const c = ctx();
     if (!c || !c.live) { ease(1, dt); return; }
+    if (c.g.quarter !== quarter) { quarter = c.g.quarter; thisQuarter = 0; }
     if (cur) {
       t += dt;
-      if (cur.satisfied(c)) { taught[cur.id] = 'done'; finishedT = 0; clear(); }
+      if (cur.satisfied(c)) {
+        const was = cur.id; taught[was] = 'done'; finishedT = 0; clear();
+        const tail = LESSONS.find((L) => L.follows === was && !taught[L.id]);
+        if (tail) { cur = tail; t = 0; cooldown = 0; return; }
+      }
       else if (t >= cur.timeoutSec) { taught[cur.id] = 'timeout'; clear(); }
       else { ease(cur.slowmo, dt); return; }
     }
     if (finishedT >= 0) { finishedT += dt; if (finishedT > CC.holdAfter) finishedT = -1; }
     ease(1, dt);
     if (cooldown > 0) { cooldown -= dt; return; }
+    // Quiet rules. A first game should be a game that teaches, not a checklist with basketball between
+    // the items, so there is a hard cap per quarter and a real gap of play between prompts.
+    if (thisQuarter >= CC.perQuarter) return;
+    if (c.g.time - lastAt < CC.quietGame) return;
+    if (c.ball.shotLive || c.g.shotClock < 5) return;
     for (const L of LESSONS) {
-      if (taught[L.id]) continue;
+      if (taught[L.id] || L.follows) continue;
+      if (L.id !== 'move' && !taught.move) continue;
       if (!L.trigger(c)) continue;
-      cur = L; t = 0; hold = 0;
+      cur = L; t = 0; hold = 0; lastAt = c.g.time; thisQuarter++;
       Game.emit('sound', { name: 'ui' });
       return;
     }
     if (!remaining()) end();
   }
+  // Two of these cannot be read off state a frame later - an icon pass looks exactly like any other
+  // pass once the ball is in the air - so the code that does them says so.
+  const seen = Object.create(null);
+  function note(kind) { seen[kind] = true; }
   function clear() { cur = null; t = 0; cooldown = CC.between; }
   function ease(target, dt) { scale += (target - scale) * (1 - Math.exp(-dt * CC.easeRate)); if (Math.abs(scale - target) < 0.01) scale = target; }
   const remaining = () => LESSONS.some((L) => !taught[L.id]);
@@ -4768,10 +4868,12 @@ const Coach = (() => {
   function view() {
     if (!on || !cur) return null;
     const n = LESSONS.filter((L) => taught[L.id]).length;
-    return { n: n + 1, of: LESSONS.length, title: cur.title, body: cur.body, goal: cur.goal || '',
+    return { n: n + 1, of: LESSONS.length, label: 'Coach', title: cur.title,
+      body: typeof cur.body === 'function' ? cur.body() : cur.body,
+      goal: typeof cur.goal === 'function' ? cur.goal() : (cur.goal || ''),
       pct: U.clamp(t / cur.timeoutSec, 0, 1), just: false };
   }
-  return { begin, end, step, view, LESSONS,
+  return { begin, end, step, view, note, LESSONS,
     get active() { return on; }, get timeScale() { return scale; },
     get taught() { return taught; } };
 })();
@@ -5236,15 +5338,9 @@ const UI = (() => {
      document.querySelectorAll('#menu [data-nav]').forEach((b) => b.addEventListener('click', () => { AudioSys.init(); AudioSys.play('ui'); show(b.dataset.nav); }));
      document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { AudioSys.init(); AudioSys.play('ui'); selectMode(b.dataset.mode); }));
     document.querySelectorAll('[data-cycle]').forEach((b) => b.addEventListener('click', () => { const [side, dir] = b.dataset.cycle.split(',').map(Number); cycleTeam(side, dir); AudioSys.play('ui'); }));
-    $('btnTipoff').onclick = () => {
-      AudioSys.init(); AudioSys.play('ui');
-      // The first time a person presses this, they get the workout instead. The shot meter and the
-      // dribble moves are not discoverable by pressing things, and a tutorial sitting in a menu does
-      // not get opened. Seven steps, nothing in it can be failed, and it hands you back here after.
-      // Deliberately on the button and not in startGame, which is also the API the tests drive.
-      if (!Tutorial.seen() && !Net.active) { hooks.startTutorial(); return; }
-      hooks.startGame(mode, pick[0], pick[1]);
-    };
+    // Teaching now happens inside your first career game, so this is just a button again. The empty-gym
+    // workout is still in Controls for anyone who wants the keys spelled out on their own.
+    $('btnTipoff').onclick = () => { AudioSys.init(); AudioSys.play('ui'); hooks.startGame(mode, pick[0], pick[1]); };
     for (const [side, id] of [[0, 'jerseyA'], [1, 'jerseyB']]) $(id).onclick = () => { AudioSys.play('ui'); toggleTeamGrid(side); };
     // The workout is no longer a game mode you pick - it runs itself the first time you play - but it
     // still needs a door for anyone who wants it again.
@@ -5436,7 +5532,10 @@ const UI = (() => {
   function renderCreate(cont) {
     const b = crBuild, left = Career.poolLeft(b.cats), arch = Career.archOf(b.arch);
     const hR = Career.HEIGHTS[b.pos];
-    let h = '<div class="pane-title">MyCareer<small>Build a player, get signed, and take them through a career. Everything saves in this browser, so you can close the tab.</small></div>';
+    // First launch reads as a beginning, not as the career menu with the rest of the game hidden.
+    let h = onboarding
+      ? '<div class="pane-title">Welcome to the league<small>Build your player and sign with a club. Your first game starts straight after, and it will teach you the controls as you play it.</small></div>'
+      : '<div class="pane-title">MyCareer<small>Build a player, get signed, and take them through a career. Everything saves in this browser, so you can close the tab.</small></div>';
     h += '<h2 class="sec">Who you are</h2>';
     h += '<div class="opt"><span>Name</span><input class="field" id="crName" maxlength="18" placeholder="Your name" value="' + esc(b.name) + '"></div>';
     h += optRow('Position', POSITIONS.map((p) => choice('crpos', p, b.pos === p, p)).join(''));
@@ -5895,7 +5994,7 @@ const UI = (() => {
     const k = v.n + '|' + v.body;
     if (k !== tutKey) {
       tutKey = k;
-      el.tutStep.textContent = 'Step ' + v.n + ' of ' + v.of;
+      el.tutStep.textContent = v.label || ('Step ' + v.n + ' of ' + v.of);
       el.tutTitle.textContent = v.title;
       el.tutBody.textContent = v.body;
       el.tutGoal.textContent = v.goal;
@@ -6705,7 +6804,7 @@ if (Net.active) Net.update(elapsed);
      if (!firstFrame) { firstFrame = true; Boot.ready(); }
      stats.steps = steps; stats.simMs = simMs; stats.frameMs = performance.now() - t0;
    }
-  return { init, startGame, startTutorial, enterPark, leavePark, startPark, startParkRemote, pause, resume, quit, stats,
+  return { init, startGame, firstGame, startTutorial, enterPark, leavePark, startPark, startParkRemote, pause, resume, quit, stats,
     get paused() { return paused; }, get inPark() { return inPark; } };
 })();
 window.addEventListener('DOMContentLoaded', () => {

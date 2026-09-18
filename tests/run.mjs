@@ -389,6 +389,47 @@ await test('a number key passes to that position, and never to yourself', async 
   await page.close(); open.delete(page);
 });
 
+// ---------------------------------------------------------------- onboarding
+await test('a first launch goes straight to building a player, with nowhere else to go', async () => {
+  const page = await fresh({ headless: false });
+  const r = await page.evaluate(() => ({
+    onboarding: UI.onboarding,
+    pane: [...document.querySelectorAll('#menu .pane')].filter((p) => !p.classList.contains('hidden')).map((p) => p.id),
+    navShown: !!(document.querySelector('.menu-nav') || {}).offsetWidth,
+  }));
+  check.ok(r.onboarding, 'first launch did not start onboarding');
+  check.equal(JSON.stringify(r.pane), JSON.stringify(['menuCareer']), 'first launch should open on the builder only');
+  check.ok(!r.navShown, 'the menu nav is reachable during onboarding');
+  await page.close(); open.delete(page);
+});
+
+await test('the first game teaches itself and never strands you in slow motion', async () => {
+  const page = await fresh();
+  const r = await page.evaluate(() => {
+    Career.wipe();
+    const b = Career.blankBuild('slasher', 'PG'); b.name = 'Rookie'; Career.begin(b, 0);
+    UI.endOnboarding();
+    Game.start('5v5', Career.data.team, 1, { career: true }); Render.buildPlayers(Game.g.teams);
+    const pid = Game.g.careerPid;
+    Coach.begin(); Game.setSpectate(true); Game.g.human = pid; RNG.seed(88);
+    const FRAME = 1 / 60; let acc = 0, worst = 0, run = 0, first = null, minScale = 1;
+    for (let f = 0; f < 60 * 560 && Game.g.state !== Game.S.OVER; f++) {
+      Coach.step(FRAME);
+      const sc = Coach.timeScale; minScale = Math.min(minScale, sc);
+      run = sc < 0.985 ? run + FRAME : 0; worst = Math.max(worst, run);
+      acc += FRAME * sc;
+      while (acc >= 1 / 120) { Game.step(1 / 120); Input.endTick(); acc -= 1 / 120; }
+      const v = Coach.view(); if (v && !first) first = v.title;
+    }
+    return { taught: Object.keys(Coach.taught || {}).length, worst, first, minScale };
+  });
+  check.equal(r.first, 'Get on the floor', 'the first lesson should be movement');
+  check.atLeast(r.taught, 6, 'lessons that got a chance to fire in a full game');
+  check.atMost(r.minScale, 0.6, 'slow motion never actually engaged');
+  check.atMost(r.worst, 9.5, 'longest continuous slow motion in real seconds');
+  await page.close(); open.delete(page);
+});
+
 // ---------------------------------------------------------------- ads
 await test('a window with no room for a menu unit fetches no ad code at all', async () => {
   const page = await fresh({ headless: false });
