@@ -777,12 +777,16 @@ const CONFIG = {
   },
   camera: {
     broadcastHeight: 10.8, broadcastDist: 19.5, followX: 0.86, lookY: 1.1, lookZ: 0.28, damp: 4.5, lookDamp: 6, fov: 42, halfCourtZoom: 0.86,
-    // over the shoulder of whoever has it, looking at the rim they are attacking
-    behindDist: 11.5,        // how far back down the floor the camera sits from the ball
-    behindHeight: 3.8,       // and how high - low enough that players have height on screen
-    behindFollowZ: 0.62,     // how much it slides sideways with the ball
-    behindLookAhead: 4.0,    // the look point sits past the ball, toward the rim
-    behindLookY: 2.95, behindLookZ: 0.45,
+    // Behind your player and well up over them, looking at the rim they are attacking. High enough to see
+    // the floor spacing past your own man - the low version put him in the way of everything.
+    behindDist: 12.5,        // how far back down the floor the camera sits from your player
+    behindHeight: 7.2,       // and how high
+    behindFollowZ: 0.5,      // how much it slides sideways with you
+    behindLookAhead: 5.0,    // the look point sits past you, toward the rim
+    behindLookY: 1.0, behindLookZ: 0.4,
+    behindFov: 46,
+    behindDamp: 3.2,         // calmer than broadcast: it follows a person, not a ball that can move at 12 m/s
+    behindSwing: 2.4,        // how fast it swings round to the other end when possession changes
     behindLimit: 20.5,       // it may sit outside the baseline, but not out of the building
     behindFov: 50,           // wider than broadcast: close camera, so keep the floor readable
   },
@@ -3498,7 +3502,9 @@ const Game = (() => {
     Rules.update(dt, g);
     if (live) pickupLoose();
     // Practice has no possession rules, so hand a stranded ball back instead of ending the drill.
-    if (g.mode === 'practice' && ball.holder < 0) {
+    // Only a ball that is actually loose counts - off the rim, through the net, rolling on the floor.
+    // Counting from the release meant a long jumper was pulled back into your hands mid-flight.
+    if (g.mode === 'practice' && ball.holder < 0 && (ball.state === BS.LOOSE || ball.state === BS.DEAD)) {
       if (practiceLooseSince === 0) practiceLooseSince = g.time;
       else if (g.time - practiceLooseSince > GC.practiceReturn) { const p = P[0]; if (p) { ball.shotLive = false; BallSys.setHolder(p); } practiceLooseSince = 0; }
     } else practiceLooseSince = 0;
@@ -4912,7 +4918,7 @@ const CameraSys = (() => {
   let cam = null; let mode = 'broadcast';
   const pos = { x: 0, y: CC.broadcastHeight, z: CC.broadcastDist }, look = { x: 0, y: 1, z: 0 };
   const basis = { fx: 0, fz: -1, rx: 1, rz: 0 };
-  let menuT = 0, shake = 0;
+  let menuT = 0, shake = 0, camYaw = Math.PI, snapNext = false;
   function init(aspect) { cam = new THREE.PerspectiveCamera(CC.fov, aspect, 0.1, 200); cam.position.set(0, 12, 22); cam.lookAt(0, 1, 0); return cam; }
   function setMode(m) { mode = m; }
   function update(dt, focusX, focusZ, g) {
@@ -4929,9 +4935,15 @@ const CameraSys = (() => {
       // thirty-five degrees down, with him off the bottom of the frame. Backing out through the
       // baseline is what a rec camera does; the rig in the way gets culled below instead.
       const s = h.s;
-      tx = U.clamp(focusX - s * CC.behindDist, -CC.behindLimit, CC.behindLimit);
+      // The camera orbits your player rather than being placed behind them outright. When possession
+      // flips, the wanted side flips too; placing it directly moved the target 25m in one tick and the
+      // camera cut straight through the play to get there. Swinging the angle takes it round the side.
+      const want = s > 0 ? Math.PI : 0;
+      let dy = want - camYaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      camYaw += dy * (1 - Math.exp(-CC.behindSwing * dt));
+      tx = U.clamp(focusX + Math.cos(camYaw) * CC.behindDist, -CC.behindLimit, CC.behindLimit);
       ty = CC.behindHeight;
-      tz = focusZ * CC.behindFollowZ;
+      tz = focusZ * CC.behindFollowZ + Math.sin(camYaw) * CC.behindDist;
       lx = focusX + s * CC.behindLookAhead;
       ly = CC.behindLookY; lz = focusZ * CC.behindLookZ;
       basis.fx = s; basis.fz = 0; basis.rx = 0; basis.rz = s;
@@ -4941,7 +4953,9 @@ const CameraSys = (() => {
       tx = fx; ty = CC.broadcastHeight * zoom; tz = CC.broadcastDist * zoom; lx = fx; ly = CC.lookY; lz = focusZ * CC.lookZ - 0.3;
       basis.fx = 0; basis.fz = -1; basis.rx = 1; basis.rz = 0;
     }
-    pos.x = U.damp(pos.x, tx, CC.damp, dt); pos.y = U.damp(pos.y, ty, CC.damp, dt); pos.z = U.damp(pos.z, tz, CC.damp, dt);
+    if (snapNext) { snapNext = false; pos.x = tx; pos.y = ty; pos.z = tz; look.x = lx; look.y = ly; look.z = lz; }
+    const dk = mode === 'behind' ? CC.behindDamp : CC.damp;
+    pos.x = U.damp(pos.x, tx, dk, dt); pos.y = U.damp(pos.y, ty, dk, dt); pos.z = U.damp(pos.z, tz, dk, dt);
     look.x = U.damp(look.x, lx, CC.lookDamp, dt); look.y = U.damp(look.y, ly, CC.lookDamp, dt); look.z = U.damp(look.z, lz, CC.lookDamp, dt);
     // Whatever rig the camera has backed behind is between it and the play, so hide it. 2K does the
     // same thing; a backboard filling a third of the screen is worse than a missing one you cannot
@@ -4997,7 +5011,13 @@ const CameraSys = (() => {
     pos.x = px - Math.sin(facing) * K.camDist; pos.z = pz - Math.cos(facing) * K.camDist; pos.y = K.camHeight;
     look.x = px; look.z = pz; look.y = K.camLookY;
   }
-  function snap(x, z) { pos.x = x * CC.followX; look.x = pos.x; look.z = z * CC.lookZ; }
+  function snap(x, z) {
+    pos.x = x * CC.followX; look.x = pos.x; look.z = z * CC.lookZ;
+    // start the orbit on the right side, or the first thing a game does is swing the camera round
+    const g = Game.g, h = g && g.hoopOf ? Court.hoops[g.hoopOf[g.possession]] : null;
+    if (h) camYaw = h.s > 0 ? Math.PI : 0;
+    snapNext = true;   // the next update lands exactly on its target instead of swooping in from wherever
+  }
   function addShake(t) { shake = t; }
   return { init, update, setMode, basis, snap, addShake, setFrame, parkUpdate, parkSnap,
     get cam() { return cam; }, get mode() { return mode; } };
@@ -6669,6 +6689,10 @@ function applySettings(key) {
 	     if (key === 'difficulty') Game.g.aiDiff = s.difficulty;
 	   }
 const ONBOARD_KEY = 'hw_onboard';
+  // The camera follows the player you control, not the ball. Following the ball made every pass whip the
+  // view across the floor and every jumper drag it up at the rim; your player is where your attention is.
+  // Nobody controlled - a simmed or spectated game - and it falls back to the ball.
+  function camFocus() { const p = PlayerSys.players[Game.g.human]; return p || BallSys.ball; }
   // The first game off the back of creating a player. It is a real career game against CPUs - the only
   // difference is that the coach is watching it.
   function firstGame() {
@@ -6684,7 +6708,7 @@ function startGame(mode, a, b, opts) {
       if (opts && opts.coach && !Net.active) Coach.begin(); else Coach.end();
       document.getElementById('final').classList.add('hidden');
       if (Net.isHost) Net.hostStart(mode, a, b); else if (Net.isGuest) Net.enterGuest();
-      UI.hideMenu(); UI.showHUD(); UI.clearToast(); const ball = BallSys.ball; CameraSys.snap(ball.x, ball.z); acc = 0; paused = false;
+      UI.hideMenu(); UI.showHUD(); UI.clearToast(); const cf = camFocus(); CameraSys.snap(cf.x, cf.z); acc = 0; paused = false;
       const sb = document.getElementById('btnSpectate'); if (sb) sb.textContent = 'CPU plays for me: off';
       // the coach replaces the old keybind card, so a coached game must not open frozen behind it
       if (opts && opts.coach && !Net.active) U.saveLS('hw_seen', true);
@@ -6762,7 +6786,7 @@ function startGame(mode, a, b, opts) {
       Render.buildPlayers(Game.g.teams); Render.setShadows(Game.settings.shadows);
       document.getElementById('final').classList.add('hidden');
       UI.hideMenu(); UI.showHUD(); UI.clearToast();
-      const ball = BallSys.ball; CameraSys.snap(ball.x, ball.z); acc = 0; paused = false;
+      const cf = camFocus(); CameraSys.snap(cf.x, cf.z); acc = 0; paused = false;
       Tutorial.begin();
     });
   }
@@ -6809,7 +6833,7 @@ function startGame(mode, a, b, opts) {
       Park.sync(alpha, elapsed);
       Render.sync(g.running ? acc / DT : 1, elapsed);
       const me = Park.player;
-      if (g.running) { const b = BallSys.ball; CameraSys.update(elapsed, b.x, b.z, g); }
+      if (g.running) { const cf = camFocus(); CameraSys.update(elapsed, cf.x, cf.z, g); }
       else if (me) CameraSys.parkUpdate(elapsed, me.x, me.z, me.facing);
       Render.draw(); UI.update(elapsed, stats); AudioSys.update(elapsed);
       if (!firstFrame) { firstFrame = true; Boot.ready(); }
@@ -6834,7 +6858,7 @@ if (Net.active) Net.update(elapsed);
      const alpha = g.running && !paused ? acc / DT : 1;
      // animation runs on the slowed clock too, or legs pump at full speed on a body barely moving
      Render.sync(alpha, elapsed * (g.running && !paused && !Net.active ? Coach.timeScale : 1));
-     const ball = BallSys.ball; CameraSys.update(elapsed, ball.x, ball.z, g);
+     const cf = camFocus(); CameraSys.update(elapsed, cf.x, cf.z, g);
      Render.draw();
      UI.update(elapsed, stats);
      AudioSys.update(elapsed);
