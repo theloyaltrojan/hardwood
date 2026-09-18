@@ -94,6 +94,8 @@
   #tags { position: absolute; inset: 0; }
   .tag { position: absolute; transform: translate(-50%, -100%) skewX(var(--skew)); font-family: var(--display); font-size: 13px; letter-spacing: 0.06em; padding: 3px 8px 2px; background: rgba(11, 13, 18, 0.82); border-left: 3px solid transparent; white-space: nowrap; text-transform: uppercase; }
   .tag.me { background: var(--accent); color: var(--accent-ink); border-left-color: var(--accent-ink); }
+  .tag.slot { padding: 1px 4px; background: rgba(11,13,18,0.82); }
+  .tag.slot .n { margin: 0; background: var(--accent); color: var(--accent-ink); }
   .tag .n { opacity: 0.6; margin-right: 5px; }
 
   #toast { position: absolute; top: 17%; left: 50%; transform: translateX(-50%); opacity: 0; text-align: center; pointer-events: none; }
@@ -831,9 +833,9 @@ const RNG = {
 function makeInput() {
   return { mx: 0, mz: 0, jx: 0, jz: 0, juke: false, sprint: false, shoot: false, shootPressed: false, shootReleased: false,
     sidestep: false, crossover: false, stepback: false, spin: false, hesi: false, pump: false,
-    move: false, fake: false, pass: false, steal: false, switch: false };
+    move: false, fake: false, pass: false, steal: false, switch: false, passTo: 0 };
 }
-function clearInputEdges(i) { i.shootPressed = i.shootReleased = i.sidestep = i.crossover = i.stepback = i.spin = i.hesi = i.pump = i.move = i.juke = i.fake = i.pass = i.steal = i.switch = false; }
+function clearInputEdges(i) { i.shootPressed = i.shootReleased = i.sidestep = i.crossover = i.stepback = i.spin = i.hesi = i.pump = i.move = i.juke = i.fake = i.pass = i.steal = i.switch = false; i.passTo = 0; }
 function clearInput(i) { i.mx = i.mz = i.jx = i.jz = 0; i.sprint = i.shoot = false; clearInputEdges(i); }
 
 const Input = (() => {
@@ -841,18 +843,21 @@ const Input = (() => {
     jukeUp: 'ArrowUp', jukeDown: 'ArrowDown', jukeLeft: 'ArrowLeft', jukeRight: 'ArrowRight', fake: 'KeyR',
     move: 'KeyQ',
     sidestep: 'KeyX', crossover: 'KeyC', stepback: 'KeyV', spin: 'KeyZ', hesi: 'KeyR', pump: 'KeyQ',
-    pass: 'KeyE', steal: 'KeyF', switch: 'Tab', pause: 'Escape', debug: 'Backquote' };
+    pass: 'KeyE', steal: 'KeyF', switch: 'Tab', pause: 'Escape', debug: 'Backquote',
+    pass1: 'Digit1', pass2: 'Digit2', pass3: 'Digit3', pass4: 'Digit4', pass5: 'Digit5' };
   const LABELS = { up: 'Move up', down: 'Move down', left: 'Move left', right: 'Move right', sprint: 'Sprint',
     shoot: 'Shoot / dunk (hold, release)', fake: 'Fake', pass: 'Pass',
     jukeUp: 'Move: up the screen', jukeDown: 'Move: down the screen', jukeLeft: 'Move: left', jukeRight: 'Move: right',
     move: 'Dribble move (push a direction)',
     sidestep: 'Sidestep', crossover: 'Crossover', stepback: 'Stepback',
     spin: 'Spin move', hesi: 'Hesitation / hard stop', pump: 'Pump fake', steal: 'Steal (defense)',
-    switch: 'Switch player (defense)', pause: 'Pause', debug: 'Debug overlay' };
+    switch: 'Switch player (defense)', pause: 'Pause', debug: 'Debug overlay',
+    pass1: 'Pass to 1 (point guard)', pass2: 'Pass to 2 (shooting guard)', pass3: 'Pass to 3 (small forward)',
+    pass4: 'Pass to 4 (power forward)', pass5: 'Pass to 5 (centre)' };
   // which bindings each scheme shows and uses
   const SCHEMES = {
-    simple: ['up', 'down', 'left', 'right', 'sprint', 'shoot', 'pass', 'jukeUp', 'jukeDown', 'jukeLeft', 'jukeRight', 'fake', 'switch', 'pause'],
-    advanced: ['up', 'down', 'left', 'right', 'sprint', 'shoot', 'pass', 'steal', 'sidestep', 'crossover', 'stepback', 'spin', 'hesi', 'pump', 'switch', 'pause'],
+    simple: ['up', 'down', 'left', 'right', 'sprint', 'shoot', 'pass', 'pass1', 'pass2', 'pass3', 'pass4', 'pass5', 'jukeUp', 'jukeDown', 'jukeLeft', 'jukeRight', 'fake', 'switch', 'pause'],
+    advanced: ['up', 'down', 'left', 'right', 'sprint', 'shoot', 'pass', 'pass1', 'pass2', 'pass3', 'pass4', 'pass5', 'steal', 'sidestep', 'crossover', 'stepback', 'spin', 'hesi', 'pump', 'switch', 'pause'],
   };
   const PREVENT = new Set(['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backquote']);
   const binds = Object.assign({}, DEFAULT_BINDS, U.loadLS('hw_binds', {}));
@@ -890,6 +895,9 @@ const Input = (() => {
     inp.spin = wasPressed('spin'); inp.hesi = wasPressed('hesi'); inp.pump = wasPressed('pump');
     inp.move = wasPressed('move'); inp.fake = wasPressed('fake');
     inp.pass = wasPressed('pass'); inp.steal = wasPressed('steal'); inp.switch = wasPressed('switch');
+    // Icon passing. 0 means nobody asked for one; 1-5 names a team-mate by position.
+    inp.passTo = 0;
+    for (let n = 1; n <= 5; n++) if (wasPressed('pass' + n)) { inp.passTo = n; break; }
   }
   function endTick() { pressed.clear(); released.clear(); }
   function keyLabel(code) {
@@ -3346,6 +3354,8 @@ const Game = (() => {
     switch (act) {
       case 'shoot': return canAct(p) && !p.airborne && fireShot(p, g, held);
       case 'pass': return Passing.tryPass(p, g);
+      case 'pass1': case 'pass2': case 'pass3': case 'pass4': case 'pass5':
+        return Passing.passToSlot(p, +act.slice(4), g);
       case 'move': return canAct(p) && contextMove(p, g, false);
       case 'juke': return canAct(p) && contextMove(p, g, true);
       case 'fake': return canAct(p) && Moves.start(p, p.speed > 1.7 ? 'hesi' : 'pump', g);
@@ -3356,7 +3366,7 @@ const Game = (() => {
 
   function applyInput(p, dt) {
     const inp = p.input;
-    if (g.state === S.INBOUND) { if (inp.pass && g.inbound && p.id === g.inbound.inbounder) Passing.inboundPass(p, g); return; }
+    if (g.state === S.INBOUND) { if ((inp.pass || inp.passTo) && g.inbound && p.id === g.inbound.inbounder) Passing.inboundPass(p, g); return; }
     if (g.state === S.FREETHROW) { if (p.id === g.ftShooter && p.hasBall) { if (inp.shootPressed && p.state === ST.IDLE) Shooting.start(p, g); if (p.state === ST.SHOOT) Shooting.update(p, dt, g); } return; }
     const simple = settings.controls !== 'advanced';
     // a held request gets first look each tick
@@ -3370,7 +3380,8 @@ const Game = (() => {
     if (p.hasBall) {
       if (inp.shootPressed) request(p, 'shoot', g);
       if (p.state === ST.SHOOT) Shooting.update(p, dt, g);
-      if (inp.pass) request(p, 'pass', g);
+      if (inp.passTo) request(p, 'pass' + inp.passTo, g);
+      else if (inp.pass) request(p, 'pass', g);
       if (inp.juke) request(p, 'juke', g);
       else if (inp.move) request(p, 'move', g);
       else if (inp.sidestep) request(p, 'sidestep', g);
@@ -3489,6 +3500,18 @@ const Passing = (() => {
     return false;
   }
   function canPass(p) { return p.hasBall && !p.airborne && (p.state === ST.IDLE || p.state === ST.MOVE || p.state === ST.LAND || p.state === ST.HESI || p.state === ST.PUMP || p.state === ST.INBOUND); }
+  // Icon passing. A number names a team-mate by the position the sport already numbers - 1 is the point
+  // guard, 5 the centre - so the key for a given player does not move when possession does, which is the
+  // whole point of it over "pass to whoever the stick is nearest". Your own number is a no-op.
+  const bySlot = (a, b) => POSITIONS.indexOf(a.pos) - POSITIONS.indexOf(b.pos);
+  function passToSlot(p, n, g) {
+    if (!canPass(p) || p.cd.pass > 0) return false;
+    const line = Game.teamPlayers(p.team).slice().sort(bySlot);
+    const m = line[n - 1];
+    if (!m || m === p || m.state === ST.STUMBLE || m.state === ST.FALL) return false;
+    throwPass(p, m, g);
+    return true;
+  }
   function tryPass(p, g) {
     if (!canPass(p) || p.cd.pass > 0) return false;
     const mates = Game.teamPlayers(p.team); if (mates.length < 2) return false;
@@ -3577,7 +3600,7 @@ const Passing = (() => {
     if (!best || !RNG.chance(0.7)) return false;
     throwPass(p, best, g); return true;
   }
-  return { tryPass, throwPass, update, inboundPass, aiConsider, laneBlocked, nearestOppDist };
+  return { tryPass, passToSlot, throwPass, update, inboundPass, aiConsider, laneBlocked, nearestOppDist };
 })();
 
 // ---------- Defense: steal attempts ----------
@@ -5483,11 +5506,13 @@ const UI = (() => {
     const b = Input.binds, L = Input.keyLabel; const k = (a) => '<kbd>' + L(b[a]) + '</kbd>';
     if (Game.settings.controls === 'advanced') {
       el.hint.innerHTML = k('shoot') + 'shoot ' + k('sprint') + 'sprint ' + k('pass') + 'pass ' + k('steal') + 'steal ' + k('switch') + 'switch<br>' +
-        k('sidestep') + 'sidestep ' + k('crossover') + 'cross ' + k('stepback') + 'stepback ' + k('spin') + 'spin ' + k('hesi') + 'hesi ' + k('pump') + 'pump ' + k('pause') + 'pause';
+        k('sidestep') + 'sidestep ' + k('crossover') + 'cross ' + k('stepback') + 'stepback ' + k('spin') + 'spin ' + k('hesi') + 'hesi ' + k('pump') + 'pump ' + k('pause') + 'pause<br>' +
+        '<kbd>1</kbd>-<kbd>5</kbd>pass to that man';
       return;
     }
     el.hint.innerHTML = k('shoot') + 'shoot / jump ' + k('sprint') + 'sprint ' + k('pass') + 'pass / steal ' + k('fake') + 'fake<br>' +
-      '<kbd>&#8592;</kbd><kbd>&#8593;</kbd><kbd>&#8594;</kbd><kbd>&#8595;</kbd>dribble moves &nbsp; ' + k('switch') + 'switch ' + k('pause') + 'pause';
+      '<kbd>&#8592;</kbd><kbd>&#8593;</kbd><kbd>&#8594;</kbd><kbd>&#8595;</kbd>dribble moves &nbsp; ' + k('switch') + 'switch ' + k('pause') + 'pause<br>' +
+      '<kbd>1</kbd>-<kbd>5</kbd>pass to that man';
   }
   function setText(id, v) { if (last[id] !== v) { last[id] = v; if (id === 'fouls') el[id].innerHTML = v; else el[id].textContent = v; } }
   function toast(text, sub) { el.toast.innerHTML = '<span class="rib"><span>' + esc(text) + '</span></span>' + (sub ? '<small>' + esc(sub) + '</small>' : ''); el.toast.classList.remove('show'); void el.toast.offsetWidth; el.toast.classList.add('show'); }
@@ -5529,16 +5554,33 @@ const UI = (() => {
       if (!meterVisible) { el.meter.classList.remove('hidden'); meterVisible = true; }
     } else if (meterVisible) { el.meter.classList.add('hidden'); meterVisible = false; }
   }
+  const _slotOf = new Map();
   function updateTags(g) {
     const P = PlayerSys.players;
+    // Icon passing is unusable if you cannot see which number is which, so while you are holding the
+    // ball every team-mate wears their position number. It goes away the moment you give it up, which
+    // keeps the screen clean the rest of the time.
+    _slotOf.clear();
+    const me = P.find((q) => q.controlled);
+    if (me && me.hasBall && g.running) {
+      Game.teamPlayers(me.team).slice()
+        .sort((a, b) => POSITIONS.indexOf(a.pos) - POSITIONS.indexOf(b.pos))
+        .forEach((m, n) => { if (m !== me) _slotOf.set(m.id, n + 1); });
+    }
     for (let i = 0; i < tagEls.length; i++) {
       const d = tagEls[i], p = P[i];
       // Only people get a name over their head. Ten CPU tags is clutter, and the closer camera made
       // it worse: they sat across the middle of the screen for the whole possession.
-      if (!p || !(p.controlled || p.remote)) { if (!d.classList.contains('hidden')) d.classList.add('hidden'); continue; }
+      const slot = p ? _slotOf.get(p.id) : 0;
+      if (!p || !(p.controlled || p.remote || slot)) { if (!d.classList.contains('hidden')) d.classList.add('hidden'); continue; }
       Render.project(p.x, p.y + p.height * 1.02, p.z, _pt);
       if (!_pt.visible) { d.classList.add('hidden'); continue; }
       d.classList.remove('hidden'); d.style.left = _pt.x + 'px'; d.style.top = _pt.y + 'px';
+      if (slot && !p.controlled && !p.remote) {
+        const k = 'slot' + slot;
+        if (d.dataset.k !== k) { d.dataset.k = k; d.innerHTML = '<span class="n">' + slot + '</span>'; d.className = 'tag slot'; d.style.borderColor = ''; }
+        continue;
+      }
       const txt = (p.ctlName ? p.ctlName.toUpperCase() : lastName(p.name)); const key = txt + p.controlled + p.num;
       if (d.dataset.k !== key) { d.dataset.k = key; d.innerHTML = '<span class="n">' + p.num + '</span>' + esc(txt); d.className = 'tag' + (p.controlled ? ' me' : ''); d.style.borderColor = p.controlled ? '' : hex(g.teams[p.team].primary); }
     }
@@ -5803,6 +5845,9 @@ const Net = (() => {
   const NC = CONFIG.net;
   const BITS = ['sprint', 'shoot', 'shootPressed', 'shootReleased', 'sidestep', 'crossover', 'stepback', 'spin', 'hesi', 'pump', 'pass', 'steal', 'switch', 'move', 'fake', 'juke'];
   const HELD_MASK = 0b11, EDGE_MASK = ~HELD_MASK;
+  // held is a whole byte for two flags, so the icon-pass target rides in bits 2-4 instead of widening
+  // the input frame. 0 = nobody asked; 1-5 name a team-mate by position.
+  const PASSTO_SHIFT = 2, PASSTO_MASK = 0b11100;
   const DUNK_KINDS = ['', 'one', 'two', 'tomahawk', 'windmill', 'reverse', 'layup'];
   const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   const PLAYER_BYTES = 76, HEAD_BYTES = 9 + 21 + 26;
@@ -6027,6 +6072,9 @@ const Net = (() => {
       clearInputEdges(inp);
       inp.mx = rem.input.mx; inp.mz = rem.input.mz; inp.jx = rem.input.jx; inp.jz = rem.input.jz; inp.sprint = !!(rem.held & 1); inp.shoot = !!(rem.held & 2);
       if (rem.bits) { unpackBits(rem.bits & EDGE_MASK, inp); inp.sprint = !!(rem.held & 1); inp.shoot = !!(rem.held & 2); rem.bits = 0; }
+      // one-shot: an icon pass must fire on the tick it arrives and not every tick after it
+      inp.passTo = (rem.held & PASSTO_MASK) >> PASSTO_SHIFT;
+      if (inp.passTo) rem.held &= ~PASSTO_MASK;
       if (inp.shootReleased && rem.rel != null) { if (p.state === PlayerSys.ST.SHOOT && !p.shot.released) p.shot.meterT = U.clamp(rem.rel, 0, 1); rem.rel = null; }
     }
   }
@@ -6171,7 +6219,7 @@ const Net = (() => {
     if (localInput.shootPressed && meP && meP.hasBall) { pressT = nowS; pressDur = Shooting.meterDuration(meP, g.state === Game.S.FREETHROW ? 'ft' : Shooting.zoneFor(meP, Game.hoopFor(meP.team))); }
     if (localInput.shootReleased && pressT > 0) { relPending = r3(U.clamp((nowS - pressT) / pressDur, 0, 1)); pressT = 0; }
     sendAcc += dt;
-    if (sendAcc >= 1 / NC.inputHz && meP) { sendAcc = 0; send(hostConn, encodeInput(localInput.mx, localInput.mz, localInput.jx, localInput.jz, packBits(localInput) & HELD_MASK, edgeBits, relPending)); relPending = null; edgeBits = 0; }
+    if (sendAcc >= 1 / NC.inputHz && meP) { sendAcc = 0; send(hostConn, encodeInput(localInput.mx, localInput.mz, localInput.jx, localInput.jz, (packBits(localInput) & HELD_MASK) | ((localInput.passTo & 7) << PASSTO_SHIFT), edgeBits, relPending)); relPending = null; edgeBits = 0; }
     g.time += dt;
     if (!snaps.length) return;
     let A = snaps[0], B = snaps[0]; const now = nowS - NC.interpDelay;

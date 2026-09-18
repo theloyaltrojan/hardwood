@@ -359,6 +359,36 @@ await test('walking out of a game into the park leaves its players behind', asyn
   await page.close(); open.delete(page);
 });
 
+await test('a number key passes to that position, and never to yourself', async () => {
+  const page = await fresh();
+  const r = await page.evaluate(() => {
+    Game.start('5v5', 0, 1); Render.buildPlayers(Game.g.teams); RNG.seed(9);
+    const me = PlayerSys.players.find((p) => p.team === 0);
+    Game.setHuman(me.id, true); Game.g.lockHuman = true;
+    const line = Game.teamPlayers(0).slice().sort((a, b) => POSITIONS.indexOf(a.pos) - POSITIONS.indexOf(b.pos));
+    const mine = line.indexOf(me) + 1;
+    const hits = [];
+    for (let n = 1; n <= 5; n++) {
+      Game.g.state = Game.S.PLAY;
+      PlayerSys.teleport(me, -2, 0, 0); BallSys.setHolder(me); me.cd.pass = 0; me.catchT = -9;
+      line.forEach((m, i) => { if (m !== me) PlayerSys.teleport(m, -2 + (i - 2) * 3.2, 4, 0); });
+      me.input.passTo = n;
+      let got = -1;
+      for (let i = 0; i < 200; i++) {
+        Game.step(1 / 120);
+        if (BallSys.ball.state === BallSys.BS.PASS && BallSys.ball.passTarget >= 0) { got = BallSys.ball.passTarget; break; }
+      }
+      hits.push({ n, got, want: line[n - 1].id });
+    }
+    return { mine, hits };
+  });
+  for (const h of r.hits) {
+    if (h.n === r.mine) check.equal(h.got, -1, 'pressing your own number threw a pass');
+    else check.equal(h.got, h.want, 'number ' + h.n + ' passed to the wrong player');
+  }
+  await page.close(); open.delete(page);
+});
+
 // ---------------------------------------------------------------- ads
 await test('a window with no room for a menu unit fetches no ad code at all', async () => {
   const page = await fresh({ headless: false });
