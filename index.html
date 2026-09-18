@@ -651,8 +651,11 @@ const CONFIG = {
   ball: { radius: 0.121, restitution: 0.74, bounceFriction: 0.92, rollFriction: 1.6, drag: 0.015, rimRestitution: 0.44, boardRestitution: 0.58, rimTangentDamp: 0.78 },
   player: {
     radius: 0.42, walkSpeed: 3.7, sprintSpeed: 6.6, accel: 13, decel: 24, turnDecel: 30, turnRate: 14,
-    dribbleSpeedMul: 0.93, jumpVel: 4.4, staminaMax: 100, sprintDrain: 11, regen: 9, regenMoving: 5,
-    lowStamina: 25, windedRecover: 18, fatigueSpeed: 0.84, catchRadius: 0.82, pickupRadius: 0.74, inputBuffer: 0.26, moveRecover: 0.62, burstControl: 0.4,
+    // Sprinting is meant to be spent, not held. A full bar is about five seconds of sprint (100 / 19) and
+    // roughly thirty to earn back while jogging, so a burst is a decision. Bottoming out locks sprinting out
+    // until the bar is back to 40, and the fatigue band starts at 34 rather than 25, where it never bit.
+    dribbleSpeedMul: 0.93, jumpVel: 4.4, staminaMax: 100, sprintDrain: 19, regen: 8, regenMoving: 3.4,
+    lowStamina: 34, windedRecover: 40, fatigueSpeed: 0.74, catchRadius: 0.82, pickupRadius: 0.74, inputBuffer: 0.26, moveRecover: 0.62, burstControl: 0.4,
     reachHeightMul: 1.28, historyLen: 60,
   },
   // `dur` is the animation, `cd` the lockout. `burst` is how long the move's push takes to build — it is
@@ -718,14 +721,20 @@ const CONFIG = {
     denySkill: 0.55,      // ...tightened by the defender's perimeter rating
     driftUnder: 3.0,      // start sliding off the man inside this
     driftDist: 2.4,       // how far along the arc to slide when he is right on you
+    // What a bot will spend stamina on. Every trip names a tier and only sprints while the bar is over that
+    // number: `loose` is anything that settles the possession right now, `fast` is transition and help
+    // rotations, `work` is a drive, a cut or a screen, `cruise` is ordinary walking to a spot. `ease` is the
+    // margin it has to earn back before spending at that tier again, so it rests instead of stuttering.
+    stam: { loose: 8, fast: 24, work: 48, cruise: 74, ease: 22 },
     bar: { early: 1.06, mid: 0.94, late: 0.80, last: 0.56 },
   },
   game: { shotClock: 24, halfShotClock: 14, offRebClock: 14, quarterLen: 120, quarters: 4, halfCourtTarget: 21, deadBallDelay: 0.85, inboundDelay: 0.35, practiceReturn: 1.5, ftRoutine: 1.2, foulOutLimit: 6, reachInFoulChance: 0.18, shootingFoulChance: 0.15 },
   // Coins. Everything the store sells is cosmetic, so these numbers only pace how long a look takes to earn.
+  // Every line here is paid for by beating somebody, which is why there is no workout rate: the gym is empty.
   money: {
     starting: 500, two: 55, three: 95, dunk: 130, block: 110, steal: 85, assist: 45,
     perfectBonus: 40, toughBonus: 35, win: 750, loss: 220,
-    daily: 300, dailyStreak: 120, dailyMaxStreak: 7, tutorial: 600,
+    daily: 300, dailyStreak: 120, dailyMaxStreak: 7,
   },
   // MyPark: the walkable lobby. It is player only, so everyone in it is a real connection.
   park: {
@@ -749,9 +758,26 @@ const CONFIG = {
   audio: { volume: 0.8 },
   net: {
     // PeerJS signaling: null = free public cloud (0.peerjs.com). Self-host later with { host, port, path, secure }.
+    // The cloud server rate-limits per source address, so a school behind one NAT address burns through the
+    // budget in a few joins and everyone after that gets turned away. Your own PeerServer is the only fix.
     peerServer: null,
     peerJsUrl: 'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js',
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    // More than one STUN host on purpose: managed networks block destinations one at a time, and with a
+    // single entry one blocked host means no reflexive candidate at all, which limits play to the same LAN.
+    iceServers: [
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+      { urls: ['stun:stun.cloudflare.com:3478'] },
+    ],
+    // STUN only reports a peer's public address; it cannot carry a byte of traffic. When UDP is blocked
+    // outright — the normal state of a managed Chromebook — the only path left is a TURN relay over TCP/443,
+    // and that has to be a server you host or pay for. Fill this in and it is used automatically:
+    // { urls: ['turns:your.host:443?transport=tcp', 'turn:your.host:443?transport=tcp'], username: 'u', credential: 'p' }
+    turn: null,
+    // Gather candidates while the lobby panel is open, so the STUN round trip is not sitting on the click.
+    candidatePool: 4,
+    // A wrong code fails instantly; a network that silently drops WebRTC never fails at all. This is the
+    // only thing that turns that second case into a message instead of a spinner.
+    connectTimeout: 12,
     lobbyIdPrefix: 'HWLOBBY', snapHz: 20, inputHz: 30, interpDelay: 0.1, maxPerTeam: 5,
   },
 };
@@ -2660,7 +2686,7 @@ const Dunks = (() => {
 const AI = (() => {
   const AC = CONFIG.ai, ST = PlayerSys.ST, ball = BallSys.ball, BS = BallSys.BS, P = PlayerSys.players, SC = CONFIG.shooting;
   let diff = AC.difficulty.pro;
-  function reset(g) { diff = AC.difficulty[g.aiDiff] || AC.difficulty.pro; for (const p of P) { const a = p.ai; a.t = RNG.next() * 0.1; a.role = 'spot'; a.lastDecision = -9; a.driveSide = RNG.chance(0.5) ? 1 : -1; a.aggression = U.clamp(0.3 + 0.4 * (p.ratings.speed + p.ratings.dunk) / 198 + 0.2 * RNG.next(), 0.2, 0.95); a.screenT = 0; a.cutT = 0; a.helping = false; a.holdT = 0; } assignMatchups(g); }
+  function reset(g) { diff = AC.difficulty[g.aiDiff] || AC.difficulty.pro; for (const p of P) { const a = p.ai; a.t = RNG.next() * 0.1; a.role = 'spot'; a.lastDecision = -9; a.driveSide = RNG.chance(0.5) ? 1 : -1; a.aggression = U.clamp(0.3 + 0.4 * (p.ratings.speed + p.ratings.dunk) / 198 + 0.2 * RNG.next(), 0.2, 0.95); a.screenT = 0; a.cutT = 0; a.helping = false; a.holdT = 0; a.restFloor = 0; } assignMatchups(g); }
   function assignMatchups(g) {
     const A = Game.teamPlayers(0).slice(), B = Game.teamPlayers(1).slice();
     if (!A.length || !B.length) return;
@@ -2671,11 +2697,26 @@ const AI = (() => {
   }
   function onPossessionChange(g) { for (const p of P) { p.ai.role = 'spot'; p.ai.helping = false; p.ai.screenT = 0; } }
   const CL = Court.C.length / 2 - 0.45, CW = Court.C.width / 2 - 0.45;
-  function moveTo(p, tx, tz, sprint) {
+  // Sprinting is the only thing a bot spends that buys nothing by itself, so every trip says how much it is
+  // worth and this is the only place that presses the button. Below the tier's floor the bot jogs and lets
+  // the bar come back, which is what stops five men running flat out for four quarters.
+  const URG = AC.stam;
+  function sprintOk(p, urgency) {
+    if (!urgency || p.winded) return false;
+    const a = p.ai, floor = URG[urgency] != null ? URG[urgency] : URG.work;
+    if (p.stamina <= floor) { a.restFloor = floor; return false; }
+    // Hysteresis: once a tier is priced out, the bot has to earn a real margin back before it spends at that
+    // tier again, or it flickers the sprint key on and off around the threshold every tick. A more urgent
+    // errand has a lower floor and clears the rest outright - a loose ball is worth the last of the bar.
+    if (a.restFloor > 0 && floor >= a.restFloor && p.stamina < a.restFloor + URG.ease) return false;
+    a.restFloor = 0;
+    return true;
+  }
+  function moveTo(p, tx, tz, urgency) {
     const inp = p.input;
     tx = U.clamp(tx, -CL, CL); tz = U.clamp(tz, -CW, CW);
     const gg = Game.g;
-    if (gg.halfCourt && gg.mode !== 'practice') { const hh = Game.hoopFor(gg.possession); tx = hh.s > 0 ? Math.max(tx, 1.3) : Math.min(tx, -1.3); } const dx = tx - p.x, dz = tz - p.z; const d = Math.sqrt(dx * dx + dz * dz); if (d < 0.12) { inp.mx = 0; inp.mz = 0; inp.sprint = false; return; } const k = d < 0.7 ? d / 0.7 : 1; inp.mx = dx / d * k; inp.mz = dz / d * k; inp.sprint = !!sprint && d > 1.2 && !p.winded; }
+    if (gg.halfCourt && gg.mode !== 'practice') { const hh = Game.hoopFor(gg.possession); tx = hh.s > 0 ? Math.max(tx, 1.3) : Math.min(tx, -1.3); } const dx = tx - p.x, dz = tz - p.z; const d = Math.sqrt(dx * dx + dz * dz); if (d < 0.12) { inp.mx = 0; inp.mz = 0; inp.sprint = false; return; } const k = d < 0.7 ? d / 0.7 : 1; inp.mx = dx / d * k; inp.mz = dz / d * k; inp.sprint = d > 1.2 && sprintOk(p, urgency); }
   function stop(p) { p.input.mx = 0; p.input.mz = 0; p.input.sprint = false; }
   function nearestOpponent(p) { let best = null, bd = 1e9; for (const q of P) { if (q.team === p.team) continue; const d = U.dist(q.x, q.z, p.x, p.z); if (d < bd) { bd = d; best = q; } } return best; }
   function isBetween(d, p, h) { const ax = h.x - p.x, az = h.z - p.z; const l2 = ax * ax + az * az || 1; const bx = d.x - p.x, bz = d.z - p.z; const t = (bx * ax + bz * az) / l2; if (t < -0.05 || t > 1) return false; const px = p.x + ax * t, pz = p.z + az * t; return U.dist(d.x, d.z, px, pz) < 1.15; }
@@ -2704,6 +2745,9 @@ const AI = (() => {
     if (defBetween && def) help += 0.55;                                // your man recovers and meets you there
     const edge = (p.ratings.speed + p.ratings.handling) / 2 - (def ? def.ratings.perimD : 45);
     let through = 0.58 + edge / 240 + (defBetween ? -0.14 : 0.14) + U.clamp((defDist - 1.2) * 0.10, -0.12, 0.22) - U.clamp((d - 4.5) * 0.018, 0, 0.14);
+    // A drive is a sprint the handler may not have. Inside the fatigue band the first step is not there, so
+    // it stops pricing a blow-by it cannot make and the pass starts winning the comparison instead.
+    if (p.stamina < CONFIG.player.lowStamina) through *= U.lerp(0.55, 1, p.stamina / CONFIG.player.lowStamina);
     through = U.clamp(through, 0.15, 0.93);
     return (finish * U.clamp(1 - help * 0.26, 0.40, 1) * through * 2 + through * 0.18) * AC.driveBias;
   }
@@ -2714,11 +2758,16 @@ const AI = (() => {
       if (m === p || m.state === ST.STUMBLE || m.state === ST.FALL || m.airborne) continue;
       const dd = U.dist(p.x, p.z, m.x, m.z); if (dd > 13 || dd < 1.8) continue;
       if (!Court.inFrontcourt(m.x, h) && Court.inFrontcourt(p.x, h)) continue;
-      let ev = shotEV(m, m.x, m.z, h, Passing.nearestOppDist(m));
-      if (Passing.laneBlocked(p, m)) ev *= AC.blockedLane;
+      const open = Passing.nearestOppDist(m), blocked = Passing.laneBlocked(p, m);
+      let ev = shotEV(m, m.x, m.z, h, open);
+      if (blocked) ev *= AC.blockedLane;
       const mHoop = U.dist(m.x, m.z, h.x, h.z);
       if (m.ai.role === 'cut' && mHoop < 5) ev = Math.max(ev, 1.55);        // a cutter with a step is a layup
       if (m.ai.role === 'screen' && mHoop < 4.5) ev = Math.max(ev, 1.35);   // roll man
+      // m.ctl is set only while a person is driving that player, local or online — the same flag the sim
+      // checks before it runs AI.think — so this can never fire on a bot. Covered or lane sealed, the
+      // multiplier is exactly 1 and the ranking is the one the value model produced.
+      if (m.ctl && !blocked) ev *= 1 + AC.humanBias * U.clamp((open - AC.humanCovered) / (AC.humanOpen - AC.humanCovered), 0, 1);
       ev -= dd * 0.013;                                                     // long passes get picked off
       if (ev > bestEv) { bestEv = ev; best = m; }
     }
@@ -2753,7 +2802,7 @@ const AI = (() => {
     const stumbled = !!def && (def.state === ST.STUMBLE || def.state === ST.FALL || def.bumped > 0);
     const beaten = stumbled || (def && def.airborne && def.jumpT > 0.1);
     const clock = g.shotClock;
-    if (g.mustClear) { moveTo(p, h.x - s * 8.2, p.z * 0.5, true); return; }
+    if (g.mustClear) { moveTo(p, h.x - s * 8.2, p.z * 0.5, 'fast'); return; }
     if (Moves.MOVE_STATES.has(p.state) || p.state === ST.LAND) return;   // let the animation play
     // near a line: get back to safety before considering anything else, an out-of-bounds is a free turnover
     const edgeZ = Court.C.width / 2 - Math.abs(p.z), edgeX = Court.C.length / 2 - Math.abs(p.x);
@@ -2792,7 +2841,9 @@ const AI = (() => {
       if (def && defBetween && defDist < 2.0 && p.cd.move <= 0 && RNG.chance(diff.moveRate * 0.5)) { dribbleMove(p, g, h, def, defDist, d); return; }
       const ax = h.x - p.x, az = h.z - p.z, al = Math.sqrt(ax * ax + az * az) || 1;
       const lx = -az / al, lz = ax / al;
-      moveTo(p, h.x - ax / al * 0.9 + lx * a.driveSide * 0.5, h.z - az / al * 0.9 + lz * a.driveSide * 0.5, true);
+      // Once the man is on the floor or in the air this is a finish rather than a drive, and a finish is
+      // worth the last of the bar.
+      moveTo(p, h.x - ax / al * 0.9 + lx * a.driveSide * 0.5, h.z - az / al * 0.9 + lz * a.driveSide * 0.5, beaten ? 'loose' : 'work');
       a.driveT = g.time; return;
     }
     if (pass && evPass >= bar && RNG.chance(0.8) && g.time - p.catchT > 0.35 && p.cd.pass <= 0) { Passing.throwPass(p, pass.m, g); return; }
@@ -2873,13 +2924,15 @@ const AI = (() => {
     if (big && a.role === 'spot' && g.time > a.screenT && U.dist(handler.x, handler.z, h.x, h.z) > 6 && RNG.chance(0.25)) { a.role = 'screen'; a.roleT = g.time; }
     if (a.role === 'screen') {
       const hd = P[handler.matchup]; const t = g.time - a.roleT;
-      if (t < 1.6 && hd) { const ax = h.x - handler.x, az = h.z - handler.z; const al = Math.sqrt(ax * ax + az * az) || 1; const lx = -az / al, lz = ax / al; const side = ((hd.x - handler.x) * lx + (hd.z - handler.z) * lz) > 0 ? 1 : -1; moveTo(p, handler.x + lx * side * 0.9 - ax / al * 0.2, handler.z + lz * side * 0.9 - az / al * 0.2, true); if (U.dist(p.x, p.z, handler.x, handler.z) < 1.3) stop(p); return; }
-      if (t < 3.6) { moveTo(p, h.x - s * 1.3, h.z + (p.z > 0 ? 1.2 : -1.2), true); return; } // roll
+      if (t < 1.6 && hd) { const ax = h.x - handler.x, az = h.z - handler.z; const al = Math.sqrt(ax * ax + az * az) || 1; const lx = -az / al, lz = ax / al; const side = ((hd.x - handler.x) * lx + (hd.z - handler.z) * lz) > 0 ? 1 : -1; moveTo(p, handler.x + lx * side * 0.9 - ax / al * 0.2, handler.z + lz * side * 0.9 - az / al * 0.2, 'work'); if (U.dist(p.x, p.z, handler.x, handler.z) < 1.3) stop(p); return; }
+      if (t < 3.6) { moveTo(p, h.x - s * 1.3, h.z + (p.z > 0 ? 1.2 : -1.2), 'work'); return; } // roll
       a.role = 'spot'; a.screenT = g.time + 6 + RNG.next() * 6;
     }
-    // cut: when the defender is far or ball-watching, dive to the rim briefly
-    if (a.role === 'spot' && g.time > a.cutT && defDist > 2.4 && U.dist(p.x, p.z, h.x, h.z) > 4 && RNG.chance(0.06)) { a.role = 'cut'; a.roleT = g.time; }
-    if (a.role === 'cut') { if (g.time - a.roleT < 1.5) { moveTo(p, h.x - s * 1.2, h.z + (p.z > 0 ? 0.8 : -0.8), true); return; } a.role = 'spot'; a.cutT = g.time + 5 + RNG.next() * 5; }
+    // cut: when the defender is far or ball-watching, dive to the rim briefly. A cut that is not sprinted is
+    // just standing somewhere else, so it needs the bar to start one - and once started it is seen through at
+    // a lower floor, because a cutter who pulls up halfway has spent the stamina and bought nothing.
+    if (a.role === 'spot' && g.time > a.cutT && defDist > 2.4 && p.stamina > AC.stam.work && U.dist(p.x, p.z, h.x, h.z) > 4 && RNG.chance(0.06)) { a.role = 'cut'; a.roleT = g.time; }
+    if (a.role === 'cut') { if (g.time - a.roleT < 1.5) { moveTo(p, h.x - s * 1.2, h.z + (p.z > 0 ? 0.8 : -0.8), 'fast'); return; } a.role = 'spot'; a.cutT = g.time + 5 + RNG.next() * 5; }
     // relocate: if the handler drives toward my spot, slide to the far side
     if (U.dist(handler.x, handler.z, spot.x, spot.z) < 2.2) { const alt = spots.find((sp) => U.dist(handler.x, handler.z, sp.x, sp.z) > 4); if (alt) spot = alt; }
     let tx = spot.x, tz = spot.z;
@@ -2893,7 +2946,7 @@ const AI = (() => {
       tx += lx * side * push; tz += lz * side * push;
       if (Math.abs(tz) > Court.C.width / 2 - 1.4) { tz = Math.sign(tz) * (Court.C.width / 2 - 1.4); tx -= ax / al * push * 0.5; }
     }
-    moveTo(p, tx, tz, U.dist(p.x, p.z, tx, tz) > 4);
+    moveTo(p, tx, tz, U.dist(p.x, p.z, tx, tz) > 4 ? 'cruise' : 0);
   }
 
   // ---------------- defense ----------------
@@ -2913,7 +2966,9 @@ const AI = (() => {
     const shade = U.clamp(mLat * 0.24, -0.75, 0.75);
     const tx = dp.x + dx / dl * guard + latx * shade, tz = dp.z + dz / dl * guard + latz * shade;
     const distT = U.dist(p.x, p.z, tx, tz);
-    moveTo(p, tx, tz, distT > 2.0);
+    // Two metres off the spot is a recovery, four is having been beaten - and being beaten on the ball is
+    // worth whatever is left.
+    moveTo(p, tx, tz, distT > 3.2 ? 'loose' : distT > 2.0 ? 'fast' : 0);
     const dist = U.dist(p.x, p.z, m.x, m.z);
     p.armsUp = !p.airborne && dist < 2.2 && (m.state === ST.SHOOT || m.state === ST.PUMP);
     if (p.airborne || p.cd.contest > 0) return;
@@ -2974,7 +3029,7 @@ const AI = (() => {
       }
     }
     const away = U.dist(p.x, p.z, tx, tz);
-    moveTo(p, tx, tz, away > 2.2 || incoming);
+    moveTo(p, tx, tz, incoming ? 'loose' : away > 4.5 ? 'fast' : away > 2.2 ? 'cruise' : 0);
     // contest a catch-and-shoot from my own man
     if (!p.airborne && p.cd.contest <= 0 && m.state === ST.SHOOT && !m.shot.released && U.dist(p.x, p.z, m.x, m.z) < 2.2) {
       if (RNG.chance(diff.contest * 0.55)) { inp.shootPressed = true; p.cd.contest = 0.8; }
@@ -3011,7 +3066,7 @@ const AI = (() => {
   function driveTo(p, handler, h, g) {
     const inp = p.input;
     const ax = h.x - handler.x, az = h.z - handler.z, al = Math.sqrt(ax * ax + az * az) || 1;
-    moveTo(p, handler.x + ax / al * 1.3, handler.z + az / al * 1.3, true);
+    moveTo(p, handler.x + ax / al * 1.3, handler.z + az / al * 1.3, 'fast');
     p.armsUp = true;
     const hd = U.dist(handler.x, handler.z, h.x, h.z);
     if (hd < 2.8 && U.dist(p.x, p.z, handler.x, handler.z) < 1.9 && !p.airborne && p.cd.contest <= 0 && RNG.chance(diff.contest * 0.5)) { inp.shootPressed = true; p.cd.contest = 0.8; }
@@ -3022,21 +3077,21 @@ const AI = (() => {
     if (ball.state === BS.SHOT) {
       const h = Court.hoops[ball.shot.hoop] || Game.hoopFor(g.possession); const dx = p.x - h.x, dz = p.z - h.z; const dl = Math.sqrt(dx * dx + dz * dz) || 1;
       if (dl > 8) { stop(p); return; }
-      const r = 1.4 + (p.id % 3) * 0.35; moveTo(p, h.x + dx / dl * r, h.z + dz / dl * r, dl > 3); return;
+      const r = 1.4 + (p.id % 3) * 0.35; moveTo(p, h.x + dx / dl * r, h.z + dz / dl * r, dl > 3 ? 'work' : 0); return;
     }
     let tx = ball.x, tz = ball.z;
     if (ball.y > 1.0 || ball.vy > 0.5) { const t = BallSys.landingTime(ball.y, ball.vy, 1.1); tx = ball.x + ball.vx * t; tz = ball.z + ball.vz * t; }
     const dist = U.dist(p.x, p.z, ball.x, ball.z);
     if (dist > 11) { stop(p); return; }
-    moveTo(p, tx, tz, true);
+    moveTo(p, tx, tz, 'loose');
     if (dist < 1.15 && ball.y > 1.7 && ball.y < 3.3 && ball.vy < 0.8 && !p.airborne && p.cd.contest <= 0 && RNG.chance(0.45 + p.ratings.rebound / 200)) { inp.shootPressed = true; p.cd.contest = 0.7; }
   }
   function inboundLogic(p, g) {
     const ib = g.inbound; if (!ib) { stop(p); return; }
     if (p.id === ib.inbounder) { stop(p); if (g.state === Game.S.INBOUND && g.stateT > CONFIG.game.inboundDelay + RNG.next() * 0.4) p.input.pass = true; return; }
     if (ball.state === BS.PASS && ball.passTarget === p.id) { moveTo(p, ball.x + ball.vx * 0.1, ball.z + ball.vz * 0.1, false); return; }
-    if (p.team === ib.team) { const sp = ib.spots[p.id]; if (sp) moveTo(p, sp.x, sp.z, true); else stop(p); }
-    else { const m = P[p.matchup]; const h = Game.hoopFor(ib.team); if (m) { const tx = U.lerp(m.x, ib.x, 0.3), tz = U.lerp(m.z, ib.z, 0.3); const ax = h.x - tx, az = h.z - tz; const al = Math.sqrt(ax * ax + az * az) || 1; moveTo(p, tx + ax / al * 0.8, tz + az / al * 0.8, true); } else stop(p); }
+    if (p.team === ib.team) { const sp = ib.spots[p.id]; if (sp) moveTo(p, sp.x, sp.z, 'cruise'); else stop(p); }
+    else { const m = P[p.matchup]; const h = Game.hoopFor(ib.team); if (m) { const tx = U.lerp(m.x, ib.x, 0.3), tz = U.lerp(m.z, ib.z, 0.3); const ax = h.x - tx, az = h.z - tz; const al = Math.sqrt(ax * ax + az * az) || 1; moveTo(p, tx + ax / al * 0.8, tz + az / al * 0.8, 'cruise'); } else stop(p); }
   }
   return { reset, think, assignMatchups, onPossessionChange, moveTo, nearestOpponent, get diff() { return diff; } };
 })();
@@ -3803,8 +3858,8 @@ const Bank = (() => {
   }
   // The only player whose work pays: the one you are actually controlling.
   // Nothing pays in the gym. It is one player, no defence and no clock, so every payout there would be
-  // free money on a loop — which is a coin printer, not a game mode. The tutorial runs in the same mode
-  // and is unaffected: its completion bonus is a direct award(), not match earnings.
+  // free money on a loop — which is a coin printer, not a game mode. That goes for the workout too: it
+  // runs in this mode and the menu will replay it, so its bonus is gone rather than gated.
   function payable() { return typeof Game === 'undefined' || !Game.g || Game.g.mode !== 'practice'; }
   function isMine(p) { return !!p && (p.human || p.career) && payable(); }
   function onMake(p, value, green, contested) {
@@ -4410,7 +4465,7 @@ const Park = (() => {
 // and moves on. Nothing here can be failed: a step either completes or you stay on it, which is the only
 // way a tutorial teaches instead of testing.
 const Tutorial = (() => {
-  const KEY = 'hw_tutdone';
+  const KEY = 'hw_tutdone', PAID = 'hw_tutpaid';
   const ST = PlayerSys.ST;
   let active = false, i = 0, stepT = 0, total = 0, doneT = 0, finished = false;
   let hits = 0, moves = 0, madeShots = 0, greens = 0, dunks = 0, passes = 0, lastState = -1;
@@ -4463,11 +4518,15 @@ const Tutorial = (() => {
     active = false; finished = true;
     UI.showTutorial(false);
     U.saveLS(KEY, true);
-    if (earned) {
+    // The workout is the one thing in the gym that ever paid, and the gym is one player with no defence and
+    // no clock. Restartable from the menu, that made 600 coins a loop the fastest money in the game, none of
+    // it earned against anybody. It is an onboarding bonus, so it pays once per save and replays pay nothing.
+    if (earned && !U.loadLS(PAID, false)) {
       const coins = CONFIG.money.tutorial;
+      U.saveLS(PAID, true);
       Bank.award(coins, 'tutorial');
       Game.toast('WORKOUT DONE', '+' + coins + ' COINS');
-    }
+    } else if (earned) Game.toast('WORKOUT DONE', 'SEVEN FOR SEVEN');
   }
   // Watch the live game for the things the steps ask for.
   function observe(dt) {
@@ -5356,7 +5415,7 @@ const UI = (() => {
     el.possA.className = 'poss' + (g.possession === 0 && g.mode !== 'practice' ? ' left' : ''); el.possB.className = 'poss' + (g.possession === 1 && g.mode !== 'practice' ? ' right' : '');
     const p = PlayerSys.players[g.human];
     el.playerbox.classList.toggle('hidden', !p);
-    if (p) { setText('pnum', String(p.num)); setText('pname', p.ctlName || p.name); setText('psub', p.pos + '  ' + p.ovr + ' OVR  ' + g.teams[p.team].name); const st = p.stamina / CONFIG.player.staminaMax; el.stamina.style.width = (st * 100).toFixed(1) + '%'; el.stamina.classList.toggle('low', p.winded || st < 0.25); }
+    if (p) { setText('pnum', String(p.num)); setText('pname', p.ctlName || p.name); setText('psub', p.pos + '  ' + p.ovr + ' OVR  ' + g.teams[p.team].name); const st = p.stamina / CONFIG.player.staminaMax; el.stamina.style.width = (st * 100).toFixed(1) + '%'; el.stamina.classList.toggle('low', p.winded || st < CONFIG.player.lowStamina / CONFIG.player.staminaMax); }
   }
   function updateMeter(g) {
     const p = PlayerSys.players[g.human];
@@ -5476,6 +5535,7 @@ const UI = (() => {
       h += '<span class="hd">+' + n + '</span><span>' + esc(label) + '</span>';
     }
     h += '</div>';
+    h += '<div class="note">The gym pays nothing. One player, no defence and no clock is not work anyone can be paid for — go play somebody.</div>';
     if (Bank.log.length) {
       h += '<h2 class="sec">Recent</h2><div class="st-log">';
       for (const row of Bank.log.slice(0, 8)) {
@@ -5599,9 +5659,11 @@ const UI = (() => {
     el.tut.classList.toggle('done', v.just);
   }
   function updateCoins(dt) {
-    const on = Game.g.running || Main.inPark;
+    // The gym pays nothing, so a coin counter in there is a number that never moves. Drain the feed anyway,
+    // or the first pop of the next paying game is a stale one from before.
+    const on = (Game.g.running && Game.g.mode !== 'practice') || Main.inPark;
     el.coinBar.classList.toggle('hidden', !on);
-    if (!on) return;
+    if (!on) { Bank.takeFeed(); return; }
     if (Bank.coins !== coinShown) { coinShown = Bank.coins; el.coinNum.textContent = coinFmt(coinShown); }
     const feed = Bank.takeFeed();
     if (feed.length) {
@@ -5643,7 +5705,7 @@ const Net = (() => {
   const DUNK_KINDS = ['', 'one', 'two', 'tomahawk', 'windmill', 'reverse', 'layup'];
   const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   const PLAYER_BYTES = 76, HEAD_BYTES = 9 + 21 + 26;
-  let role = 'none', status = 'offline', err = '', panel = null, lib = null, libPromise = null, peer = null, transport = 'peerjs';
+  let role = 'none', status = 'offline', err = '', panel = null, lib = null, libPromise = null, peer = null, transport = 'peerjs', connectTimer = 0;
   let myName = String(U.loadLS('hw_name', '') || ('Hooper' + (100 + ((Math.random() * 900) | 0)))).replace(/[^\w \-.]/g, '').trim().slice(0, 14) || 'Hooper';
   // host state
   const guests = new Map(); // pid -> { conn, name, team, playerId, inGame, remote: {input,bits,held,seq,rel} }
@@ -5676,7 +5738,21 @@ const Net = (() => {
     libPromise = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = NC.peerJsUrl; sc.onload = () => { lib = window.Peer; res(); }; sc.onerror = () => { libPromise = null; rej(new Error('could not load PeerJS from the CDN')); }; document.head.appendChild(sc); });
     return libPromise;
   }
-  function newPeer(id) { const opts = { debug: 0, config: { iceServers: NC.iceServers } }; if (NC.peerServer) Object.assign(opts, NC.peerServer); return id ? new lib(id, opts) : new lib(opts); }
+  // Both transports build their ICE config here so they cannot drift apart. The pool size earns its place:
+  // without it the browser does not talk to STUN until createOffer, which puts a whole round trip on the click.
+  function iceConfig() { const list = NC.iceServers.slice(); if (NC.turn) list.push(NC.turn); return { iceServers: list, iceCandidatePoolSize: NC.candidatePool }; }
+  // PeerJS error types are one word each. Turn the ones a player can act on into a sentence.
+  function explain(e) {
+    const t = e && e.type ? e.type : String(e);
+    if (t === 'peer-unavailable') return 'no lobby with that code';
+    if (t === 'unavailable-id') return 'that lobby code is taken';
+    if (t === 'browser-incompatible') return 'this browser cannot do WebRTC';
+    if (t === 'server-error' || t === 'socket-error' || t === 'socket-closed' || t === 'network') return 'the free PeerJS signaling server is not answering. It limits by network address, so a whole school shares one budget — wait and retry, run your own PeerServer, or use Direct connect.';
+    return t;
+  }
+  function armConnect(msg) { clearConnect(); connectTimer = setTimeout(() => { connectTimer = 0; if (role === 'none') return; reset(); err = msg; setStatus('error'); }, NC.connectTimeout * 1000); }
+  function clearConnect() { if (connectTimer) { clearTimeout(connectTimer); connectTimer = 0; } }
+  function newPeer(id) { const opts = { debug: 0 }; if (NC.peerServer) Object.assign(opts, NC.peerServer); opts.config = iceConfig(); return id ? new lib(id, opts) : new lib(opts); }
   function wrapConn(conn) { return { pid: conn.peer, send(data) { if (conn.open) { try { conn.send(data); } catch (e) { /* closing */ } } }, close() { try { conn.close(); } catch (e) { /* ignore */ } } }; }
   function wrapRaw(pid) { return { pid, send(data) { const ch = typeof data === 'string' ? chRel : chFast; if (ch && ch.readyState === 'open') { try { ch.send(data); } catch (e) { /* closing */ } } }, close() { try { if (chRel) chRel.close(); if (chFast) chFast.close(); if (pc) pc.close(); } catch (e) { /* ignore */ } pc = chRel = chFast = null; } }; }
   function toBuffer(data, cb) { if (data instanceof ArrayBuffer) cb(data); else if (data && data.buffer instanceof ArrayBuffer) cb(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)); else if (data instanceof Blob) data.arrayBuffer().then(cb); }
@@ -5684,20 +5760,21 @@ const Net = (() => {
   // ---------- host: lobby ----------
   async function hostCreateLobby() {
     reset(); role = 'host'; transport = 'peerjs'; err = ''; setStatus('starting');
-    try { await ensureLib(); } catch (e) { err = e.message; role = 'none'; setStatus('error'); return; }
+    armConnect('the signaling server never answered. Allow 0.peerjs.com on this network, point CONFIG.net.peerServer at your own, or use Direct connect.');
+    try { await ensureLib(); } catch (e) { clearConnect(); err = e.message; role = 'none'; setStatus('error'); return; }
     lobby.code = genCode(); lobby.open = true; hostMember.team = 0;
     openHostPeer();
   }
   function openHostPeer() {
     peer = newPeer(NC.lobbyIdPrefix + lobby.code);
-    peer.on('open', () => { setStatus('lobby open'); });
+    peer.on('open', () => { clearConnect(); setStatus('lobby open'); });
     peer.on('connection', (conn) => {
       conn.on('open', () => { addGuest(wrapConn(conn)); });
       conn.on('data', (d) => onGuestMessage(conn.peer, d));
       conn.on('close', () => removeGuest(conn.peer));
       conn.on('error', () => removeGuest(conn.peer));
     });
-    peer.on('error', (e) => { if (e.type === 'unavailable-id') { try { peer.destroy(); } catch (x) { /* ignore */ } lobby.code = genCode(); openHostPeer(); } else if (role === 'host') { err = e.type || String(e); setStatus('error'); } });
+    peer.on('error', (e) => { if (e.type === 'unavailable-id') { try { peer.destroy(); } catch (x) { /* ignore */ } lobby.code = genCode(); openHostPeer(); } else if (role === 'host') { clearConnect(); err = explain(e); setStatus('error'); } });
     peer.on('disconnected', () => { if (role === 'host' && peer && !peer.destroyed) { try { peer.reconnect(); } catch (e) { /* ignore */ } } });
   }
   function addGuest(conn) { guests.set(conn.pid, { conn, name: 'joining…', team: -1, playerId: -1, inGame: false, lastSeen: performance.now(), remote: { input: makeInput(), bits: 0, held: 0, seq: -1, rel: null } }); AudioSys.play('ui'); if (panel) renderPanel(panel); }
@@ -5919,14 +5996,15 @@ const Net = (() => {
   async function joinLobby(code) {
     code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (code.length < 4) { err = 'enter the 6-character code'; setStatus('error'); return; }
     reset(); role = 'guest'; transport = 'peerjs'; err = ''; setStatus('connecting');
-    try { await ensureLib(); } catch (e) { err = e.message; role = 'none'; setStatus('error'); return; }
+    armConnect('could not reach the host. A school or work network blocking UDP will hang here forever — a relay (CONFIG.net.turn) is the only cure; a phone hotspot or Direct connect is the workaround.');
+    try { await ensureLib(); } catch (e) { clearConnect(); err = e.message; role = 'none'; setStatus('error'); return; }
     peer = newPeer();
     peer.on('open', (id) => {
       myPid = id; const conn = peer.connect(NC.lobbyIdPrefix + code, { reliable: false, serialization: 'raw' });
-      conn.on('open', () => { hostConn = wrapConn(conn); hostSeen = performance.now(); setStatus('in lobby'); hostConn.send(JSON.stringify({ t: 'join', name: myName })); });
+      conn.on('open', () => { clearConnect(); hostConn = wrapConn(conn); hostSeen = performance.now(); setStatus('in lobby'); hostConn.send(JSON.stringify({ t: 'join', name: myName })); });
       conn.on('data', onHostMessage); conn.on('close', onHostLost); conn.on('error', () => onHostLost());
     });
-    peer.on('error', (e) => { if (role !== 'guest') return; err = e.type === 'peer-unavailable' ? 'no lobby with that code' : (e.type || String(e)); setStatus('error'); });
+    peer.on('error', (e) => { if (role !== 'guest') return; clearConnect(); err = explain(e); setStatus('error'); });
     peer.on('disconnected', () => { if (role === 'guest' && peer && !peer.destroyed) { try { peer.reconnect(); } catch (e) { /* ignore */ } } });
   }
   function onHostMessage(data) {
@@ -6032,7 +6110,7 @@ const Net = (() => {
 
   // ---------- direct connect (no signaling server): a two-person lobby over manual offer/answer ----------
   function createRawPeer(isHost) {
-    pc = new RTCPeerConnection({ iceServers: NC.iceServers });
+    pc = new RTCPeerConnection(iceConfig());
     pc.onconnectionstatechange = () => { const cs = pc.connectionState; if (cs === 'disconnected' || cs === 'failed' || cs === 'closed') { if (role === 'host') removeGuest('direct'); else if (role === 'guest') onHostLost(); } };
     const wire = (ch) => {
       ch.binaryType = 'arraybuffer';
@@ -6043,7 +6121,24 @@ const Net = (() => {
     if (isHost) { chRel = pc.createDataChannel('rel', { ordered: true }); chFast = pc.createDataChannel('fast', { ordered: false, maxRetransmits: 0 }); wire(chRel); wire(chFast); }
     else pc.ondatachannel = (e) => { if (e.channel.label === 'rel') chRel = e.channel; else chFast = e.channel; wire(e.channel); };
   }
-  function waitIce() { return new Promise((res) => { if (pc.iceGatheringState === 'complete') return res(); const t = setTimeout(res, 4000); pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } }; }); }
+  // There is no trickle here — the blob has to carry its candidates — but waiting for gathering to *complete*
+  // means waiting on every STUN server, including the ones a school network black-holes, and that wait used to
+  // be the whole 4s. One reflexive or relay candidate is enough to cross a NAT, so take that plus a short
+  // grace for stragglers, and at the cap ship whatever was gathered instead of stalling on a dead server.
+  function waitIce() {
+    return new Promise((res) => {
+      if (pc.iceGatheringState === 'complete') return res();
+      let done = false, grace = 0;
+      const finish = () => { if (done) return; done = true; clearTimeout(hard); clearTimeout(grace); pc.onicecandidate = null; pc.onicegatheringstatechange = null; res(); };
+      const hard = setTimeout(finish, 4000);
+      pc.onicecandidate = (e) => {
+        if (!e.candidate) return finish();
+        const t = e.candidate.type;
+        if ((t === 'srflx' || t === 'relay') && !grace) grace = setTimeout(finish, 400);
+      };
+      pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') finish(); };
+    });
+  }
   const enc = (o) => btoa(unescape(encodeURIComponent(JSON.stringify(o)))), dec = (str) => JSON.parse(decodeURIComponent(escape(atob(str.trim()))));
   async function directHost() { reset(); role = 'host'; transport = 'direct'; lobby.code = 'DIRECT'; lobby.open = true; hostMember.team = 0; directMode = 'host'; setStatus('working'); createRawPeer(true); const offer = await pc.createOffer(); await pc.setLocalDescription(offer); await waitIce(); directOffer = enc(pc.localDescription); setStatus('offer ready'); }
   async function directAccept(str) { await pc.setRemoteDescription(dec(str)); setStatus('connecting'); }
@@ -6055,6 +6150,7 @@ const Net = (() => {
 
   // ---------- lifecycle ----------
   function reset() {
+    clearConnect();
     for (const gst of guests.values()) gst.conn.close(); guests.clear();
     if (hostConn) hostConn.close(); hostConn = null;
     if (peer) { try { peer.destroy(); } catch (e) { /* ignore */ } } peer = null;
@@ -6072,6 +6168,9 @@ const Net = (() => {
   // ---------- lobby UI ----------
   function renderPanel(cont) {
     panel = cont;
+    // Pull PeerJS down while the player is still reading the panel. Fetching a 60 KB script only after the
+    // click put a cold DNS lookup, TLS handshake and download in front of every connection.
+    if (role === 'none') ensureLib().catch(() => { /* reported for real when they click */ });
     const view = role === 'host' ? lobbyMsg() : lobbyView;
     let html = '<div class="opt"><span>Your name</span><input class="field" id="netNameIn" maxlength="14" value="' + esc(myName) + '"></div>';
     html += '<div class="status">status: ' + esc(status) + (err ? ' · ' + esc(String(err).slice(0, 120)) : '') + '</div>';
