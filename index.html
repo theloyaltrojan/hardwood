@@ -2481,8 +2481,10 @@ const Shooting = (() => {
     const ang = (dist < 3.2 ? SC.closeLaunchAngle : SC.launchAngle) * Math.PI / 180 + (RNG.next() - 0.5) * 0.06;
     const l = solveLaunch(x0, y0, z0, t.x, t.y, t.z, ang);
     BallSys.place(x0, y0, z0); BallSys.release(l.vx, l.vy, l.vz, BS.SHOT); ball.spinDir = -1;
-    // a perfect release from the player you control sets off whatever effect they have equipped
-    if (res.green && (p.human || p.career)) {
+    // A release effect that only fires on a green is a cosmetic almost nobody ever sees, now that a
+    // perfect release is deliberately hard. An excellent one counts too - still a good release, still
+    // rare enough to feel earned, but often enough that the thing you bought actually shows up.
+    if ((res.green || res.q >= 0.92) && (p.human || p.career)) {
       const fx = Bank.effectOf(Bank.equipped.effect);
       if (fx.count) Court.spawnBurst(x0, y0, z0, fx.colour, fx.count, fx.kind);
     }
