@@ -748,6 +748,7 @@ const CONFIG = {
     perQuarter: 3,       // hard cap, so a quarter is mostly basketball
     quietGame: 16,       // seconds of game clock between lessons
     stuckAfter: 9,       // failsafe: never leave the world slow longer than this, whatever happens
+    maxTries: 3,         // a lesson whose moment keeps evaporating gets this many goes, then retires
   },
   game: { shotClock: 24, halfShotClock: 14, offRebClock: 14, quarterLen: 120, quarters: 4, halfCourtTarget: 21, deadBallDelay: 0.85, inboundDelay: 0.35, practiceReturn: 1.5, ftRoutine: 1.2, foulOutLimit: 6, reachInFoulChance: 0.18, shootingFoulChance: 0.15 },
   // Coins. Everything the store sells is cosmetic, so these numbers only pace how long a look takes to earn.
@@ -4715,7 +4716,7 @@ const Tutorial = (() => {
 const Coach = (() => {
   const CC = CONFIG.coach;
   let on = false, cur = null, t = 0, hold = 0, scale = 1, cooldown = 0, taught = null, finishedT = -1;
-  let lastAt = -999, thisQuarter = 0, quarter = -1, slowT = 0;
+  let lastAt = -999, thisQuarter = 0, quarter = -1, slowT = 0, tries = null;
 
   // Every lesson is a condition, a line of copy and a way to know you did it. Nothing here can be
   // failed: an unmet lesson times out, the world speeds back up and the game carries on. Ordering is
@@ -4729,13 +4730,17 @@ const Coach = (() => {
       body: () => key('up') + key('left') + key('down') + key('right') + ' to move, ' + key('sprint') + ' to sprint.',
       goal: 'Move',
       trigger: (c) => c.live && c.g.time > 1.5,
-      satisfied: (c) => c.p.speed > 2.6 || c.hasBall },
+      skipIf: (c) => c.p.speed > 2.6,
+      satisfied: (c) => c.p.speed > 2.6 },
 
-    { id: 'shoot', title: 'Take the open one', slowmo: 0.25, timeoutSec: 9,
+    { id: 'shoot', title: 'Take the open one', slowmo: 0.25, timeoutSec: 7,
       body: () => 'Hold ' + key('shoot') + ' to start the meter and let go in the green.',
       goal: 'Put one up',
       trigger: (c) => c.hasBall && c.near > 2.0 && c.rim > 3.8 && c.rim < 7.6 && c.g.shotClock > 5,
-      satisfied: (c) => c.p.state === ST.SHOOT },
+      abort: (c) => !c.hasBall && c.p.state !== ST.SHOOT,
+      // on the release, not the press: the slowdown exists to help you time the meter, so it has to
+      // last through the hold
+      satisfied: (c) => c.p.state === ST.SHOOT && c.p.shot.released },
 
     { id: 'pass', title: 'Give it up', slowmo: 0.3, timeoutSec: 7,
       body: () => key('pass') + ' passes to whoever is best placed.',
@@ -4755,37 +4760,43 @@ const Coach = (() => {
       body: () => 'Flick a dribble move across you to cross over. Time it while he is mirroring you and he goes down.',
       goal: 'Cross over',
       trigger: (c) => c.hasBall && c.canMove && c.moving && c.near < 2.0 && c.rim > 4.5,
+      abort: (c) => !c.hasBall && !c.p.airborne,
       satisfied: (c) => c.p.state === ST.CROSSOVER || c.p.state === ST.SIDESTEP },
 
     { id: 'spin', title: 'Go past him', slowmo: 0.25, timeoutSec: 7,
       body: () => 'Flick a dribble move toward the rim to spin past a defender who is sitting in front of you.',
       goal: 'Spin',
       trigger: (c) => done('cross') && c.hasBall && c.canMove && c.near < 1.7 && c.rim > 2.5 && c.rim < 7.5,
+      abort: (c) => !c.hasBall && !c.p.airborne,
       satisfied: (c) => c.p.state === ST.SPIN },
 
     { id: 'stepback', title: 'Make room', slowmo: 0.25, timeoutSec: 7,
       body: () => 'Flick a dribble move away from the rim to step back into a shot.',
       goal: 'Step back',
       trigger: (c) => done('cross') && c.hasBall && c.canMove && c.near < 1.6 && c.rim < 8.5 && c.g.shotClock > 6,
+      abort: (c) => !c.hasBall && !c.p.airborne,
       satisfied: (c) => c.p.state === ST.STEPBACK },
 
     { id: 'dunk', title: 'Finish it', slowmo: 0.35, timeoutSec: 6,
       body: () => 'Sprint at the rim and shoot to dunk it.',
       goal: 'Get to the rim',
       trigger: (c) => done('shoot') && c.hasBall && c.rim > 3.2 && c.rim < 8.5 && c.p.speed > 3.2 && c.near > 1.4,
+      abort: (c) => !c.hasBall && !c.p.airborne,
       satisfied: (c) => c.p.state === ST.DUNK || c.p.state === ST.LAYUP },
 
     { id: 'contest', title: 'Put a hand up', slowmo: 0.22, timeoutSec: 5,
       body: () => key('shoot') + ' contests on defence. A hand in the face is most of a miss.',
       goal: 'Contest',
       trigger: (c) => c.onD && c.carrier && c.carrier.state === ST.SHOOT && U.dist(c.p.x, c.p.z, c.carrier.x, c.carrier.z) < 3.0,
+      abort: (c) => !c.onD,
       satisfied: (c) => c.p.airborne || c.p.armsUp },
 
     { id: 'steal', title: 'Take it off him', slowmo: 0.3, timeoutSec: 6,
       body: () => key('steal') + ' goes for the strip. Miss and you are out of position, so pick your moment.',
       goal: 'Go for it',
       trigger: (c) => c.onD && c.carrier && c.p.cd.steal <= 0 && U.dist(c.p.x, c.p.z, c.carrier.x, c.carrier.z) < 1.7,
-      satisfied: (c) => c.p.cd.steal > 0 },
+      abort: (c) => !c.onD,
+      satisfied: (c) => c.p.state === ST.STEAL },
   ];
 
   const me = () => PlayerSys.players[Game.g.human] || null;
@@ -4816,7 +4827,7 @@ const Coach = (() => {
     on = true; cur = null; t = 0; scale = 1; cooldown = CC.openingDelay; finishedT = -1;
     taught = Object.create(null);
     for (const k in seen) delete seen[k];
-    lastAt = -999; thisQuarter = 0; quarter = -1; slowT = 0;
+    lastAt = -999; thisQuarter = 0; quarter = -1; slowT = 0; tries = Object.create(null);
   }
   function end() { on = false; cur = null; scale = 1; }
 
@@ -4830,7 +4841,10 @@ const Coach = (() => {
     if (slowT > CC.stuckAfter) { if (cur) taught[cur.id] = 'timeout'; clear(); slowT = 0; }
 
     const c = ctx();
-    if (!c || !c.live) { ease(1, dt); return; }
+    if (!c || !c.live) {
+      if (cur) abandon();
+      ease(1, dt); return;
+    }
     if (c.g.quarter !== quarter) { quarter = c.g.quarter; thisQuarter = 0; }
     if (cur) {
       t += dt;
@@ -4839,6 +4853,7 @@ const Coach = (() => {
         const tail = LESSONS.find((L) => L.follows === was && !taught[L.id]);
         if (tail) { cur = tail; t = 0; cooldown = 0; return; }
       }
+      else if (cur.abort && cur.abort(c)) abandon();        // the situation went away: not taught, try again later
       else if (t >= cur.timeoutSec) { taught[cur.id] = 'timeout'; clear(); }
       else { ease(cur.slowmo, dt); return; }
     }
@@ -4854,6 +4869,7 @@ const Coach = (() => {
       if (taught[L.id] || L.follows) continue;
       if (L.id !== 'move' && !taught.move) continue;
       if (!L.trigger(c)) continue;
+      if (L.skipIf && L.skipIf(c)) { taught[L.id] = 'done'; continue; }   // already doing it: nothing to teach
       cur = L; t = 0; hold = 0; lastAt = c.g.time; thisQuarter++;
       Game.emit('sound', { name: 'ui' });
       return;
@@ -4865,6 +4881,13 @@ const Coach = (() => {
   const seen = Object.create(null);
   function note(kind) { seen[kind] = true; }
   function clear() { cur = null; t = 0; cooldown = CC.between; }
+  function abandon() {
+    const L = cur; if (!L) return;
+    thisQuarter = Math.max(0, thisQuarter - 1);
+    tries[L.id] = (tries[L.id] || 0) + 1;
+    if (L.follows || tries[L.id] >= CC.maxTries) taught[L.id] = 'timeout';
+    clear();
+  }
   function ease(target, dt) { scale += (target - scale) * (1 - Math.exp(-dt * CC.easeRate)); if (Math.abs(scale - target) < 0.01) scale = target; }
   const remaining = () => LESSONS.some((L) => !taught[L.id]);
 
@@ -5306,6 +5329,8 @@ const Ads = (() => {
   // has at push time and a unit pushed inside a hidden overlay is stuck at zero width forever.
   function show(name) {
     if (!on() || !slotId(name)) return;
+    // Never on a first launch. It used to stay out only because onboarding happened to hide both hosts.
+    if (document.body.classList.contains('onboarding')) return;
     const host = document.getElementById(name === 'final' ? 'adFinal' : menuHost());
     if (!host) return;
     const last = filled[name] || 0;
@@ -5608,6 +5633,9 @@ const UI = (() => {
     h += '</div><div class="cr-actions"><button class="btn small ghost" id="crBack"><span class="t">Back to the build</span></button></div>';
     cont.innerHTML = h;
     cont.querySelectorAll('[data-croffer]').forEach((x) => x.onclick = () => {
+      // Already signed. During onboarding these buttons stay live through the screen wipe, and a second
+      // click re-signed you and reshuffled the schedule under the game that was already starting.
+      if (crBuild !== b) return;
       AudioSys.play('ui'); Career.begin(b, +x.dataset.croffer); crOffers = null; crBuild = null;
       // On first launch, signing is the last menu press: the next thing you see is a live game.
       if (onboarding) { endOnboarding(); hooks.firstGame(); return; }
@@ -6624,7 +6652,12 @@ const Main = (() => {
     document.addEventListener('visibilitychange', () => { visible = !document.hidden; if (visible) { last = performance.now(); acc = 0; } });
     // A first launch has no menu. You build a player, sign somewhere, and play - the game teaches itself
     // from inside that first game rather than from a card in an empty gym.
-    if (!U.loadLS(ONBOARD_KEY, false) && !Career.exists()) UI.beginOnboarding();
+    // Anyone who has already played is not on a first launch, however they played. Only things written
+    // by actually playing count - the how-to card dismissed, the workout finished, a career made -
+    // because a key merely created on load would switch onboarding off for a genuinely new player.
+    if (Career.exists() || U.loadLS('hw_seen', false) || Tutorial.seen()) U.saveLS(ONBOARD_KEY, true);
+    if (!U.loadLS(ONBOARD_KEY, false)) UI.beginOnboarding();
+    else if (Career.isFirstGame()) UI.openCareer();   // a first game left half-played goes back to it
     else UI.showMenu();
     last = performance.now(); requestAnimationFrame(frame);
   }
@@ -6653,7 +6686,9 @@ function startGame(mode, a, b, opts) {
       if (Net.isHost) Net.hostStart(mode, a, b); else if (Net.isGuest) Net.enterGuest();
       UI.hideMenu(); UI.showHUD(); UI.clearToast(); const ball = BallSys.ball; CameraSys.snap(ball.x, ball.z); acc = 0; paused = false;
       const sb = document.getElementById('btnSpectate'); if (sb) sb.textContent = 'CPU plays for me: off';
-      if (!U.loadLS('hw_seen', false)) { pause(true); UI.showFirstRun(); }
+      // the coach replaces the old keybind card, so a coached game must not open frozen behind it
+      if (opts && opts.coach && !Net.active) U.saveLS('hw_seen', true);
+      else if (!U.loadLS('hw_seen', false)) { pause(true); UI.showFirstRun(); }
     });
   }
   // MyPark. The park is its own little world: the arena is hidden, the lobby is built once, and matches
@@ -6797,7 +6832,8 @@ function startGame(mode, a, b, opts) {
     } else Input.endTick();
 if (Net.active) Net.update(elapsed);
      const alpha = g.running && !paused ? acc / DT : 1;
-     Render.sync(alpha, elapsed);
+     // animation runs on the slowed clock too, or legs pump at full speed on a body barely moving
+     Render.sync(alpha, elapsed * (g.running && !paused && !Net.active ? Coach.timeScale : 1));
      const ball = BallSys.ball; CameraSys.update(elapsed, ball.x, ball.z, g);
      Render.draw();
      UI.update(elapsed, stats);

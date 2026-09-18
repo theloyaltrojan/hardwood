@@ -421,9 +421,12 @@ await test('the first game teaches itself and never strands you in slow motion',
       while (acc >= 1 / 120) { Game.step(1 / 120); Input.endTick(); acc -= 1 / 120; }
       const v = Coach.view(); if (v && !first) first = v.title;
     }
-    return { taught: Object.keys(Coach.taught || {}).length, worst, first, minScale };
+    const order = Object.keys(Coach.taught || {});
+    return { taught: order.length, worst, first, minScale, firstResolved: order[0] };
   });
-  check.equal(r.first, 'Get on the floor', 'the first lesson should be movement');
+  // Movement is resolved before anything else - taught, or skipped because you were already moving.
+  // The CPU driving the player here is moving from the tip, so it is usually the skip.
+  check.equal(r.firstResolved, 'move', 'something was taught before movement was resolved');
   check.atLeast(r.taught, 6, 'lessons that got a chance to fire in a full game');
   check.atMost(r.minScale, 0.6, 'slow motion never actually engaged');
   check.atMost(r.worst, 9.5, 'longest continuous slow motion in real seconds');
@@ -437,7 +440,8 @@ await test('a window with no room for a menu unit fetches no ad code at all', as
     [...document.querySelectorAll('script')].filter((s) => /googlesyndication|adsbygoogle/.test(s.src)).length);
   const booted = await adScripts();
   const cfg = await page.evaluate(() => ({ client: CONFIG.ads.client }));
-  await page.evaluate(() => { UI.showMenu(); });
+  // fresh() boots into onboarding, which hides the rail; leave it, or this passes whatever the ad code does
+  await page.evaluate(() => { UI.endOnboarding(); UI.showMenu(); });
   await page.waitForTimeout(300);
   const onMenu = await adScripts();
   await page.evaluate(() => { Main.startGame('5v5', 0, 1); });
