@@ -419,6 +419,9 @@ await test('an ad never sits over a live court', async () => {
   const page = await fresh({ headless: false });
   await page.route('**://*.googlesyndication.com/**', (route) => route.abort());
   await page.evaluate(() => {
+    // fresh() wipes storage, so the page boots into first-launch onboarding, which deliberately hides
+    // the ad bar. Leave it first: this test is about ad placement in the ordinary menu.
+    UI.endOnboarding();
     CONFIG.ads.client = 'ca-pub-0000000000000000';
     CONFIG.ads.menuSlot = '1111111111'; CONFIG.ads.finalSlot = '2222222222';
     UI.showMenu();

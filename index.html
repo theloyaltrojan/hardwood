@@ -142,6 +142,8 @@
      whether or not Google ever answers. */
   #menu { grid-template-rows: 1fr auto; }
   .adbar { grid-column: 1 / -1; }
+  /* First launch has exactly one path through it, so everything that leads elsewhere is gone. */
+  body.onboarding .menu-nav, body.onboarding .adbar, body.onboarding .rail-foot { display: none; }
   #adRail.on { margin: 22px 0 8px; border-top: 0; background: none; padding-left: 0; padding-right: 0; text-align: left; }
   .legal { padding: 7px 16px; border-top: 1px solid var(--line); text-align: center; font-size: 11px; color: var(--muted); }
   .legal a { color: inherit; }
@@ -735,6 +737,14 @@ const CONFIG = {
     // margin it has to earn back before spending at that tier again, so it rests instead of stuttering.
     stam: { loose: 8, fast: 24, work: 48, cruise: 74, ease: 22 },
     bar: { early: 1.06, mid: 0.94, late: 0.80, last: 0.56 },
+  },
+  // The first game teaches itself. See the COACH module.
+  coach: {
+    openingDelay: 2.5,   // let the tip settle before saying anything
+    between: 3.5,        // minimum quiet between lessons, so it never nags
+    holdAfter: 1.2,      // how long a completed prompt stays up
+    easeRate: 7,         // how fast the world slows down and speeds back up
+    openMate: 3.2,       // a team-mate with this much space counts as open
   },
   game: { shotClock: 24, halfShotClock: 14, offRebClock: 14, quarterLen: 120, quarters: 4, halfCourtTarget: 21, deadBallDelay: 0.85, inboundDelay: 0.35, practiceReturn: 1.5, ftRoutine: 1.2, foulOutLimit: 6, reachInFoulChance: 0.18, shootingFoulChance: 0.15 },
   // Coins. Everything the store sells is cosmetic, so these numbers only pace how long a look takes to earn.
@@ -4686,6 +4696,87 @@ const Tutorial = (() => {
 })();
 // ==== END TUTORIAL ====
 
+// ==== BEGIN COACH ====
+// The first game is the tutorial. There is no empty gym: you make a player, pick a club, and the game
+// teaches you while you play it, by waiting until a mechanic is genuinely the answer to the situation
+// in front of you and then slowing the world down to say so.
+//
+// Slow motion is done by scaling how much real time is fed to the fixed-step accumulator, not by
+// changing DT. The simulation still advances in identical 1/120 steps, so nothing about the physics or
+// the determinism changes - there are simply fewer of them per second, and rendering stays at 60.
+// It is off entirely in multiplayer, where slowing one client's clock would just desync it.
+const Coach = (() => {
+  const CC = CONFIG.coach;
+  let on = false, cur = null, t = 0, hold = 0, scale = 1, cooldown = 0, taught = null, finishedT = -1;
+
+  // Every lesson is a condition, a line of copy and a way to know you did it. Nothing here can be
+  // failed: an unmet lesson times out, the world speeds back up and the game carries on.
+  const LESSONS = [];
+
+  const me = () => PlayerSys.players[Game.g.human] || null;
+  const ctx = () => {
+    const g = Game.g, p = me();
+    if (!p) return null;
+    const h = Game.hoopFor(p.team), ball = BallSys.ball;
+    let near = 1e9, openMate = null;
+    for (const q of PlayerSys.players) {
+      if (q.team === p.team) continue;
+      const d = U.dist(q.x, q.z, p.x, p.z); if (d < near) near = d;
+    }
+    for (const q of Game.teamPlayers(p.team)) {
+      if (q === p) continue;
+      if (Passing.nearestOppDist(q) > CC.openMate) { openMate = q; break; }
+    }
+    return { g, p, h, ball, near, openMate,
+      mine: g.possession === p.team, hasBall: !!p.hasBall,
+      rim: U.dist(p.x, p.z, h.x, h.z), live: g.state === Game.S.PLAY };
+  };
+
+  function begin() {
+    on = true; cur = null; t = 0; scale = 1; cooldown = CC.openingDelay; finishedT = -1;
+    taught = Object.create(null);
+  }
+  function end() { on = false; cur = null; scale = 1; }
+
+  // dt here is real seconds, not sim time, so a timeout is a timeout however slow the world is running.
+  function step(dt) {
+    if (!on) { scale = 1; return; }
+    const c = ctx();
+    if (!c || !c.live) { ease(1, dt); return; }
+    if (cur) {
+      t += dt;
+      if (cur.satisfied(c)) { taught[cur.id] = 'done'; finishedT = 0; clear(); }
+      else if (t >= cur.timeoutSec) { taught[cur.id] = 'timeout'; clear(); }
+      else { ease(cur.slowmo, dt); return; }
+    }
+    if (finishedT >= 0) { finishedT += dt; if (finishedT > CC.holdAfter) finishedT = -1; }
+    ease(1, dt);
+    if (cooldown > 0) { cooldown -= dt; return; }
+    for (const L of LESSONS) {
+      if (taught[L.id]) continue;
+      if (!L.trigger(c)) continue;
+      cur = L; t = 0; hold = 0;
+      Game.emit('sound', { name: 'ui' });
+      return;
+    }
+    if (!remaining()) end();
+  }
+  function clear() { cur = null; t = 0; cooldown = CC.between; }
+  function ease(target, dt) { scale += (target - scale) * (1 - Math.exp(-dt * CC.easeRate)); if (Math.abs(scale - target) < 0.01) scale = target; }
+  const remaining = () => LESSONS.some((L) => !taught[L.id]);
+
+  function view() {
+    if (!on || !cur) return null;
+    const n = LESSONS.filter((L) => taught[L.id]).length;
+    return { n: n + 1, of: LESSONS.length, title: cur.title, body: cur.body, goal: cur.goal || '',
+      pct: U.clamp(t / cur.timeoutSec, 0, 1), just: false };
+  }
+  return { begin, end, step, view, LESSONS,
+    get active() { return on; }, get timeScale() { return scale; },
+    get taught() { return taught; } };
+})();
+// ==== END COACH ====
+
 // ==== BEGIN CAMERA ====
 // Broadcast-style follow camera with damping; also provides the input basis (screen-relative movement).
 const CameraSys = (() => {
@@ -5136,7 +5227,8 @@ const UI = (() => {
   let debugOn = false, pick = U.loadLS('hw_pick', [0, 1]), last = {}, tagEls = [], meterVisible = false, hudVisible = false, mode = U.loadLS('hw_mode', '5v5');
   if (!Array.isArray(pick) || pick.length !== 2 || pick[0] === pick[1]) pick = [0, 1];
   const _pt = { x: 0, y: 0, visible: false };
-  const hooks = { startGame: null, startTutorial: null, resume: null, quit: null, rematch: null, applySettings: null };
+  const hooks = { startGame: null, startTutorial: null, resume: null, quit: null, rematch: null, applySettings: null, firstGame: null };
+  let onboarding = false;
 
    function init(h) {
      Object.assign(hooks, h);
@@ -5322,6 +5414,13 @@ const UI = (() => {
   let crBuild = null, crOffers = null;
   const HAIRS_UI = ['Fade', 'Afro', 'Headband', 'Short', 'Bald', 'Braids', 'Locs'];
   function openCareer() { showMenu(); show('menuCareer'); }
+  // First launch: you make a player and pick a club, and there is nothing else on screen to do. The
+  // rest of the game opens up once that first game is behind you.
+  function beginOnboarding() {
+    onboarding = true; document.body.classList.add('onboarding');
+    showMenu(); show('menuCareer'); renderCareer();
+  }
+  function endOnboarding() { onboarding = false; document.body.classList.remove('onboarding'); }
   function renderCareer() {
     const cont = el.careerBody;
     if (Career.exists()) renderHub(cont);
@@ -5407,7 +5506,10 @@ const UI = (() => {
     h += '</div><div class="cr-actions"><button class="btn small ghost" id="crBack"><span class="t">Back to the build</span></button></div>';
     cont.innerHTML = h;
     cont.querySelectorAll('[data-croffer]').forEach((x) => x.onclick = () => {
-      AudioSys.play('ui'); Career.begin(b, +x.dataset.croffer); crOffers = null; crBuild = null; renderCareer();
+      AudioSys.play('ui'); Career.begin(b, +x.dataset.croffer); crOffers = null; crBuild = null;
+      // On first launch, signing is the last menu press: the next thing you see is a live game.
+      if (onboarding) { endOnboarding(); hooks.firstGame(); return; }
+      renderCareer();
     });
     cont.querySelector('#crBack').onclick = () => { AudioSys.play('ui'); crOffers = null; renderCareer(); };
   }
@@ -5783,8 +5885,13 @@ const UI = (() => {
   function showTutorial(on) { el.tut.classList.toggle('hidden', !on); if (on) el.tutSkipKey.textContent = Input.keyLabel(Input.binds.pause); }
   let tutKey = '';
   function updateTutorial() {
-    if (!Tutorial.active) { if (!el.tut.classList.contains('hidden')) el.tut.classList.add('hidden'); return; }
-    const v = Tutorial.view(); if (!v) return;
+    // The coach borrows this card. Only one of the two can be up at a time: the workout is an empty gym
+    // and the coach only runs inside a live game.
+    const src = Tutorial.active ? Tutorial : (Coach.active ? Coach : null);
+    if (!src) { if (!el.tut.classList.contains('hidden')) el.tut.classList.add('hidden'); return; }
+    const v = src.view();
+    if (!v) { if (!el.tut.classList.contains('hidden')) el.tut.classList.add('hidden'); return; }
+    el.tut.classList.remove('hidden');
     const k = v.n + '|' + v.body;
     if (k !== tutKey) {
       tutKey = k;
@@ -5793,6 +5900,7 @@ const UI = (() => {
       el.tutBody.textContent = v.body;
       el.tutGoal.textContent = v.goal;
     }
+    el.tutSkipKey.parentElement.style.display = Tutorial.active ? '' : 'none';
     el.tutBar.style.width = (v.pct * 100).toFixed(0) + '%';
     el.tut.classList.toggle('done', v.just);
   }
@@ -5830,6 +5938,7 @@ const UI = (() => {
     if (debugOn) updateDebug(dt, stats);
   }
   return { init, showMenu, hideMenu, showPause, showFirstRun, showHUD, hideHUD, showFinal, openNet, openCareer, renderCareer,
+    beginOnboarding, endOnboarding, get onboarding() { return onboarding; },
     showPark, openPark, openStore, renderStore, showTutorial, parkToast, parkChatDirty, openChat, closeChat, get chatOpen() { return chatOpen; },
     wipe, update, toast, feedback, toggleDebug, clearToast, get pick() { return pick; }, get mode() { return mode; }, get debugOn() { return debugOn; } };
 })();
@@ -5859,7 +5968,7 @@ const Net = (() => {
   const lobby = { code: '', mode: '5v5', open: false };
   // guest state
   let hostConn = null, myPid = '', myPlayerId = -1, lobbyView = null, pendingStart = null, inGame = false, hostSeen = 0;
-  const snaps = []; let lastSnapSeq = -1, seq = 0, sendAcc = 0, snapAcc = 0, edgeBits = 0, recvSnaps = 0;
+  const snaps = []; let lastSnapSeq = -1, seq = 0, sendAcc = 0, snapAcc = 0, edgeBits = 0, passToPend = 0, recvSnaps = 0;
   const localInput = makeInput(); let pressT = 0, pressDur = 1, relPending = null;
   // direct transport state
   let pc = null, chRel = null, chFast = null, directOffer = '', directAnswer = '', directMode = '';
@@ -6135,9 +6244,12 @@ const Net = (() => {
   }
   function decodeInput(buf, rem) {
     if (buf.byteLength < 28) return; const dv = new DataView(buf); if (dv.getUint8(0) !== 2) return;
-    rem.bits |= dv.getUint16(14, true); const rel = dv.getFloat32(16, true); if (!Number.isNaN(rel)) rem.rel = rel;
+    rem.bits |= dv.getUint16(14, true); rem.held |= dv.getUint8(13) & PASSTO_MASK; const rel = dv.getFloat32(16, true); if (!Number.isNaN(rel)) rem.rel = rel;
     const sq = dv.getUint32(1, true); if (sq <= rem.seq) return; rem.seq = sq;
-    rem.input.mx = dv.getFloat32(5, true); rem.input.mz = dv.getFloat32(9, true); rem.held = dv.getUint8(13);
+    rem.input.mx = dv.getFloat32(5, true); rem.input.mz = dv.getFloat32(9, true);
+    // sprint and shoot are held states and take the newest value; the pass target is an edge and has
+    // to survive until hostApplyInputs consumes it, or a following frame carrying 0 erases it
+    rem.held = (rem.held & PASSTO_MASK) | (dv.getUint8(13) & ~PASSTO_MASK & 0xff);
     rem.input.jx = dv.getFloat32(20, true); rem.input.jz = dv.getFloat32(24, true);
   }
 
@@ -6215,11 +6327,14 @@ const Net = (() => {
     const g = Game.g, ST = PlayerSys.ST;
     Input.sample(localInput, CameraSys.basis);
     edgeBits |= packBits(localInput) & EDGE_MASK;
+    // passTo is an edge that lives for one tick and we only send every fourth, so it has to be held
+    // until the next frame goes out or it is simply lost.
+    if (localInput.passTo) passToPend = localInput.passTo;
     const meP = PlayerSys.players[g.human]; const nowS = performance.now() / 1000;
     if (localInput.shootPressed && meP && meP.hasBall) { pressT = nowS; pressDur = Shooting.meterDuration(meP, g.state === Game.S.FREETHROW ? 'ft' : Shooting.zoneFor(meP, Game.hoopFor(meP.team))); }
     if (localInput.shootReleased && pressT > 0) { relPending = r3(U.clamp((nowS - pressT) / pressDur, 0, 1)); pressT = 0; }
     sendAcc += dt;
-    if (sendAcc >= 1 / NC.inputHz && meP) { sendAcc = 0; send(hostConn, encodeInput(localInput.mx, localInput.mz, localInput.jx, localInput.jz, (packBits(localInput) & HELD_MASK) | ((localInput.passTo & 7) << PASSTO_SHIFT), edgeBits, relPending)); relPending = null; edgeBits = 0; }
+    if (sendAcc >= 1 / NC.inputHz && meP) { sendAcc = 0; send(hostConn, encodeInput(localInput.mx, localInput.mz, localInput.jx, localInput.jz, (packBits(localInput) & HELD_MASK) | ((passToPend & 7) << PASSTO_SHIFT), edgeBits, relPending)); relPending = null; edgeBits = 0; passToPend = 0; }
     g.time += dt;
     if (!snaps.length) return;
     let A = snaps[0], B = snaps[0]; const now = nowS - NC.interpDelay;
@@ -6393,7 +6508,7 @@ const Main = (() => {
     Render.init(document.getElementById('app'));
     Bank.applyEquipped();
     Render.buildArena(TEAMS[0], TEAMS[1]);
-    UI.init({ startGame, startTutorial, resume, quit, rematch, applySettings });
+    UI.init({ startGame, startTutorial, resume, quit, rematch, applySettings, firstGame });
     applySettings();
     const wake = () => { AudioSys.init(); AudioSys.resume(); };
     window.addEventListener('pointerdown', wake); Input.onAny(wake);
@@ -6405,7 +6520,10 @@ const Main = (() => {
       if (code === Input.binds.pause && (Game.g.running || inPark)) { if (paused) resume(); else pause(); }
     });
     document.addEventListener('visibilitychange', () => { visible = !document.hidden; if (visible) { last = performance.now(); acc = 0; } });
-    UI.showMenu();
+    // A first launch has no menu. You build a player, sign somewhere, and play - the game teaches itself
+    // from inside that first game rather than from a card in an empty gym.
+    if (!U.loadLS(ONBOARD_KEY, false) && !Career.exists()) UI.beginOnboarding();
+    else UI.showMenu();
     last = performance.now(); requestAnimationFrame(frame);
   }
   // Clear the boot overlay only once a frame has genuinely been drawn, not merely when init returned.
@@ -6415,12 +6533,22 @@ function applySettings(key) {
 	     if (key === 'shadows' || key == null) { CONFIG.render.shadows = s.shadows; Render.setShadows(s.shadows); }
 	     if (key === 'difficulty') Game.g.aiDiff = s.difficulty;
 	   }
+const ONBOARD_KEY = 'hw_onboard';
+  // The first game off the back of creating a player. It is a real career game against CPUs - the only
+  // difference is that the coach is watching it.
+  function firstGame() {
+    const up = Career.upcoming();
+    const opp = up ? up.opp : (Career.data.team === 0 ? 1 : 0);
+    U.saveLS(ONBOARD_KEY, true);
+    startGame('5v5', Career.data.team, opp, { career: true, coach: true });
+  }
 function startGame(mode, a, b, opts) {
 	     lastMode = mode;
 	     UI.wipe(() => {
 	       const kits = kitsFor(a, b);
 	       Render.buildArena(kits[0], kits[1]); Game.start(mode, a, b, opts); Render.buildPlayers(Game.g.teams); Render.setShadows(Game.settings.shadows);
 	       if (opts && opts.sim) Game.setSpectate(true);
+      if (opts && opts.coach && !Net.active) Coach.begin(); else Coach.end();
       document.getElementById('final').classList.add('hidden');
       if (Net.isHost) Net.hostStart(mode, a, b); else if (Net.isGuest) Net.enterGuest();
       UI.hideMenu(); UI.showHUD(); UI.clearToast(); const ball = BallSys.ball; CameraSys.snap(ball.x, ball.z); acc = 0; paused = false;
@@ -6506,6 +6634,7 @@ function startGame(mode, a, b, opts) {
   function pause(silent) { paused = true; if (!silent) UI.showPause(true); }
   function resume() { paused = false; UI.showPause(false); last = performance.now(); acc = 0; }
   function quit() {
+    Coach.end();
     if (Tutorial.active) Tutorial.skip();
     if (inPark) { leavePark(); return; }
     const wasCareer = Game.g.career;
@@ -6553,7 +6682,10 @@ function startGame(mode, a, b, opts) {
       return;
     }
     if (g.running && !paused) {
-      acc += elapsed; const s0 = performance.now();
+      // Slow motion scales the real time fed to the accumulator. DT never changes, so the sim still
+      // advances in identical steps and stays deterministic - there are just fewer per second.
+      if (Coach.active && !Net.active) Coach.step(elapsed);
+      acc += elapsed * (Net.active ? 1 : Coach.timeScale); const s0 = performance.now();
       while (acc >= DT && steps < CONFIG.physics.maxSteps) {
         const human = PlayerSys.players[g.human]; if (human && !Net.isGuest) Input.sample(human.input, CameraSys.basis);
         if (Net.isGuest) Net.guestStep(DT); else Game.step(DT);
