@@ -18,10 +18,12 @@ try { ({ chromium } = await import('playwright')); } catch {
 
 const { server, port } = await serve(ROOT);
 const URL = `http://127.0.0.1:${port}/index.html`;
-// CI installs Playwright's own Chromium; a dev machine often already has Chrome and no reason to download
-// another 150MB. Take whichever is actually here.
+// A real Chrome first: it renders on the GPU. Playwright's default for headless is its headless shell, which
+// renders WebGL in software - installing that shell once dropped a live 5v5 from 60 FPS to 5 and failed every
+// timing test for a reason that had nothing to do with the game. CI has no Chrome and falls through to the
+// bundled browser, as before.
 async function launch() {
-  const tries = [{}, { channel: 'chrome' }, { channel: 'msedge' }];
+  const tries = [{ channel: 'chrome' }, { channel: 'chromium' }, {}, { channel: 'msedge' }];
   const problems = [];
   for (const opts of tries) {
     try { return await chromium.launch({ headless: !headed, ...opts }); }
@@ -512,6 +514,139 @@ await test('an ad never sits over a live court', async () => {
 });
 
 // ---------------------------------------------------------------- performance
+// ---------------------------------------------------------------- multiplayer
+// Two browsers, one lobby, joined by code the way a player does it. Lobbies are found through a stand-in nostr
+// relay (tests/nostr-relay.mjs) rather than the public ones, so these measure the game and not somebody else's
+// server - the public path is the same code with different URLs. The old version sat on "connecting" forever
+// whenever a network blocked peer-to-peer; these pin down that every way a join can end, ends fast and says why.
+const { startNostrRelay } = await import('./nostr-relay.mjs');
+const { startRelay } = await import('../relay/server.mjs');
+const nostr = await startNostrRelay();
+const mpBrowsers = [];
+async function mpPage(b, net) {
+  const ctx = await b.newContext({ viewport: { width: 1100, height: 700 } });
+  const page = await ctx.newPage(); open.add(page);
+  page.errors = []; page.on('pageerror', (e) => page.errors.push(String(e.message)));
+  await page.goto(URL); await page.waitForFunction(READY, null, { timeout: 20000 });
+  await page.evaluate((net) => { U.saveLS('hw_onboard', true); U.saveLS('hw_seen', true); UI.endOnboarding(); Object.assign(CONFIG.net, net); }, { nostrRelays: [nostr.url], ...net });
+  return page;
+}
+async function openLobby(host) {
+  await host.evaluate(() => Net.hostCreateLobby());
+  await host.waitForFunction(() => /lobby open/.test(Net.status()), null, { timeout: 10000 });
+  return host.evaluate(() => Net.lobby.code);
+}
+async function joinByCode(guest, code, ms) {
+  const t0 = Date.now();
+  await guest.evaluate((c) => Net.joinLobby(c), code);
+  await guest.waitForFunction(() => /in lobby|error/.test(Net.status()), null, { timeout: ms }).catch(() => {});
+  return { secs: (Date.now() - t0) / 1000, ...(await guest.evaluate(() => ({ status: Net.status(), error: Net.error, route: Net.route }))) };
+}
+// The host starts a 1v1; the guest must be handed its player, get snapshots, and move that player by pressing keys.
+async function playOneOnOne(host, guest) {
+  await host.evaluate(() => Main.startGame('1v1', 0, 1));
+  await guest.waitForFunction(() => Game.g.running && Game.g.human >= 0 && /snaps [1-9]/.test(Net.status()), null, { timeout: 15000 });
+  await guest.waitForTimeout(1300);
+  const id = await guest.evaluate(() => Game.g.human);
+  const at = () => host.evaluate((id) => [PlayerSys.players[id].x, PlayerSys.players[id].z], id);
+  const a = await at();
+  await guest.keyboard.down('KeyD'); await guest.keyboard.down('KeyW'); await guest.waitForTimeout(1500); await guest.keyboard.up('KeyD'); await guest.keyboard.up('KeyW');
+  const b = await at();
+  return Math.hypot(b[0] - a[0], b[1] - a[1]);
+}
+// A managed Chromebook can be given a policy that lets no UDP out; Chrome's headless shell honours the same
+// switch, which is the only way to put a school network on this machine.
+async function blockedBrowser() {
+  const args = ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp'];
+  try { return await chromium.launch({ channel: 'chromium-headless-shell', args }); } catch (e) { /* try an installed copy */ }
+  const { readdirSync, existsSync } = await import('node:fs'); const { homedir } = await import('node:os');
+  const base = process.env.PLAYWRIGHT_BROWSERS_PATH || join(homedir(), process.platform === 'darwin' ? 'Library/Caches/ms-playwright' : '.cache/ms-playwright');
+  for (const d of existsSync(base) ? readdirSync(base).filter((x) => x.startsWith('chromium_headless_shell')).sort().reverse() : []) {
+    for (const sub of readdirSync(join(base, d))) {
+      const exe = join(base, d, sub, process.platform === 'win32' ? 'chrome-headless-shell.exe' : 'chrome-headless-shell');
+      if (existsSync(exe)) return chromium.launch({ executablePath: exe, args });
+    }
+  }
+  throw new Error('needs Playwright\'s headless shell to simulate a blocked network: npx playwright install chromium-headless-shell');
+}
+
+await test('a guest joins a lobby by code in seconds, and its own keys move its player on the host', async () => {
+  const host = await mpPage(browser), guest = await mpPage(browser);
+  const code = await openLobby(host);
+  const j = await joinByCode(guest, code, 8000);
+  check.ok(/in lobby/.test(j.status), 'the guest never got into the lobby: ' + j.status + ' ' + j.error);
+  check.atMost(j.secs, 6, 'seconds from entering the code to being in the lobby');
+  check.equal(j.route, 'direct', 'two browsers on one machine should connect directly');
+  const moved = await playOneOnOne(host, guest);
+  check.atLeast(moved, 1.5, 'metres the guest\'s player moved on the host while the guest held a direction');
+  check.equal(host.errors.concat(guest.errors).length, 0, 'page errors: ' + host.errors.concat(guest.errors).join(' | '));
+  await host.context().close(); await guest.context().close(); open.delete(host); open.delete(guest);
+});
+
+await test('a code nobody is hosting says so within seconds, instead of spinning', async () => {
+  const guest = await mpPage(browser, { findTimeout: 3 });
+  const j = await joinByCode(guest, 'ZZZZZZZZ', 8000);
+  check.ok(/error/.test(j.status), 'a wrong code never ended: ' + j.status);
+  check.atMost(j.secs, 5, 'seconds before a wrong code was reported');
+  check.ok(/no lobby answered to ZZZZZZZZ/.test(j.error), 'the message should name the code: ' + j.error);
+  await guest.context().close(); open.delete(guest);
+});
+
+await test('a network that blocks UDP is told so at once, and plays through the relay when there is one', async () => {
+  const blocked = await blockedBrowser(); mpBrowsers.push(blocked);
+  // no relay: nothing can get through, so it must say that, now - not after a timeout
+  {
+    const host = await mpPage(browser), guest = await mpPage(blocked);
+    const code = await openLobby(host);
+    const j = await joinByCode(guest, code, 8000);
+    check.ok(/error/.test(j.status), 'a blocked network without a relay should fail: ' + j.status);
+    check.atMost(j.secs, 3.5, 'seconds before a blocked network was told');
+    check.ok(/blocks peer-to-peer/.test(j.error), 'the message should name the cause: ' + j.error);
+    await host.context().close(); await guest.context().close(); open.delete(host); open.delete(guest);
+  }
+  // with a relay: the same guest plays
+  const relay = await startRelay(0);
+  try {
+    const net = { relay: 'ws://127.0.0.1:' + relay.port };
+    const host = await mpPage(browser, net), guest = await mpPage(blocked, net);
+    const code = await openLobby(host);
+    const j = await joinByCode(guest, code, 8000);
+    check.ok(/in lobby/.test(j.status), 'the blocked guest never got in through the relay: ' + j.status + ' ' + j.error);
+    check.atMost(j.secs, 4, 'seconds for a blocked guest to get in through the relay');
+    check.equal(j.route, 'relay', 'the blocked guest should be on the relay');
+    const moved = await playOneOnOne(host, guest);
+    check.atLeast(moved, 1.5, 'metres the relayed guest\'s player moved on the host');
+    await host.context().close(); await guest.context().close(); open.delete(host); open.delete(guest);
+  } finally { relay.close(); }
+});
+await test('nobody can take over a relay room: a second host or a reused guest id is turned away', async () => {
+  // Found by review: the relay used to let a newcomer replace the host (or a guest) outright, and the guests
+  // never heard - they carried on talking to whoever had taken the slot.
+  const relay = await startRelay(0);
+  try {
+    const url = (role, id) => `ws://127.0.0.1:${relay.port}/?room=${'ab'.repeat(20)}&role=${role}&id=${id}`;
+    const connect = (role, id) => new Promise((res) => {
+      const ws = new WebSocket(url(role, id)); const got = []; let closed = null;
+      ws.onmessage = (m) => got.push(typeof m.data === 'string' ? m.data : '<bin>');
+      ws.onclose = (e) => { closed = e.code; };
+      ws.onopen = () => setTimeout(() => res({ ws, got, get closed() { return closed; } }), 150);
+      ws.onerror = () => {};
+    });
+    const host = await connect('host', 'host');
+    const guest = await connect('guest', 'g' + '1'.repeat(16));
+    const thief = await connect('host', 'host');
+    const twin = await connect('guest', 'g' + '1'.repeat(16));
+    await new Promise((r) => setTimeout(r, 200));
+    check.equal(host.closed, null, 'the real host was disconnected by a second one');
+    check.ok(thief.got.includes('{"t":"taken"}') && thief.closed === 4001, 'a second host should be refused: ' + thief.got.join(' ') + ' ' + thief.closed);
+    check.ok(twin.got.includes('{"t":"taken"}') && twin.closed === 4001, 'a reused guest id should be refused');
+    check.equal(guest.closed, null, 'the real guest was disconnected by a namesake');
+    for (const c of [host, guest]) c.ws.close();
+  } finally { relay.close(); }
+});
+for (const b of mpBrowsers) await b.close().catch(() => {});
+nostr.close();
+
 await test('holds its frame budget', async () => {
   const page = await fresh({ headless: false });
   await page.evaluate(() => { Main.startGame('5v5', 16, 21); });

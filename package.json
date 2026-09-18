@@ -5,13 +5,17 @@
   "description": "Arcade-sim basketball that runs from one HTML file. No build step.",
   "license": "MIT",
   "homepage": "https://theloyaltrojan.github.io/hardwood/",
-  "repository": { "type": "git", "url": "https://github.com/theloyaltrojan/hardwood.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/theloyaltrojan/hardwood.git"
+  },
   "scripts": {
     "serve": "node .claude/serve.js",
     "test": "node tests/run.mjs",
     "test:headed": "node tests/run.mjs --headed"
   },
   "devDependencies": {
-    "playwright": "^1.47.0"
+    "playwright": "^1.47.0",
+    "ws": "^8.21.3"
   }
 }
