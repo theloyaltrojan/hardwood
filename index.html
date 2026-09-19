@@ -143,15 +143,10 @@
   #menu { grid-template-rows: 1fr auto; }
   .adbar { grid-column: 1 / -1; }
   /* First launch has exactly one path through it, so everything that leads elsewhere is gone. */
-  body.onboarding .menu-nav, body.onboarding .adbar, body.onboarding .rail-foot { display: none; }
-  #adRail.on { margin: 22px 0 8px; border-top: 0; background: none; padding-left: 0; padding-right: 0; text-align: left; }
+  body.onboarding .menu-nav, body.onboarding .rail-foot { display: none; }
   .legal { padding: 7px 16px; border-top: 1px solid var(--line); text-align: center; font-size: 11px; color: var(--muted); }
   .legal a { color: inherit; }
   .legal a:hover { color: var(--ink); }
-  .adslot { display: none; max-width: 100%; overflow: hidden; text-align: center; }
-  .adslot.on { display: block; padding: 10px 16px; border-top: 1px solid var(--line); background: rgba(0,0,0,0.28); }
-  .adslot.on::before { content: 'Advertisement'; display: block; margin-bottom: 6px; color: var(--muted); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
-  #adFinal.on { margin-top: 18px; background: none; }
   .pane { max-width: 760px; animation: panein 0.22s cubic-bezier(0.2, 0.9, 0.2, 1); }
   @keyframes panein { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
   .pane-title { font-family: var(--display); font-size: 42px; text-transform: uppercase; line-height: 1; margin: 0 0 18px; }
@@ -421,7 +416,6 @@
       <button class="nav-item" data-nav="menuControls">Controls</button>
       <button class="nav-item" data-nav="menuSettings">Settings</button>
     </nav>
-    <div class="adslot" id="adRail" data-slot="menu" data-format="rectangle"></div>
     <div class="rail-foot"><b>One file, no assets.</b> Every court line, jersey, crowd member and sound is generated in code when the page loads.<span id="verTag"></span></div>
   </div>
   <div class="pane-wrap">
@@ -464,8 +458,7 @@
     </div>
   </div>
   <div class="adbar">
-    <div class="adslot" id="adMenu" data-slot="menu" data-format="horizontal"></div>
-    <div class="legal"><a href="privacy.html">Privacy</a> &middot; ads by Google</div>
+    <div class="legal"><a href="guide.html">How to play</a> &middot; <a href="privacy.html">Privacy</a></div>
   </div>
 </div>
 
@@ -541,8 +534,7 @@
   <div class="inner">
     <div class="title" id="finalTitle">Final</div>
     <div id="finalBody"></div>
-    <div class="row"><button class="btn primary" id="btnRematch"><span class="t">Rematch</span></button><button class="btn" id="btnFinalMenu"><span class="t">Main menu</span></button></div>
-    <div class="adslot" id="adFinal" data-slot="final" data-format="rectangle"></div>
+    <div class="row"><button class="btn primary" id="btnRematch"><span class="t">Rematch</span></button><button class="btn" id="btnFinalMenu"><span class="t">Main menu</span></button><button class="btn hidden" id="btnReward"><span class="t">Watch an ad</span></button></div>
   </div>
 </div>
 
@@ -631,21 +623,18 @@ ARCHITECTURE PLAN
 // ==== BEGIN CONFIG ====
 const VERSION = '1.3.0';
 const CONFIG = {
-  // Google AdSense. Paste the publisher id and the two slot ids from your AdSense account and the
-  // units turn themselves on; leave client empty and the game runs with no ad code at all — nothing
-  // is fetched, nothing is injected. Slots only ever live on the main menu and the final whistle,
-  // never over a live court. See README for the rest of what AdSense needs before this pays.
+  // Display ads live on the guide page (guide.html), never on the game's own screens. AdSense forbids them on
+  // menus, pause and post-game screens ("Google-served ads on screens without publisher-content"), and the site
+  // was flagged for exactly that in Sep 2026. The one approved way to show ads inside a game is Google's H5
+  // Games Ads (adBreak): the AdSense account has to apply for it and be approved. Set h5 only after that, and
+  // after excluding /hardwood/ from Auto ads - loading the tag here would otherwise let Auto ads over the game -
+  // and say so on privacy.html, which today tells players the game itself shows no ads.
   ads: {
     client: 'ca-pub-7516114040452296',
-    // A slot with no id is skipped, and the library is only fetched when a slot is about to be
-    // filled, so an empty one here costs nothing at all.
-    menuSlot: '2295316765',     // "Hardwood Menu" — responsive, in the rail or across the bottom
-    finalSlot: '2738617000',    // "Hardwood Final" — responsive, under the post-game buttons
-    minRefreshMs: 60000,        // a new whistle may fill a fresh unit, but not faster than this
-    // On a wide screen the menu unit goes in the dead space between the nav and the rail's footer.
-    // A short laptop has no such space, and off by default it stays ad-free rather than push Tip Off
-    // under the fold. Set true to take the banner anyway: more fill, one small scroll to start a game.
-    bottomBarOnDesktop: false,
+    h5: false,               // H5 Games Ads: an interstitial between games, and an opt-in rewarded ad for coins
+    h5Test: false,           // Google's test mode: mock ads, for trying the flow before approval. Never ship on.
+    rewardCoins: 50,         // what a watched rewarded ad pays; rewards must be in-game and non-transferable
+    frequencyHint: '120s',   // Google's default; it may be overridden server-side and cannot go under 30s
   },
   physics: { hz: 120, maxSteps: 6, gravity: -9.81 },
   court: {
@@ -3730,15 +3719,19 @@ const Game = (() => {
       if (p.state === ST.SHOOT) Shooting.update(p, dt, g);
       if (inp.passTo) request(p, 'pass' + inp.passTo, g);
       else if (inp.pass) request(p, 'pass', g);
+      // The fakes come before the moves that share their keys: R is both 'fake' and 'hesi', Q both 'pump' and
+      // 'move'. The other order made the pump fake unreachable on the default keys - R was always a
+      // hesitation and Q always a dribble move - though the HUD and the tutorial both say R fakes. 'fake'
+      // already turns into a hesitation on the move, so nothing R used to do is lost.
       if (inp.juke) request(p, 'juke', g);
+      else if (inp.fake) request(p, 'fake', g);
+      else if (inp.pump) request(p, 'pump', g);
       else if (inp.move) request(p, 'move', g);
       else if (inp.sidestep) request(p, 'sidestep', g);
       else if (inp.crossover) request(p, 'crossover', g);
       else if (inp.stepback) request(p, 'stepback', g);
       else if (inp.spin) request(p, 'spin', g);
       else if (inp.hesi) request(p, 'hesi', g);
-      else if (inp.pump) request(p, 'pump', g);
-      else if (inp.fake) request(p, 'fake', g);
     } else {
       if (inp.shootPressed && !p.airborne && (p.state === ST.IDLE || p.state === ST.MOVE)) { PlayerSys.jump(p, PC.jumpVel * (0.85 + 0.35 * p.ratings.vertical / 99)); PlayerSys.setState(p, ST.JUMP); p.armsUp = true; }
       // on defense the pass button is the steal button, so there is one fewer key to learn
@@ -5669,93 +5662,70 @@ function init(container) {
 // ==== END RENDER ====
 
 // ==== BEGIN ADS ====
-// Google AdSense, kept at arm's length from the game.
+// Ads inside the game, the only way Google allows them there: H5 Games Ads (the Ad Placement API).
 //
-// Three rules shape this. AdSense forbids ads that sit over or interfere with what you came for,
-// so units only ever exist on the main menu and the final-whistle card and never on a live court
-// or the pause menu, where they would sit next to Resume and Quit and collect misclicks. It
-// forbids refreshing an ad without a user action, so a unit fills once and a new whistle may fill
-// a fresh one no sooner than CONFIG.ads.minRefreshMs. And the whole thing has to be invisible when
-// it is off: with no publisher id nothing is fetched, nothing is injected, and the slots collapse.
+// No display units anywhere in the game. A menu, a pause screen or a final-whistle card is not "publisher
+// content" to AdSense, and the site was flagged for ads on them; display ads belong on guide.html, next to
+// the writing. What this module does instead, and only with CONFIG.ads.h5 on:
+//   - 'next': a full-screen ad at a natural break - leaving the final-whistle card - never during play.
+//   - 'reward': an opt-in ad on that card that pays coins, offered only when Google has one ready.
+// With h5 off (the default) it loads nothing at all, so Auto ads cannot reach the game either.
 //
-// An ad blocker, an offline tab or an unfilled slot all land in the same place — an empty div that
-// `.adslot:empty` hides — so the layout never depends on Google answering.
+// Google's API has a trap, measured Sep 2026: for an account not approved for H5, adBreak() is accepted and
+// then nothing ever happens - no ad, no error, and no adBreakDone, although the docs say it is always called.
+// So nothing here ever waits on an ad unless adConfig's onReady has fired, and even then only up to a limit.
 const Ads = (() => {
   const A = CONFIG.ads;
-  const on = () => typeof A.client === 'string' && A.client.indexOf('ca-pub-') === 0;
-  const slotId = (name) => (name === 'final' ? A.finalSlot : A.menuSlot);
-  let asked = false;
-  const filled = Object.create(null);           // slot name -> when it last took an impression
+  let loaded = false, ready = false;
+  const push = (o) => { try { (window.adsbygoogle = window.adsbygoogle || []).push(o); } catch (e) { /* blocked */ } };
+  const soundOn = () => (typeof Game === 'undefined' || !Game.settings) ? true : Game.settings.sfx !== false && Game.settings.volume > 0;
+  const hush = () => AudioSys.setVolume(0);
+  const unhush = () => AudioSys.setVolume(Game.settings ? Game.settings.volume : 0.8);
 
-  // The library is only fetched the first time a unit is actually shown, so it never competes with
-  // boot or with a live game for bandwidth or main-thread time.
-  function library() {
-    if (asked || !on()) return;
-    asked = true;
+  function init() {
+    if (loaded || !A.h5 || typeof A.client !== 'string' || A.client.indexOf('ca-pub-') !== 0) return;
+    loaded = true;
     const sc = document.createElement('script');
     sc.async = true; sc.crossOrigin = 'anonymous';
+    sc.setAttribute('data-ad-frequency-hint', A.frequencyHint || '120s');
+    if (A.h5Test) sc.setAttribute('data-adbreak-test', 'on');
     sc.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + encodeURIComponent(A.client);
-    document.head.appendChild(sc);              // onerror needs no handler: the slot simply stays empty
+    document.head.appendChild(sc);
+    push({ preloadAdBreaks: 'on', sound: soundOn() ? 'on' : 'off', onReady: () => { ready = true; } });
+  }
+  const live = () => ready && !(typeof Net !== 'undefined' && Net.active);   // never hold up a multiplayer lobby
+
+  // Leaving the final-whistle card: the ad, if there is one, then carry on. `go` always runs exactly once.
+  function between(name, go) {
+    if (!live()) { go(); return; }
+    let done = false; const finish = () => { if (done) return; done = true; clearTimeout(cap); unhush(); go(); };
+    const cap = setTimeout(finish, 45000);   // a backstop, not a timer anyone should ever see
+    push({ type: 'next', name, beforeAd: hush, afterAd: unhush, adBreakDone: finish });
   }
 
-  const collapse = (host) => { host.classList.remove('on'); host.innerHTML = ''; };
-
-  // An <ins> can only ever be filled once, so showing a unit again means building a fresh one.
-  function place(host, name) {
-    const ins = document.createElement('ins');
-    ins.className = 'adsbygoogle';
-    ins.style.display = 'block';
-    ins.setAttribute('data-ad-client', A.client);
-    ins.setAttribute('data-ad-slot', slotId(name));
-    ins.setAttribute('data-ad-format', host.dataset.format || 'auto');
-    ins.setAttribute('data-full-width-responsive', 'true');
-    host.innerHTML = '';
-    host.classList.add('on');                   // has to be laid out before AdSense measures it
-    host.appendChild(ins);
-    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); }
-    catch (e) { collapse(host); return; }       // blocked outright
-    // Blocked, offline and unfilled all end the same way: take the space back.
-    setTimeout(() => { if (ins.dataset.adStatus === 'unfilled' || !ins.offsetHeight) collapse(host); }, 4000);
-  }
-
-  // Nothing on the menu is allowed to be pushed under the fold for an ad. On a narrow screen the rail
-  // is a header and the pane is already a scrolling list, so a bar across the bottom costs nothing. On
-  // a wide one the unit goes in the dead space between the nav and the rail's footer — measured, not
-  // guessed, because that gap is what a laptop actually has — and the format is chosen to fit it. Too
-  // short for even a banner and the menu simply carries no ad; the post-game slot still runs.
-  function menuHost() {
-    if (window.innerWidth <= 900) return 'adMenu';
-    const rail = document.querySelector('#menu .rail');
-    const nav = rail && rail.querySelector('.menu-nav');
-    const foot = rail && rail.querySelector('.rail-foot');
-    const host = document.getElementById('adRail');
-    if (!nav || !foot || !host) return '';
-    const gap = foot.offsetTop - (nav.offsetTop + nav.offsetHeight);
-    if (gap >= 300) { host.dataset.format = 'rectangle'; return 'adRail'; }
-    if (gap >= 150) { host.dataset.format = 'horizontal'; return 'adRail'; }
-    return A.bottomBarOnDesktop ? 'adMenu' : '';
-  }
-
-  // `name` is the slot; the host must already be on screen, because AdSense measures the space it
-  // has at push time and a unit pushed inside a hidden overlay is stuck at zero width forever.
-  function show(name) {
-    if (!on() || !slotId(name)) return;
-    // Never on a first launch. It used to stay out only because onboarding happened to hide both hosts.
-    if (document.body.classList.contains('onboarding')) return;
-    const host = document.getElementById(name === 'final' ? 'adFinal' : menuHost());
-    if (!host) return;
-    const last = filled[name] || 0;
-    if (last && Date.now() - last < A.minRefreshMs) return;
-    if (last && host.firstChild) return;        // already carrying a unit: leave it alone
-    library();
-    requestAnimationFrame(() => {               // one frame so the overlay it lives in has laid out
-      const box = host.parentElement || host;   // the host itself is collapsed until a unit lands in it
-      if (!box.offsetWidth) return;
-      filled[name] = Date.now();
-      place(host, name);
+  // The opt-in reward on the final card. The button only appears once Google says an ad is ready to show, the
+  // reward is stated on it before anything plays, and skipping it costs nothing.
+  let rewardBtn = null;
+  function offerReward(btn) {
+    rewardBtn = btn; btn.classList.add('hidden'); btn.onclick = null;
+    if (!live() || !A.rewardCoins) return;
+    push({
+      type: 'reward', name: 'final_whistle_coins',
+      beforeReward: (showAdFn) => {
+        if (rewardBtn !== btn) return;
+        btn.querySelector('.t').textContent = 'Watch an ad: +' + A.rewardCoins + ' coins';
+        btn.classList.remove('hidden');
+        btn.onclick = () => { btn.onclick = null; showAdFn(); };
+      },
+      beforeAd: hush, afterAd: unhush,
+      adViewed: () => { Bank.award(A.rewardCoins, 'reward'); },
+      adDismissed: () => { /* skipped: no reward, and no penalty */ },
+      adBreakDone: () => { btn.classList.add('hidden'); btn.onclick = null; },
     });
   }
-  return { show, get enabled() { return on(); } };
+  function withdrawReward() { if (rewardBtn) { rewardBtn.classList.add('hidden'); rewardBtn.onclick = null; rewardBtn = null; } }
+  function setSound() { if (loaded) push({ sound: soundOn() ? 'on' : 'off' }); }
+  return { init, between, offerReward, withdrawReward, setSound, get ready() { return ready; }, get loaded() { return loaded; } };
 })();
 // ==== END ADS ====
 
@@ -5793,8 +5763,9 @@ const UI = (() => {
     $('btnQuit').onclick = () => hooks.quit();
     $('btnSpectate').onclick = () => { const on = Game.g.humanTeam >= 0; Game.setSpectate(on); $('btnSpectate').textContent = 'CPU plays for me: ' + (on ? 'on' : 'off'); AudioSys.play('ui'); };
     $('btnFirstOk').onclick = () => { el.firstrun.classList.add('hidden'); U.saveLS('hw_seen', true); hooks.resume(); };
-    $('btnRematch').onclick = () => hooks.rematch();
-    $('btnFinalMenu').onclick = () => hooks.quit();
+    // leaving the final card is the natural break in a game - the one place an ad may go (see Ads)
+    $('btnRematch').onclick = () => { Ads.withdrawReward(); Ads.between('rematch', () => hooks.rematch()); };
+    $('btnFinalMenu').onclick = () => { Ads.withdrawReward(); Ads.between('final_to_menu', () => hooks.quit()); };
     // Chat takes the keyboard while it is open, so typing never reaches the game.
     el.parkInput.onkeydown = (e) => {
       e.stopPropagation();
@@ -5819,7 +5790,7 @@ const UI = (() => {
     const map = { pauseHome: 'btnResume', pauseControls: 'btnPauseControls', pauseSettings: 'btnPauseSettings' };
     for (const k in map) $(map[k]).classList.toggle('sel', k === sub);
   }
-  function showMenu() { el.menu.classList.remove('hidden'); Ads.show('menu'); show('menuHome'); el.pause.classList.add('hidden'); el.final.classList.add('hidden'); hideHUD(); gridSide = -1; renderTeamGrid(); renderMatchup(); }
+  function showMenu() { el.menu.classList.remove('hidden'); show('menuHome'); el.pause.classList.add('hidden'); el.final.classList.add('hidden'); hideHUD(); gridSide = -1; renderTeamGrid(); renderMatchup(); }
   function hideMenu() { el.menu.classList.add('hidden'); }
   function showPause(on) {
     el.pause.classList.toggle('hidden', !on);
@@ -5833,7 +5804,7 @@ const UI = (() => {
     // A career game is already in the books, so replaying it is not on offer.
     $('btnRematch').classList.toggle('hidden', Net.isGuest || Game.g.career);
     $('btnFinalMenu').querySelector('.t').textContent = Game.g.career ? 'Back to MyCareer' : 'Main menu';
-    Ads.show('final');
+    Ads.offerReward($('btnReward'));
   }
   function openNet() { showMenu(); show('menuNet'); }
   // Game-start wipe: two slanted slabs cross the screen; the scene swaps while they cover it.
@@ -6547,6 +6518,9 @@ const Net = (() => {
   const rid = (n) => hexOf(crypto.getRandomValues(new Uint8Array(n)));
   const sig = { libP: null, schnorr: null, sk: null, pk: '', socks: new Map(), topic: '', kind: 0, key: null, room: '', onMsg: null, seen: new Set(), sub: '' };
   function sigLib() {
+    // WebCrypto only exists in a secure context: https, or localhost. Served over plain http from anywhere else
+    // (a LAN address, say), there is nothing to derive the lobby key with, so say that rather than crash.
+    if (!window.crypto || !crypto.subtle) return Promise.reject(new Error('multiplayer needs the page served over https (or from localhost) - this address is plain http'));
     if (!sig.libP) sig.libP = import(NC.nostrLib).then((m) => { sig.schnorr = m.schnorr; const k = m.schnorr.keygen(); sig.sk = k.secretKey; sig.pk = hexOf(k.publicKey); })
       .catch((e) => { sig.libP = null; throw new Error('could not load the matchmaking code from cdn.jsdelivr.net - is it blocked here?'); });
     return sig.libP;
@@ -7423,6 +7397,7 @@ const Main = (() => {
     Bank.applyEquipped();
     Render.buildArena(TEAMS[0], TEAMS[1]);
     UI.init({ startGame, startTutorial, resume, quit, rematch, applySettings, firstGame });
+    Ads.init();   // nothing, unless H5 Games Ads is switched on (CONFIG.ads.h5)
     applySettings();
     const wake = () => { AudioSys.init(); AudioSys.resume(); };
     window.addEventListener('pointerdown', wake); Input.onAny(wake);
@@ -7448,7 +7423,7 @@ const Main = (() => {
   // Clear the boot overlay only once a frame has genuinely been drawn, not merely when init returned.
   let firstFrame = false;
 function applySettings(key) {
-	     const s = Game.settings; AudioSys.setVolume(s.volume); CameraSys.setMode(s.camera); CONFIG.shooting.greenAuto = s.greenAuto;
+	     const s = Game.settings; AudioSys.setVolume(s.volume); Ads.setSound(); CameraSys.setMode(s.camera); CONFIG.shooting.greenAuto = s.greenAuto;
 	     if (key === 'shadows' || key == null) { CONFIG.render.shadows = s.shadows; Render.setShadows(s.shadows); }
 	     if (key === 'difficulty') Game.g.aiDiff = s.difficulty;
 	   }

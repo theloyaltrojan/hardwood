@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Play Hardwood Legends</title>
+<meta name="description" content="The complete guide to Hardwood Legends, a free browser basketball game: controls, the shot meter, dribble moves, defense, MyCareer builds, MyPark, the store and multiplayer.">
+<meta name="google-adsense-account" content="ca-pub-7516114040452296">
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7516114040452296" crossorigin="anonymous"></script>
+<style>
+  :root { --bg: #0b0d12; --ink: #f3f0e7; --muted: #8b909a; --line: rgba(255,255,255,0.1); --accent: #ffc400; --panel: #141821; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 56px 20px 96px; background: var(--bg); color: var(--ink);
+         font: 16px/1.7 Inter, -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 38px; letter-spacing: -0.02em; line-height: 1.1; margin: 0 0 10px; }
+  h2 { font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 48px 0 10px; }
+  h3 { font-size: 18px; margin: 28px 0 6px; }
+  p, li, td { color: #d7d4cc; }
+  .sub { color: var(--muted); margin: 0 0 22px; }
+  a { color: var(--accent); }
+  ul, ol { padding-left: 22px; }
+  li { margin: 4px 0; }
+  kbd { display: inline-block; min-width: 26px; padding: 1px 7px; border: 1px solid var(--line); border-bottom-width: 2px;
+        border-radius: 4px; background: var(--panel); font: 600 13px/1.6 ui-monospace, Menlo, Consolas, monospace; text-align: center; color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 6px; font-size: 15px; }
+  td, th { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .play { display: inline-block; margin: 6px 0 4px; padding: 12px 22px; background: var(--accent); color: #111; font-weight: 800;
+          text-decoration: none; letter-spacing: 0.04em; text-transform: uppercase; transform: skewX(-8deg); }
+  .toc { background: var(--panel); border-left: 4px solid var(--accent); padding: 12px 18px; margin: 26px 0; }
+  .toc ol { margin: 6px 0 0; columns: 2; column-gap: 28px; }
+  .tip { background: var(--panel); border-left: 4px solid #4ade80; padding: 10px 16px; margin: 16px 0; }
+  .ad { margin: 0; }
+  .ad:has(ins[data-ad-status="filled"]) { margin: 36px 0; padding-top: 10px; border-top: 1px solid var(--line); }
+  .ad:has(ins[data-ad-status="filled"])::before { content: 'Advertisement'; display: block; color: var(--muted); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 6px; }
+  ins.adsbygoogle[data-ad-status="unfilled"] { display: none !important; }
+  footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+  @media (max-width: 560px) { h1 { font-size: 30px; } .toc ol { columns: 1; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>How to play Hardwood Legends</h1>
+  <p class="sub">The complete guide · updated 18 September 2026</p>
+  <p>Hardwood Legends is a free arcade-sim basketball game that runs in your browser: 1v1, 3v3 and full 5v5,
+     a career mode where you build one player from a rookie, a walkable park, and online games with friends
+     by lobby code. There is nothing to install and no account. You need a computer with a keyboard: there are
+     no touch controls yet, so it can't be played on a phone or tablet. This guide covers everything the game
+     does, from your first possession to building a player who wins playoff games.</p>
+  <p><a class="play" href="./">Play now</a></p>
+
+  <nav class="toc" aria-label="Contents">
+    <strong>Contents</strong>
+    <ol>
+      <li><a href="#start">Your first game</a></li>
+      <li><a href="#controls">Controls</a></li>
+      <li><a href="#shooting">Shooting and the meter</a></li>
+      <li><a href="#dribble">Dribble moves</a></li>
+      <li><a href="#passing">Passing</a></li>
+      <li><a href="#defense">Defense</a></li>
+      <li><a href="#stamina">Stamina and sprinting</a></li>
+      <li><a href="#modes">Game modes</a></li>
+      <li><a href="#career">MyCareer and builds</a></li>
+      <li><a href="#coins">Coins and the store</a></li>
+      <li><a href="#multiplayer">Playing with friends</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="start">Your first game</h2>
+  <p>The first time you open the game you build a player: name, position, height, jersey number, look and
+     an <a href="#career">archetype</a>. Then you pick the club you sign with, and you're dropped straight
+     into a real game against the CPU. That game is the tutorial. There is no empty practice gym to sit through.
+     Instead, whenever a mechanic is the right answer to what's happening on the floor, the game slows down,
+     tells you the key, and speeds back up once you've used it.</p>
+  <p>Lessons arrive in roughly the order you'll need them. Movement comes first, then passing when a team-mate
+     is open, the crossover when a defender is mirroring you, contests and steals on defense, and so on.
+     At most three lessons come each quarter, so most of the game is still just basketball. Nothing can be
+     failed: if you ignore a prompt, the game carries on at full speed after a few seconds.</p>
+
+  <h2 id="controls">Controls</h2>
+  <p>These are the defaults. Every one of them can be changed on the <em>Controls</em> screen, which also
+     switches between the <strong>Simple</strong> scheme (the default), where the arrow keys do every dribble
+     move, and <strong>Advanced</strong>, which shows a separate key for each move. The keys from both schemes
+     work whichever one is showing.</p>
+  <table>
+    <tr><th>Action</th><th>Key</th></tr>
+    <tr><td>Move</td><td><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></td></tr>
+    <tr><td>Sprint</td><td><kbd>Shift</kbd></td></tr>
+    <tr><td>Shoot or dunk: hold, then release</td><td><kbd>Space</kbd></td></tr>
+    <tr><td>Pass to whoever is best placed</td><td><kbd>E</kbd></td></tr>
+    <tr><td>Pass to a position (1 = point guard … 5 = centre)</td><td><kbd>1</kbd>–<kbd>5</kbd></td></tr>
+    <tr><td>Dribble move: the arrow you press picks it</td><td>Arrow keys</td></tr>
+    <tr><td>Crossover · spin · stepback · sidestep (Advanced)</td><td><kbd>C</kbd> <kbd>Z</kbd> <kbd>V</kbd> <kbd>X</kbd></td></tr>
+    <tr><td>Fake: a hesitation on the move, a pump fake standing still</td><td><kbd>R</kbd></td></tr>
+    <tr><td>Pump fake (Advanced)</td><td><kbd>Q</kbd></td></tr>
+    <tr><td>Steal (on defense)</td><td><kbd>E</kbd>, or <kbd>F</kbd></td></tr>
+    <tr><td>Switch to another player (on defense)</td><td><kbd>Tab</kbd></td></tr>
+    <tr><td>Pause</td><td><kbd>Esc</kbd></td></tr>
+  </table>
+  <p>By default the camera sits behind your player, looking toward the basket your team is attacking, the way
+     2K's end-court view does, so up is toward that basket. When the ball changes hands it swings round to the
+     other end. <em>Settings</em> also has a side-on broadcast camera.</p>
+
+  <div class="ad"><ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-7516114040452296" data-ad-slot="2295316765" data-ad-format="auto" data-full-width-responsive="true"></ins></div>
+  <script>(window.adsbygoogle = window.adsbygoogle || []).push({});</script>
+
+  <h2 id="shooting">Shooting and the meter</h2>
+  <p>Hold <kbd>Space</kbd> to rise into your shot and a meter fills beside your player. Let go when it reaches
+     the marked point, about 70% of the way up, and the meter flashes green. With the default settings
+     (<em>Perfect release = auto make</em> on, and meter shot timing rather than Assisted), a green release
+     always goes in. Release early or late and the shot still counts. It just becomes a roll of the dice,
+     weighted by how close you were and everything below.</p>
+  <ul>
+    <li><strong>Your rating sets the speed.</strong> A player with a high three-point rating gets a slower,
+        easier meter from deep than one who rarely shoots them. The same goes for mid-range and close shots.</li>
+    <li><strong>Tired legs rush it.</strong> Below about a third of your stamina the meter runs faster, so
+        greens get harder exactly when you've been sprinting all quarter.</li>
+    <li><strong>Space matters more than anything.</strong> How open you are decides a jumper. An open look
+        barely loses anything, while a hand in your face costs a lot. Use a move to create space first.</li>
+    <li><strong>Range.</strong> Past the arc and deeper, even a good release falls off quickly. Heaves from
+        your own half are for the buzzer only.</li>
+  </ul>
+  <p>Close to the rim, holding <kbd>Space</kbd> while driving turns the shot into a layup or dunk, depending on
+     your dunk rating, your speed and how much room there is. Free throws use the same meter, with no
+     defender and no clock.</p>
+  <div class="tip"><strong>Tip.</strong> A pump fake (<kbd>R</kbd> while standing still) as a defender closes out
+     gets them in the air. Wait for them to fly by, then shoot the open look or drive past.</div>
+
+  <h2 id="dribble">Dribble moves</h2>
+  <p>Moves are how you beat a defender one-on-one. Each takes a moment to perform and has a short cooldown, so
+     timing beats spamming. A move made while the defender is mirroring you, matching your feet, is the
+     one that sends them stumbling.</p>
+  <p>With the Simple scheme, press an arrow key and the direction picks the move: toward the basket to spin
+     past, away from it to step back, and across you for a crossover (or a sidestep when you're moving fast).</p>
+  <h3>Crossover <kbd>C</kbd></h3>
+  <p>Switches the ball to your other hand and changes direction. Use it when a defender is shading one way.
+     It's the quickest move and the easiest to chain.</p>
+  <h3>Spin <kbd>Z</kbd></h3>
+  <p>Turns you around your defender. It's slower to start, but it carries you past a defender who's pressed up
+     on you, which makes it the move for getting to the rim.</p>
+  <h3>Stepback <kbd>V</kbd></h3>
+  <p>Hops away from the defender to create room for a jumper. Shoot straight out of it, before they recover.</p>
+  <h3>Sidestep <kbd>X</kbd> and hesitation <kbd>R</kbd> on the move</h3>
+  <p>The sidestep slides you laterally out of a crowded lane. The hesitation is a hard stop-and-go that
+     freezes a defender who is backpedalling, and it combines well with a sprint afterwards.</p>
+
+  <h2 id="passing">Passing</h2>
+  <p><kbd>E</kbd> passes to a nearby open team-mate, favouring whoever is in the direction you're pushing, and
+     never to someone behind you when you're steering. For a specific player, press their position number: <kbd>1</kbd> is the point guard,
+     <kbd>2</kbd> the shooting guard, <kbd>3</kbd> the small forward, <kbd>4</kbd> the power forward and
+     <kbd>5</kbd> the centre. A number never passes to yourself.</p>
+  <p>Passes can be intercepted. A long pass across a defender's lane is a turnover waiting to happen, so move
+     the ball quickly and to the side the defense isn't leaning toward. Assists pay coins, and in MyCareer
+     they pay a lot of XP.</p>
+
+  <div class="ad"><ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-7516114040452296" data-ad-slot="2738617000" data-ad-format="auto" data-full-width-responsive="true"></ins></div>
+  <script>(window.adsbygoogle = window.adsbygoogle || []).push({});</script>
+
+  <h2 id="defense">Defense</h2>
+  <ul>
+    <li><strong>Stay between your man and the basket.</strong> Your player defends automatically when you stop
+        steering, but you choose where the pressure goes.</li>
+    <li><strong>Contest shots.</strong> Being close with a hand up when the shooter releases is what lowers
+        their percentage. You don't need to block it to change it.</li>
+    <li><strong>Steal (<kbd>E</kbd> or <kbd>F</kbd>) carefully.</strong> A well-timed poke at the dribble takes the ball. A
+        reckless one is a reach-in foul, and six fouls end a player's night.</li>
+    <li><strong>Blocks</strong> come from jumping (<kbd>Space</kbd> on defense) at a shooter or a player
+        finishing at the rim. Leaving your feet early gets you beaten on a pump fake.</li>
+    <li><strong>Switch (<kbd>Tab</kbd>)</strong> to control whichever of your team-mates is nearest the
+        ball, and take over the defender who is actually in the play.</li>
+  </ul>
+
+  <h2 id="stamina">Stamina and sprinting</h2>
+  <p>Sprinting (<kbd>Shift</kbd>) is faster but drains stamina, and so do moves and jumps. The bar under your
+     player card shows it. A tired player moves slower, finishes worse and gets a rushed shot meter, and an
+     empty tank means a short spell of being winded. Walk the ball up, save sprints for the fast break and the
+     drive, and you'll have legs in the fourth quarter. The CPU plays by the same rules, which is why its
+     players stop sprinting everywhere late in games.</p>
+
+  <h2 id="modes">Game modes</h2>
+  <h3>Play: 1v1, 3v3 and 5v5</h3>
+  <p>Pick any two of the 30 clubs and go. 1v1 and 3v3 are half-court, first to 21, with a 14-second shot clock.
+     5v5 is full court with four quarters, a 24-second shot clock, fouls and free throws. Quarter length and
+     difficulty are in <em>Settings</em>. There's also the <strong>Gym</strong>: an empty court with unlimited
+     shots and no clock, for practising your release.</p>
+  <h3>MyPark</h3>
+  <p>A walkable outdoor park with courts. Walk onto a free pad and press <kbd>Space</kbd> to claim it, and a game
+     tips off when every pad on that court is taken. It's player-only, so everyone you see there is a real person connected with you.
+     There's also a chat.</p>
+  <h3>Multiplayer</h3>
+  <p>Lobbies with a join code. See <a href="#multiplayer">Playing with friends</a>.</p>
+
+  <h2 id="career">MyCareer and builds</h2>
+  <p>MyCareer follows the player you created through full seasons, playoffs and off-seasons. You choose an
+     archetype when you build them, and it sets how high each group of skills can ever go:</p>
+  <table>
+    <tr><th>Archetype</th><th>Best at</th><th>Weakest at</th></tr>
+    <tr><td>Slasher</td><td>Finishing and athleticism (99)</td><td>Rebounding (74)</td></tr>
+    <tr><td>Sharpshooter</td><td>Shooting (99)</td><td>Rebounding (72)</td></tr>
+    <tr><td>Floor General</td><td>Playmaking (99)</td><td>Rebounding (72)</td></tr>
+    <tr><td>Lockdown</td><td>Defense (99)</td><td>Playmaking (82)</td></tr>
+    <tr><td>Glass Cleaner</td><td>Rebounding (99), finishing (96)</td><td>Playmaking (74)</td></tr>
+    <tr><td>Two-Way Wing</td><td>Everything around 92</td><td>No real weakness, no superpower</td></tr>
+  </table>
+  <p>You improve by playing. After every game you earn XP from your own box score: points, rebounds and
+     assists, plus big rewards for steals and blocks, and a bonus for winning and for your game grade.
+     Turnovers and missed shots cost XP, so a careless 30-point night can be worth less than an efficient
+     15. Playoff games pay one and a half times as much. XP buys upgrades, and each point costs more the
+     higher the skill already is. Your overall rating rises as the skills that matter for your position rise.</p>
+  <div class="tip"><strong>Tip.</strong> Height matters on both ends. A taller player reaches higher for
+     blocks and rebounds, contests shots better, is harder to contest, and finishes through contact with more
+     power. Your position sets the range you can pick from. Ratings come from your archetype and upgrades,
+     not your height.</div>
+
+  <h2 id="coins">Coins and the store</h2>
+  <p>Coins come from real games, not the practice gym, and only for the player you control: 55 for a two, 95 for a
+     three, 130 for a dunk, 110 for a block, 85 for a steal and 45 for an assist, with bonuses for perfect
+     releases and tough shots, plus 750 for a win or 220 for a loss. A daily reward of 300 grows with each
+     consecutive day for up to a week. The empty practice gym pays nothing. Everything in the store is cosmetic:
+     ball skins and trail effects. Nothing you can buy makes your player better.</p>
+
+  <h2 id="multiplayer">Playing with friends</h2>
+  <ol>
+    <li>Open <em>Multiplayer</em>. The panel checks your network straight away and says whether direct
+        connections work from it.</li>
+    <li>One person presses <em>Create lobby</em> and shares the 8-character code.</li>
+    <li>Everyone else types the code and presses <em>Join lobby</em>. Each stage shows on screen with a timer,
+        and joining usually takes about a second.</li>
+    <li>Pick sides (up to five people per team, and the CPU fills empty spots), choose a mode, and the host
+        presses <em>Start game</em>.</li>
+  </ol>
+  <p>Games are peer-to-peer: players connect directly to the host. Some networks don't allow that. School
+     Chromebooks often block the kind of traffic it needs, and two phones on mobile data often can't reach
+     each other. When that happens the game tells you so within seconds, instead of leaving you on
+     "connecting". If you're on a network like that, try joining from home Wi-Fi or a phone hotspot.</p>
+
+  <h2 id="faq">FAQ</h2>
+  <h3>Where is my save?</h3>
+  <p>In your browser's own storage on your device. There is no account and nothing is uploaded. Clearing this
+     site's data in your browser deletes your career and coins, and a different browser or device starts
+     fresh. The <a href="privacy.html">privacy page</a> lists exactly what is kept.</p>
+  <h3>Does it work on a Chromebook?</h3>
+  <p>Yes. Everything except multiplayer works on any recent Chromebook. For multiplayer, see
+     <a href="#multiplayer">above</a>. A school-managed Chromebook may block it, and the game will say so.</p>
+  <h3>The game runs slowly. What can I do?</h3>
+  <p>Leave real-time shadows off in <em>Settings</em> (they're off by default), close other tabs, and make
+     sure your browser has hardware acceleration turned on. The game targets 60 frames per second on a typical
+     laptop, and most of the cost is the 3D arena.</p>
+  <h3>Can I play with a controller?</h3>
+  <p>Not yet. The game needs a keyboard, and there's no controller or touch support, so phones and tablets
+     can't play it. Every key can be remapped on the <em>Controls</em> screen.</p>
+
+  <p><a class="play" href="./">Play Hardwood Legends</a></p>
+
+  <footer>
+    <a href="./">Play</a> · <a href="privacy.html">Privacy</a> · <a href="https://theloyaltrojan.github.io/">theloyaltrojan</a>
+  </footer>
+</main>
+</body>
+</html>

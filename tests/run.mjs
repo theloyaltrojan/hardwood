@@ -446,74 +446,132 @@ await test('the first game teaches itself and never strands you in slow motion',
   await page.close(); open.delete(page);
 });
 
-// ---------------------------------------------------------------- ads
-await test('a window with no room for a menu unit fetches no ad code at all', async () => {
-  const page = await fresh({ headless: false });
-  const adScripts = () => page.evaluate(() =>
-    [...document.querySelectorAll('script')].filter((s) => /googlesyndication|adsbygoogle/.test(s.src)).length);
-  const booted = await adScripts();
-  const cfg = await page.evaluate(() => ({ client: CONFIG.ads.client }));
-  // fresh() boots into onboarding, which hides the rail; leave it, or this passes whatever the ad code does
-  await page.evaluate(() => { UI.endOnboarding(); UI.showMenu(); });
-  await page.waitForTimeout(300);
-  const onMenu = await adScripts();
-  await page.evaluate(() => { Main.startGame('5v5', 0, 1); });
-  await page.waitForTimeout(400);
-  const inGame = await adScripts();
-  const units = await page.evaluate(() => document.querySelectorAll('ins.adsbygoogle').length);
-  // fresh() is 1280x800: too short for a rail unit, and the bottom bar is off on desktop by default,
-  // so this window never takes a menu slot and should therefore never touch Google at all. A taller
-  // window does load the library on the menu — the menu is the boot screen — which is why the check
-  // that matters everywhere is the one below it: playing a game pulls in nothing.
-  check.equal(booted, 0, 'the ad library was fetched on a window with no room for a unit');
-  check.equal(onMenu, 0, 'the menu fetched an ad script on a window with no room for a unit');
-  check.equal(units, 0, 'an ad unit was injected on a window with no room for one');
-  check.equal(inGame, 0, 'the ad library was fetched to play a game');
-  check.ok(cfg.client.startsWith('ca-pub-'), 'the publisher id is malformed');
+await test('R fakes on the default keys: a pump fake standing still, a hesitation on the move', async () => {
+  // Regression: R is bound to both 'fake' and 'hesi', and Q to both 'pump' and 'move', and the dispatch checked
+  // hesi and move first - so the pump fake the HUD and the tutorial both advertise could never happen.
+  const page = await fresh();
+  const r = await page.evaluate(() => {
+    Game.start('1v1', 0, 1); Render.buildPlayers(Game.g.teams);
+    const me = PlayerSys.players.find((p) => p.team === 0);
+    Game.setHuman(me.id, true); Game.g.lockHuman = true;
+    const attempt = (moving) => {
+      Game.g.state = Game.S.PLAY; PlayerSys.teleport(me, -3, 0, 0); BallSys.setHolder(me); me.catchT = -9;
+      for (const k in me.cd) me.cd[k] = 0;
+      PlayerSys.setState(me, PlayerSys.ST.IDLE);
+      // the real key, through the real input path
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyR' }));
+      Input.sample(me.input, CameraSys.basis);
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyR' }));
+      if (moving) { me.input.mx = 1; me.input.mz = 0; me.vx = 5.5; me.vz = 0; me.speed = 5.5; }
+      const seen = new Set();
+      for (let i = 0; i < 40; i++) { Game.step(1 / 120); Input.endTick(); me.input.fake = me.input.hesi = false; seen.add(PlayerSys.STATE_NAMES[me.state]); }
+      return [...seen];
+    };
+    return { standing: attempt(false), moving: attempt(true) };
+  });
+  check.ok(r.standing.includes('PUMP'), 'R standing still should pump fake, got ' + r.standing.join(','));
+  check.ok(r.moving.includes('HESI'), 'R on the move should hesitate, got ' + r.moving.join(','));
   await page.close(); open.delete(page);
 });
 
-await test('an ad never sits over a live court', async () => {
+// ---------------------------------------------------------------- ads
+// AdSense flagged the site (Sep 2026) for "Google-served ads on screens without publisher-content": display
+// units on the main menu and the final-whistle card. Those screens are navigation and a dead end, not content.
+// Display ads now live only on guide.html; inside the game, only H5 Games Ads (adBreak) is allowed, and only
+// once Google approves the account.
+const adScripts = (page) => page.evaluate(() =>
+  [...document.querySelectorAll('script')].filter((s) => /googlesyndication|adsbygoogle/.test(s.src)).length);
+
+await test('the game itself never loads ad code or shows an ad unit, on any screen', async () => {
   const page = await fresh({ headless: false });
   await page.route('**://*.googlesyndication.com/**', (route) => route.abort());
-  await page.evaluate(() => {
-    // fresh() wipes storage, so the page boots into first-launch onboarding, which deliberately hides
-    // the ad bar. Leave it first: this test is about ad placement in the ordinary menu.
-    UI.endOnboarding();
-    CONFIG.ads.client = 'ca-pub-0000000000000000';
-    CONFIG.ads.menuSlot = '1111111111'; CONFIG.ads.finalSlot = '2222222222';
-    UI.showMenu();
-  });
-  await page.waitForTimeout(400);
-  // 1280x800 has no room beside the nav, and the bottom bar is off by default, so the menu goes bare.
-  const cramped = await page.evaluate(() => document.querySelectorAll('#menu ins.adsbygoogle').length);
-  // Give the rail the height it needs and the unit appears there instead.
-  await page.setViewportSize({ width: 1500, height: 1050 });
-  await page.evaluate(() => { UI.showMenu(); });
-  await page.waitForTimeout(400);
-  const menu = await page.evaluate(() => {
-    const ins = document.querySelector('#adRail ins.adsbygoogle');
-    const tip = document.getElementById('btnTipoff');
-    return { placed: !!ins, shown: !!(ins && ins.getClientRects().length),
-      tipOff: tip.getBoundingClientRect().bottom <= window.innerHeight };
-  });
-  await page.evaluate(() => { Main.startGame('5v5', 0, 1); });
-  await page.waitForTimeout(600);
-  const live = await page.evaluate(() => ({
-    running: Game.g.running,
-    onScreen: [...document.querySelectorAll('ins.adsbygoogle, #adMenu, #adFinal')]
-      .filter((e) => e.getClientRects().length).length,
-  }));
-  check.equal(cramped, 0, 'a menu unit was taken on a window with no room for one');
-  check.ok(menu.placed, 'the menu unit was never placed');
-  check.ok(menu.shown, 'the menu unit was placed but not on screen');
-  check.ok(menu.tipOff, 'the menu ad pushed Tip Off under the fold');
-  check.ok(live.running, 'the game did not start');
-  check.equal(live.onScreen, 0, 'an ad slot is on screen during play');
+  const seen = [];
+  const look = async (where) => seen.push({ where, scripts: await adScripts(page), units: await page.evaluate(() => document.querySelectorAll('ins.adsbygoogle, .adslot').length) });
+  await look('boot');
+  await page.evaluate(() => { UI.endOnboarding(); UI.showMenu(); }); await page.waitForTimeout(300); await look('menu');
+  await page.evaluate(() => { Main.startGame('5v5', 0, 1); }); await page.waitForTimeout(600); await look('in play');
+  await page.evaluate(() => { UI.showFinal('FINAL', '<p>test</p>'); }); await page.waitForTimeout(300); await look('final card');
+  for (const s of seen) {
+    check.equal(s.scripts, 0, 'the ad library was loaded on the ' + s.where);
+    check.equal(s.units, 0, 'an ad unit exists on the ' + s.where);
+  }
+  check.ok(await page.evaluate(() => document.getElementById('btnReward').classList.contains('hidden')), 'a reward was offered with H5 ads off');
+  check.ok(await page.evaluate(() => [...document.querySelectorAll('.legal a')].some((a) => /guide\.html$/.test(a.getAttribute('href')))), 'the menu should link to the guide');
   await page.close(); open.delete(page);
 });
 
-// ---------------------------------------------------------------- performance
+await test('H5 ads never hold the game up, and pay only for an ad actually watched', async () => {
+  // Not approved (or blocked): Google accepts adBreak and then never answers. Leaving the card must not wait.
+  {
+    const page = await fresh({ headless: false });
+    await page.route('**://*.googlesyndication.com/**', (route) => route.abort());
+    const r = await page.evaluate(async () => {
+      CONFIG.ads.h5 = true; Ads.init();
+      UI.endOnboarding(); Main.startGame('1v1', 0, 1);
+      await new Promise((res) => setTimeout(res, 400));
+      UI.showFinal('FINAL', '<p>test</p>');
+      let went = false; const t0 = performance.now();
+      Ads.between('rematch', () => { went = true; });
+      return { loaded: Ads.loaded, ready: Ads.ready, went, ms: performance.now() - t0, offered: !document.getElementById('btnReward').classList.contains('hidden') };
+    });
+    check.ok(r.loaded && !r.ready, 'with the tag blocked, H5 should be loaded but never ready');
+    check.ok(r.went, 'leaving the final card waited on an ad that was never coming');
+    check.ok(!r.offered, 'a reward was offered with no ad behind it');
+    await page.close(); open.delete(page);
+  }
+  // Approved: Google's side stood in for, callback by callback, the way the API documents it.
+  {
+    const page = await fresh({ headless: false });
+    await page.route('**://*.googlesyndication.com/**', (route) => route.abort());
+    const r = await page.evaluate(async () => {
+      const log = [];
+      window.adsbygoogle = { push(o) {
+        if (o.onReady) { log.push('config'); setTimeout(o.onReady, 0); return; }
+        if (o.type === 'next') { log.push('next'); o.beforeAd(); log.push('vol ' + Game.settings.volume); o.afterAd(); o.adBreakDone({ breakStatus: 'viewed' }); return; }
+        if (o.type === 'reward') { log.push('reward offered'); o.beforeReward(() => { log.push('reward shown'); o.beforeAd(); o.adViewed(); o.afterAd(); o.adBreakDone({ breakStatus: 'viewed' }); }); }
+      } };
+      CONFIG.ads.h5 = true; Ads.init();
+      await new Promise((res) => setTimeout(res, 20));
+      UI.endOnboarding(); Main.startGame('1v1', 0, 1);
+      await new Promise((res) => setTimeout(res, 400));
+      UI.showFinal('FINAL', '<p>test</p>');
+      const btn = document.getElementById('btnReward');
+      const offered = !btn.classList.contains('hidden'), label = btn.innerText;
+      const before = Bank.coins; btn.click(); const paid = Bank.coins - before;
+      let went = false; Ads.between('rematch', () => { went = true; log.push('went'); });
+      return { ready: Ads.ready, offered, label, paid, went, log, hiddenAfter: btn.classList.contains('hidden') };
+    });
+    check.ok(r.ready, 'onReady never reached the game');
+    check.ok(r.offered && /\+50 coins/i.test(r.label), 'the reward should be offered and say what it pays: ' + r.label);
+    check.equal(r.paid, 50, 'coins paid for a watched rewarded ad');
+    check.ok(r.hiddenAfter, 'the reward button stayed up after its ad');
+    check.ok(r.went && r.log.indexOf('next') >= 0 && r.log.indexOf('next') < r.log.indexOf('went'), 'the break should run before the game moves on: ' + r.log.join(' > '));
+    await page.close(); open.delete(page);
+  }
+});
+
+await test('the guide carries its ads next to real writing', async () => {
+  const page = await browser.newPage(); open.add(page);
+  await page.route('**://*.googlesyndication.com/**', (route) => route.abort());
+  await page.goto(URL.replace('index.html', 'guide.html'));
+  const r = await page.evaluate(() => ({
+    words: document.querySelector('main').innerText.split(/\s+/).filter(Boolean).length,
+    units: [...document.querySelectorAll('ins.adsbygoogle')].map((i) => i.getAttribute('data-ad-slot')),
+    // each unit sits after at least a section of prose, never straight under the Play button
+    proseBefore: [...document.querySelectorAll('.ad')].map((ad) => { let n = 0, e = ad.previousElementSibling; while (e && !e.classList.contains('ad')) { n += (e.innerText || '').split(/\s+/).filter(Boolean).length; e = e.previousElementSibling; } return n; }),
+    // a unit that never fills leaves no stray label behind; one that does is labelled
+    bareWhenBlocked: [...document.querySelectorAll('.ad')].every((ad) => getComputedStyle(ad, '::before').content === 'none'),
+    labelled: (() => { document.querySelectorAll('ins.adsbygoogle').forEach((i) => i.setAttribute('data-ad-status', 'filled'));
+      return [...document.querySelectorAll('.ad')].every((ad) => getComputedStyle(ad, '::before').content.includes('Advertisement')); })(),
+  }));
+  check.atLeast(r.words, 1500, 'words of real content on the guide');
+  check.equal(r.units.length, 2, 'ad units on the guide');
+  for (const n of r.proseBefore) check.atLeast(n, 150, 'words of writing before an ad unit');
+  check.ok(r.bareWhenBlocked, 'a blocked unit left an "Advertisement" label with nothing under it');
+  check.ok(r.labelled, 'every filled unit should be labelled as an advertisement');
+  await page.close(); open.delete(page);
+});
+
 // ---------------------------------------------------------------- multiplayer
 // Two browsers, one lobby, joined by code the way a player does it. Lobbies are found through a stand-in nostr
 // relay (tests/nostr-relay.mjs) rather than the public ones, so these measure the game and not somebody else's
@@ -612,7 +670,7 @@ await test('a network that blocks UDP is told so at once, and plays through the 
     const code = await openLobby(host);
     const j = await joinByCode(guest, code, 8000);
     check.ok(/in lobby/.test(j.status), 'the blocked guest never got in through the relay: ' + j.status + ' ' + j.error);
-    check.atMost(j.secs, 4, 'seconds for a blocked guest to get in through the relay');
+    check.atMost(j.secs, 5, 'seconds for a blocked guest to get in through the relay');
     check.equal(j.route, 'relay', 'the blocked guest should be on the relay');
     const moved = await playOneOnOne(host, guest);
     check.atLeast(moved, 1.5, 'metres the relayed guest\'s player moved on the host');

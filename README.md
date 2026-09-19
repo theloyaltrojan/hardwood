@@ -86,78 +86,57 @@ Settings has an **Advanced** control scheme that also puts every move on its own
 timing that releases the meter for you. Every binding is remappable and saved in the browser.
 
 ## Multiplayer
-Main menu → **Multiplayer**. Type a name, click **Create lobby**, and share the 6-character code. Friends click **Join lobby** with the code.
-Everyone can switch between the two teams (or spectate); up to five humans per side, CPU fills the rest. The host picks the mode
-(1v1 / 3v3 / 5v5) and presses **Start game**; quitting a game returns the whole lobby to the lobby screen.
-MyCareer is single player, so it is disabled while a lobby is open.
+Main menu → **Multiplayer**. The panel checks your network as it opens and says whether direct connections work from it.
+Type a name, click **Create lobby**, and share the 8-character code. Friends click **Join lobby** with the code; each stage
+of the join shows on screen with a clock, and it usually takes about a second. Everyone can switch between the two teams (or
+spectate); up to five humans per side, CPU fills the rest. The host picks the mode (1v1 / 3v3 / 5v5) and presses **Start game**;
+quitting a game returns the whole lobby to the lobby screen. MyCareer is single player, so it is disabled while a lobby is open.
 
-Signaling uses the free public PeerJS cloud (loaded from a CDN only when you open the Multiplayer panel). To run your own
-signaling server, set `CONFIG.net.peerServer` to `{ host, port, path, secure }` for any PeerServer instance.
-Game traffic is peer-to-peer WebRTC: the host simulates, guests send inputs, and the host streams compact binary snapshots.
-Players on a team with one human keep auto-switch (control follows the ball); teams with several humans lock each person to their player.
+Lobbies are found through several public nostr relays at once (`CONFIG.net.nostrRelays`), with offers encrypted under a key
+derived from the code. Game traffic is peer-to-peer WebRTC, host at the centre: the host simulates, guests send inputs, and the
+host streams compact binary snapshots. Players on a team with one human keep auto-switch (control follows the ball); teams with
+several humans lock each person to their player.
 
-There is also a **Direct connect** fallback for two players that needs no signaling server at all: exchange the offer and answer codes by hand.
+Some networks block peer-to-peer outright (school Chromebooks, often phones on mobile data). The game says so within a second
+instead of hanging, and plays through a relay when one is configured: see [`relay/README.md`](relay/README.md) for the free
+Cloudflare Worker, or TURN. There is also a **Direct connect** fallback for two players that needs no signaling at all:
+exchange the offer and answer codes by hand.
 
 ## Ads
 
-The publisher id is set. The two slot ids are not, and a slot with no id is skipped — so today the
-page still fetches nothing and injects nothing. Create two responsive display units in the AdSense
-console and paste their ids into `CONFIG.ads` near the top of `index.html`:
+**The game shows no ads and loads no ad code.** Display ads are on [`guide.html`](guide.html), the how-to-play
+guide, next to about 2,000 words of real writing. AdSense does not allow ads on screens without publisher
+content: a main menu is navigation, and a pause or final-whistle screen is a dead end, not content. This site
+was flagged for exactly that in September 2026, when the game had units on its menu and final card.
 
-```js
-ads: {
-  client: 'ca-pub-7516114040452296',
-  menuSlot: '1234567890',              // a responsive display unit
-  finalSlot: '0987654321',             // a second responsive display unit
-  ...
-}
-```
-
-The library itself is only fetched when a unit is about to be filled. The menu is the first screen, so
-on a window with room for the menu unit that happens during boot; on a window without room — a short
-laptop, a phone with `bottomBarOnDesktop` off — nothing is fetched at all, and a test holds that.
-Playing never fetches anything either way, because no unit exists while the clock is running.
-
-Where they go, and why only there:
-
-| Slot | Placement |
+| Where | What |
 | --- | --- |
-| `menuSlot` | Main menu. A rectangle in the dead space under the nav when the window is tall enough for one, otherwise a banner across the bottom, otherwise nothing. |
-| `finalSlot` | Under the buttons on the final-whistle card. |
+| `guide.html` | Two responsive display units (slots `2295316765`, `2738617000`), each after a full section of text, labelled *Advertisement* only when they actually fill. |
+| The game | Nothing, with `CONFIG.ads.h5` off (the default): no script, no units, and so no Auto ads either. |
 
-Nothing renders over a live court, and nothing renders on the pause menu, where an ad would sit
-next to Resume and Quit and collect misclicks. A unit fills once; a new whistle may fill a fresh one
-no sooner than `minRefreshMs`, because AdSense does not allow refreshing an ad without a user action.
-A slot takes up no space until a unit actually lands in it and gives the space back if the fill never
-arrives, so an ad blocker, an offline tab and an unfilled slot all leave the layout untouched. Two
-tests guard this: one that no ad code exists with no publisher id, one that no slot is ever on screen
-during play.
+The only approved way to put ads *inside* a game is Google's **H5 Games Ads** (the Ad Placement API), which an
+AdSense account has to apply for separately. The integration is built and tested and switched off:
 
-`bottomBarOnDesktop` is off by default, so a short laptop window carries no menu ad rather than push
-Tip Off under the fold. Turn it on to trade that for more fill.
+- `'next'`: an interstitial when you leave the final-whistle card, the natural break in a game. Never during play.
+- `'reward'`: an opt-in *Watch an ad: +50 coins* button on that card, shown only when Google has an ad ready, paid only
+  when the ad is watched.
+- Nothing ever waits on an ad unless Google's `onReady` has fired. For an account not approved for H5, Google accepts
+  `adBreak()` and then never answers, and a Rematch button waiting on it would hang forever.
+
+To turn it on once approved: set `CONFIG.ads.h5 = true`, exclude `/hardwood/` from Auto ads in the AdSense console
+(loading the tag in the game page would otherwise let Auto ads over the canvas), and update `privacy.html`, which today
+says the game shows none. `h5Test` runs Google's mock ads for trying the flow; never ship it on.
 
 ### Before it pays
 
-Code is the easy part.
-
-- **Verification** is handled by the `google-adsense-account` meta tag in `<head>`, plus `ads.txt`.
-  Neither costs a request at runtime, which is why the AdSense snippet is not pasted into the page.
-- **`ads.txt` has to sit at the root of the host.** This is a project site, so the copy in this repo
-  serves at `/hardwood/ads.txt`, which is *not* where a crawler looks. The one that counts lives in
-  [`theloyaltrojan.github.io`](https://github.com/theloyaltrojan/theloyaltrojan.github.io) and is live
-  at [theloyaltrojan.github.io/ads.txt](https://theloyaltrojan.github.io/ads.txt). Keep the two in
-  sync, or delete this one — it does no work.
-- **A domain you own** is still the safer answer for approval. AdSense wants a site it can confirm is
-  yours, and `*.github.io` subdomains are frequently rejected on that basis — not guaranteed either
-  way, but a real domain removes the question. Point one at Pages with a `CNAME` and this repo's root
-  becomes the domain root, at which case the local `ads.txt` is the one that gets read.
-- **A privacy policy.** [`privacy.html`](privacy.html) is written and linked from the menu footer. Read
-  it before you publish — it describes what this build does, and it is yours to stand behind.
-- **A consent message for EEA/UK traffic.** Turn on Google's own CMP under Privacy & messaging in the
-  AdSense console. It needs no code here.
-
-Do not enable Auto ads. They inject units wherever they like, including over the canvas, which is
-both a policy problem and a gameplay one.
+- **Verification** is the `google-adsense-account` meta tag in `<head>`, plus `ads.txt`.
+- **`ads.txt` has to sit at the root of the host.** The one that counts lives in
+  [`theloyaltrojan.github.io`](https://github.com/theloyaltrojan/theloyaltrojan.github.io) and is live at
+  [theloyaltrojan.github.io/ads.txt](https://theloyaltrojan.github.io/ads.txt).
+- **A privacy policy.** [`privacy.html`](privacy.html) is linked from the menu footer, the guide and the root page.
+- **A consent message for EEA/UK traffic.** Turn on Google's own CMP under Privacy & messaging in the AdSense console.
+- **Review.** After a policy fix, request a review from AdSense → Sites → the site → *Request review*. It usually takes a
+  few days, sometimes 2-4 weeks. Don't remove and re-add the site; that restarts the queue.
 
 ## Dev
 The game has no build step and no dependencies. Open `index.html` and it runs.
@@ -171,7 +150,7 @@ The game stays dependency-free; the test suite needs one headless browser.
 
 ```
 npm install
-npx playwright install chromium    # or skip it, the runner falls back to installed Chrome
+npx playwright install chromium chromium-headless-shell   # Chrome is used first if installed; the shell simulates a school network
 npm test
 ```
 
@@ -188,6 +167,10 @@ be found by measurement, or an invariant whose breakage was expensive:
 - a career records a game, rolls through playoffs into the next season, and survives a reload
 - coins are earned, spent and remembered, and only the player you control earns
 - the park is player only and will not start a run alone
+- the game never loads ad code or shows an ad unit on any screen; H5 ads never hold the game up and pay only for a
+  watched ad; the guide's ads sit after real writing
+- a guest joins a lobby by code in seconds and its own keys move its player; a wrong code says so; a network that
+  blocks UDP is told at once and plays through the relay; nobody can take over a relay room
 - it holds its frame budget
 
 `node tests/parse.mjs` is the quick one: it pulls the inline script out of the HTML and checks it parses.

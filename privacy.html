@@ -24,7 +24,7 @@
 <body>
 <main>
   <h1>Privacy</h1>
-  <p class="sub">Hardwood Legends &middot; last updated 16 September 2026</p>
+  <p class="sub">Hardwood Legends &middot; last updated 18 September 2026</p>
   <p>Hardwood Legends is a browser game. There is no account, no sign-in and no server of mine holding
      your data &mdash; there is no backend at all. What follows is everything that leaves your browser
      or is kept in it.</p>
@@ -37,21 +37,27 @@
     <li><code>hw_bank</code> &mdash; coins, purchases and daily-reward streak</li>
     <li><code>hw_settings</code>, <code>hw_binds</code>, <code>hw_mode</code>, <code>hw_pick</code> &mdash; options, key bindings and menu choices</li>
     <li><code>hw_name</code> &mdash; the display name you type for multiplayer and park chat</li>
-    <li><code>hw_seen</code>, <code>hw_tutdone</code> &mdash; whether you have seen the controls card and finished the tutorial</li>
+    <li><code>hw_seen</code>, <code>hw_tutdone</code>, <code>hw_onboard</code> &mdash; whether you have seen the controls card, finished the tutorial and set up your first player</li>
+    <li><code>hw_tutpaid</code> &mdash; whether the workout's one-time coin reward has been paid</li>
   </ul>
 
   <h2>Multiplayer and MyPark</h2>
-  <p>These are peer-to-peer and opt-in: nothing connects until you open a lobby or join a code. They use
-     <a href="https://peerjs.com/">PeerJS</a> for signalling, which by default runs on PeerJS's free public
-     server. To connect two players, that server and the people you connect to can see your randomly
-     generated lobby code, your IP address (this is how WebRTC works &mdash; any direct connection reveals
-     it to the other side) and the display name you chose. Chat messages go straight to the other players
-     in your lobby. None of it is stored by me and none of it is recorded anywhere.</p>
+  <p>These are peer-to-peer and opt-in: nothing connects until you open the multiplayer panel, create a lobby or
+     join a code. To find each other, the host and guests exchange connection offers through a handful of public
+     <a href="https://nostr.com/">nostr</a> relays (for example relay.damus.io and nos.lol). Those offers are
+     encrypted with a key that only people who have your lobby code can work out, so the relays pass them along
+     without being able to read them, and they are sent as short-lived messages that relays do not store.</p>
+  <p>Once connected, game traffic goes directly between players (WebRTC). As with any direct connection, the
+     people in your lobby can see your IP address, along with the display name you chose. To find your own
+     public address the game asks Google's and Cloudflare's STUN servers, which see your IP but nothing else.
+     If this site is ever set up with a relay server, players whose networks block direct connections go through
+     it instead; it passes game messages between the players in a lobby and keeps nothing. Chat messages go only
+     to the other players in your lobby. None of it is stored by me and none of it is recorded anywhere.</p>
 
   <h2>Advertising</h2>
-  <p>This site shows ads from Google AdSense on the main menu and the post-game screen. Google and its
-     partners use cookies and similar technologies to serve and measure those ads, and may use your prior
-     visits to this and other sites to personalise them.</p>
+  <p>The <a href="guide.html">guide page</a> shows ads from Google AdSense. The game itself shows none and
+     loads no advertising code. Google and its partners use cookies and similar technologies to serve and
+     measure those ads, and may use your prior visits to this and other sites to personalise them.</p>
   <ul>
     <li>You can opt out of personalised advertising at
         <a href="https://myadcenter.google.com/">Google My Ad Center</a>.</li>
@@ -65,10 +71,11 @@
 
   <h2>Third parties the page loads</h2>
   <ul>
-    <li><b>cdnjs (Cloudflare)</b> &mdash; serves the 3D library the game runs on, and the multiplayer
-        library if you open multiplayer.</li>
-    <li><b>PeerJS</b> &mdash; signalling, only if you use multiplayer or MyPark.</li>
-    <li><b>Google AdSense</b> &mdash; ads, loaded only when an ad slot is actually shown.</li>
+    <li><b>cdnjs (Cloudflare)</b> &mdash; serves the 3D library the game runs on.</li>
+    <li><b>jsDelivr</b> &mdash; serves the small signing library multiplayer uses, only if you open multiplayer.</li>
+    <li><b>Public nostr relays</b> and <b>Google / Cloudflare STUN</b> &mdash; finding and connecting to other
+        players, only if you open multiplayer or MyPark.</li>
+    <li><b>Google AdSense</b> &mdash; ads, only on the <a href="guide.html">guide</a> page. The game itself loads no ads.</li>
   </ul>
   <p>Each of these sees your IP address and browser user-agent when the request is made, as is the case
      for any file a browser fetches.</p>
