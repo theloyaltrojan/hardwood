@@ -677,6 +677,97 @@ await test('a network that blocks UDP is told so at once, and plays through the 
     await host.context().close(); await guest.context().close(); open.delete(host); open.delete(guest);
   } finally { relay.close(); }
 });
+await test('a code typed in connects before the button is pressed, and only then joins', async () => {
+  // The whole point of the type-ahead: the handshake runs on the last character, so pressing Join is
+  // instant. Until it is pressed the host must not know anyone is there - typing a code is not joining.
+  const host = await mpPage(browser), guest = await mpPage(browser);
+  const code = await openLobby(host);
+  await guest.evaluate(() => UI.openNet());
+  await guest.fill('#netCodeIn', code);                       // typed, not clicked
+  await guest.waitForFunction(() => /ready/.test(Net.status()), null, { timeout: 10000 });
+  check.equal(await host.evaluate(() => Net.guestCount), 0, 'the host listed someone who only typed the code');
+  check.equal(await host.evaluate(() => Net.lobby && JSON.parse(JSON.stringify(Net.lobby)).open), true, 'the lobby should still be open');
+  const r = await guest.evaluate(() => { const t0 = performance.now(); Net.joinNow(document.querySelector('#netCodeIn').value); return { ms: performance.now() - t0, status: Net.status() }; });
+  check.ok(/in lobby/.test(r.status), 'pressing Join did not enter the lobby at once: ' + r.status);
+  check.atMost(r.ms, 50, 'milliseconds the click took once the connection was already up');
+  await host.waitForFunction(() => Net.guestCount === 1, null, { timeout: 5000 });
+  await host.context().close(); await guest.context().close(); open.delete(host); open.delete(guest);
+});
+
+await test('an invite link connects while the page is still loading', async () => {
+  const host = await mpPage(browser);
+  const code = await openLobby(host);
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 700 } });
+  // a brand-new player, storage empty: an invite link has to work for them too, not send them to build a career
+  await ctx.addInitScript((relay) => { window.hardwoodNet = { nostrRelays: [relay] }; }, nostr.url);
+  const guest = await ctx.newPage(); open.add(guest);
+  const t0 = Date.now();
+  await guest.goto(URL + '?join=' + code);
+  await guest.waitForFunction(() => typeof Net !== 'undefined' && /ready|in lobby/.test(Net.status()), null, { timeout: 25000 });
+  const secs = (Date.now() - t0) / 1000;
+  check.atMost(secs, 12, 'seconds from opening an invite link to being connected (during the page load)');
+  const r = await guest.evaluate(() => { Net.joinNow(''); return Net.status(); });   // the link filled nothing in
+  check.ok(/in lobby/.test(r), 'the Join button did not work from an invite link: ' + r);
+  await host.context().close(); await ctx.close(); open.delete(guest);
+});
+
+await test('the host\'s start reaches a guest without waiting for the host\'s own transition', async () => {
+  const host = await mpPage(browser), guest = await mpPage(browser);
+  const code = await openLobby(host);
+  const j = await joinByCode(guest, code, 8000);
+  check.ok(/in lobby/.test(j.status), 'setup: the guest never joined');
+  await host.waitForFunction(() => Net.guestCount === 1, null, { timeout: 5000 });
+  await guest.evaluate(() => { window.__t0 = 0; const s = Main.startGame; Main.startGame = function (...a) { window.__t0 = performance.now(); return s.apply(this, a); }; });
+  await host.evaluate(() => Main.startGame('1v1', 0, 1));
+  await guest.waitForFunction(() => Game.g.running && Game.g.human >= 0, null, { timeout: 15000 });
+  const ms = await guest.evaluate(() => Math.round(performance.now() - window.__t0));
+  check.atMost(ms, 700, 'milliseconds from the guest starting to having its own player');
+  await host.context().close(); await guest.context().close(); open.delete(host); open.delete(guest);
+});
+
+await test('a connection made by typing a code obeys nobody until Join is pressed', async () => {
+  // Found by review: 'quiet' meant "do not repaint" when it had to mean "do not act". A stranger whose code
+  // you typed could start a game on your screen, change your settings and tear down your menu.
+  const host = await mpPage(browser), guest = await mpPage(browser);
+  const code = await openLobby(host);
+  await guest.evaluate(() => UI.openNet());
+  await guest.fill('#netCodeIn', code);
+  await guest.waitForFunction(() => /ready/.test(Net.status()), null, { timeout: 10000 });
+  // the name box must not announce a join nobody pressed
+  await guest.evaluate(() => { const b = document.querySelector('#netNameIn'); b.value = 'Nobody'; b.dispatchEvent(new Event('change')); });
+  await guest.waitForTimeout(400);
+  check.equal(await host.evaluate(() => Net.guestCount), 0, 'editing the name joined a stranger\'s lobby');
+  // and the host starting a game must not drag them into it
+  await host.evaluate(() => Main.startGame('5v5', 0, 1));
+  await guest.waitForTimeout(1500);
+  const g = await guest.evaluate(() => ({ running: Game.g.running, human: Game.g.human, menuHidden: document.getElementById('menu').classList.contains('hidden'), status: Net.status() }));
+  check.equal(g.running, false, 'a stranger started a game on a screen that never joined: ' + JSON.stringify(g));
+  check.equal(g.menuHidden, false, 'the menu was torn down by a lobby the player never joined');
+  await host.context().close(); await guest.context().close(); open.delete(host); open.delete(guest);
+});
+
+await test('a rematch reaches the guest instead of stranding it on the final card', async () => {
+  // Found by review: the guard that stops a running game being restarted also swallowed the rematch, which
+  // arrives while both sides are sitting on a finished one.
+  const host = await mpPage(browser), guest = await mpPage(browser);
+  const code = await openLobby(host);
+  const j = await joinByCode(guest, code, 8000);
+  check.ok(/in lobby/.test(j.status), 'setup: the guest never joined');
+  await host.waitForFunction(() => Net.guestCount === 1, null, { timeout: 5000 });
+  await host.evaluate(() => Main.startGame('1v1', 0, 1));
+  await guest.waitForFunction(() => Game.g.running && Game.g.human >= 0, null, { timeout: 15000 });
+  // end it the way the clock would, then rematch
+  await host.evaluate(() => { Game.g.clock = 0; Game.g.quarter = 99; Game.g.state = Game.S.OVER; });
+  await guest.waitForFunction(() => Game.g.state === Game.S.OVER, null, { timeout: 5000 });   // the guest sees it through the snapshots
+  await guest.evaluate(() => { window.__again = false; const s = Main.startGame; Main.startGame = function (...a) { window.__again = true; return s.apply(this, a); }; });
+  await host.evaluate(() => Main.startGame('1v1', 0, 1));
+  await guest.waitForFunction(() => window.__again && Game.g.running && Game.g.human >= 0 && Game.g.state !== Game.S.OVER, null, { timeout: 15000 }).catch(() => {});
+  const r = await guest.evaluate(() => ({ again: window.__again, human: Game.g.human, over: Game.g.state === Game.S.OVER }));
+  check.ok(r.again, 'the rematch never reached the guest');
+  check.ok(r.human >= 0 && !r.over, 'the guest was left on the finished game: ' + JSON.stringify(r));
+  await host.context().close(); await guest.context().close(); open.delete(host); open.delete(guest);
+});
+
 await test('nobody can take over a relay room: a second host or a reused guest id is turned away', async () => {
   // Found by review: the relay used to let a newcomer replace the host (or a guest) outright, and the guests
   // never heard - they carried on talking to whoever had taken the slot.

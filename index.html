@@ -817,12 +817,20 @@ const CONFIG = {
     // through almost anything a school allows. A guest falls back to it the moment a direct connection fails.
     relay: null,
     candidatePool: 4,
+    // Everything a join needs that does not depend on the code - the peer connection, its channels, the offer,
+    // the addresses - is made while the panel is open. What does depend on it is done while the code is typed,
+    // and the handshake starts on the last character. By the time anyone presses Join there is nothing left.
+    warmJoin: true, warmLife: 55, typeAhead: true,
     findTimeout: 9,          // seconds for a host to answer a code before we say nobody did
     connectTimeout: 9,       // seconds from the host's answer to an open connection before we call it blocked
     gatherCap: 2.5,          // most seconds spent collecting our own addresses before sending an offer
     lobbyIdPrefix: 'HWLOBBY', snapHz: 20, inputHz: 30, interpDelay: 0.1, maxPerTeam: 5,
   },
 };
+// Anything set on window.hardwoodNet before the page loads wins: a self-hosted relay, your own nostr relays,
+// TURN credentials. It saves editing this file to point a copy somewhere else, and the tests use it to keep
+// off the public relays.
+if (typeof window !== 'undefined' && window.hardwoodNet) Object.assign(CONFIG.net, window.hardwoodNet);
 // ==== END CONFIG ====
 
 // ==== BEGIN UTIL ====
@@ -5439,11 +5447,17 @@ function init(container) {
       for (const m of mats) { if (m.map) m.map.dispose(); m.dispose(); }
     });
   }
+  let arenaFor = '';
   function buildArena(teamA, teamB) {
+    const want = teamA.id + '/' + teamB.id;
+    if (Court.group && arenaFor === want) { Court.group.visible = true; return; }   // already standing
     if (Court.group) { scene.remove(Court.group); disposeObject(Court.group); }
     Court.build(scene, teamA, teamB);
     Court.initParticles(scene);
+    arenaFor = want;
   }
+  // Build it while people are still in the lobby, so tip-off is a transition and not a wait.
+  function prebuildArena(a, b) { const kits = kitsFor(a, b); if (arenaFor !== kits[0].id + '/' + kits[1].id) buildArena(kits[0], kits[1]); }
   function buildPlayers(teams) { const host = matchHost(); PlayerSys.destroyMeshes(); for (const p of PlayerSys.players) PlayerSys.buildMesh(p, teams[p.team], host); }
   function setShadows(on) {
     if (!renderer) return;
@@ -5656,7 +5670,7 @@ function init(container) {
   }
   function draw() { renderer.render(scene, cam); }
   function project(x, y, z, out) { _v.set(x, y, z).project(cam); out.x = (_v.x * 0.5 + 0.5) * window.innerWidth; out.y = (-_v.y * 0.5 + 0.5) * window.innerHeight; out.visible = _v.z < 1; return out; }
-  return { init, buildArena, buildPlayers, setShadows, sync, draw, project, setMatchFrame, poseAvatar, setSky, setBallSkin,
+  return { init, buildArena, prebuildArena, buildPlayers, setShadows, sync, draw, project, setMatchFrame, poseAvatar, setSky, setBallSkin,
     get renderer() { return renderer; }, get scene() { return scene; } };
 })();
 // ==== END RENDER ====
@@ -5744,7 +5758,7 @@ const UI = (() => {
    function init(h) {
      Object.assign(hooks, h);
      for (const id of ids) el[id] = $(id);
-     document.querySelectorAll('#menu [data-nav]').forEach((b) => b.addEventListener('click', () => { AudioSys.init(); AudioSys.play('ui'); show(b.dataset.nav); }));
+     document.querySelectorAll('#menu [data-nav]').forEach((b) => b.addEventListener('click', () => { AudioSys.init(); AudioSys.play('ui'); if (b.dataset.nav !== 'menuNet') Net.cancelQuiet(); show(b.dataset.nav); }));
      document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { AudioSys.init(); AudioSys.play('ui'); selectMode(b.dataset.mode); }));
     document.querySelectorAll('[data-cycle]').forEach((b) => b.addEventListener('click', () => { const [side, dir] = b.dataset.cycle.split(',').map(Number); cycleTeam(side, dir); AudioSys.play('ui'); }));
     // Teaching now happens inside your first career game, so this is just a button again. The empty-gym
@@ -5808,9 +5822,11 @@ const UI = (() => {
   }
   function openNet() { showMenu(); show('menuNet'); }
   // Game-start wipe: two slanted slabs cross the screen; the scene swaps while they cover it.
-  function wipe(cb) {
+  // `now` skips the flourish: everyone in a lobby has been staring at the same two clubs for a minute and the
+  // arena is already built, so a third of a second of slanted slabs is time nobody asked for.
+  function wipe(cb, now) {
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduce) { cb(); return; }
+    if (reduce || now) { cb(); return; }
     el.wipe.classList.remove('go'); void el.wipe.offsetWidth; el.wipe.classList.add('go');
     setTimeout(cb, 360); setTimeout(() => el.wipe.classList.remove('go'), 900);
   }
@@ -6481,6 +6497,7 @@ const Net = (() => {
   const lobby = { code: '', mode: '5v5', open: false };
   // guest state
   let hostConn = null, myPid = '', myPlayerId = -1, lobbyView = null, pendingStart = null, inGame = false, hostSeen = 0;
+  let awaitingRoster = false;   // started on the host's word, still waiting to be told which player is yours
   const snaps = []; let lastSnapSeq = -1, seq = 0, sendAcc = 0, snapAcc = 0, edgeBits = 0, passToPend = 0, recvSnaps = 0;
   const localInput = makeInput(); let pressT = 0, pressDur = 1, relPending = null;
   // direct transport state
@@ -6488,7 +6505,7 @@ const Net = (() => {
   const r3 = (v) => Math.round(v * 1000) / 1000;
   function packBits(inp) { let b = 0; for (let i = 0; i < BITS.length; i++) if (inp[BITS[i]]) b |= 1 << i; return b; }
   function unpackBits(b, inp) { for (let i = 0; i < BITS.length; i++) inp[BITS[i]] = !!(b & (1 << i)); }
-  function setStatus(sv) { status = sv; if (panel) renderPanel(panel); }
+  function setStatus(sv) { status = sv; if (quiet) return; if (panel) renderPanel(panel); }
   // Eight characters from the browser's secure random source: 31^8 is 8.5e11 codes, which together with the
   // slow derivation in sigRoom puts guessing a lobby from its public topic far outside a lobby's lifetime.
   const CODE_LEN = 8;
@@ -6525,9 +6542,18 @@ const Net = (() => {
       .catch((e) => { sig.libP = null; throw new Error('could not load the matchmaking code from cdn.jsdelivr.net - is it blocked here?'); });
     return sig.libP;
   }
+  const derived = new Map();   // code -> the derived bytes, so the 150,000 rounds are paid once per code
+  async function deriveFor(code) {
+    let bits = derived.get(code);
+    if (!bits) {
+      const base = await crypto.subtle.importKey('raw', te.encode(code), 'PBKDF2', false, ['deriveBits']);
+      bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: te.encode('hardwood-legends/lobby/v2'), iterations: 150000 }, base, 72 * 8));
+      derived.set(code, bits); if (derived.size > 8) derived.delete(derived.keys().next().value);
+    }
+    return bits;
+  }
   async function sigRoom(code) {
-    const base = await crypto.subtle.importKey('raw', te.encode(code), 'PBKDF2', false, ['deriveBits']);
-    const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: te.encode('hardwood-legends/lobby/v2'), iterations: 150000 }, base, 72 * 8));
+    const bits = await deriveFor(code);
     // the public topic, the message key, and a relay room name that is never published anywhere
     sig.topic = hexOf(bits.slice(0, 20)); sig.kind = 20000 + ((bits[0] << 8 | bits[1]) % 10000);
     sig.key = await crypto.subtle.importKey('raw', bits.slice(20, 52), 'AES-GCM', false, ['encrypt', 'decrypt']);
@@ -6653,6 +6679,48 @@ const Net = (() => {
       return { route, rtt };
     } catch (e) { return { route: 'direct', rtt: -1 }; }
   }
+  // ---------- connections made before they are needed ----------
+  // A peer connection, its two channels, an offer and a set of addresses, all ready and waiting. None of it
+  // depends on the lobby code, so all of it can be done while the panel is open. A NAT mapping goes stale if
+  // nothing uses it, so one is only good for warmLife seconds; past that it is thrown away and remade.
+  let warm = null, warmAt = 0, warmTimer = 0;
+  // only while the multiplayer panel is actually on screen: otherwise this rebuilds a connection every
+  // warmLife seconds for as long as the tab is open, for a join nobody is about to make
+  const panelUp = () => { const m = document.getElementById('menu'), p = document.getElementById('menuNet'); return !!m && !m.classList.contains('hidden') && !!p && !p.classList.contains('hidden'); };
+  function stopWarm() { clearTimeout(warmTimer); warmTimer = 0; if (warm) { try { warm.pc.close(); } catch (e) { /* ignore */ } warm = null; } }
+  async function warmUp() {
+    if (!NC.warmJoin || warm || role !== 'none' || typeof RTCPeerConnection === 'undefined') return;
+    await iceReady();
+    if (warm || role !== 'none') return;
+    const pc = new RTCPeerConnection(iceConfig());
+    const w = { pc, ctl: pc.createDataChannel('ctl', { ordered: true }), fast: pc.createDataChannel('fast', { ordered: false }), sdp: '', found: null };
+    warm = w;
+    try {
+      await pc.setLocalDescription(await pc.createOffer());
+      w.found = await gather(pc);
+      if (warm !== w) { try { pc.close(); } catch (e) { /* replaced */ } return; }
+      w.sdp = pc.localDescription.sdp; warmAt = performance.now();
+      clearTimeout(warmTimer); warmTimer = setTimeout(() => { if (warm !== w) return; try { w.pc.close(); } catch (e) { /* ignore */ } warm = null; if (panelUp()) warmUp(); }, NC.warmLife * 1000);
+    } catch (e) { if (warm === w) warm = null; try { pc.close(); } catch (x) { /* ignore */ } }
+  }
+  function takeWarm() {
+    const w = warm; warm = null; clearTimeout(warmTimer); warmTimer = 0;
+    if (panelUp()) setTimeout(warmUp, 0);   // start the next one for whoever joins after this
+    if (w && (!w.sdp || performance.now() - warmAt > NC.warmLife * 1000)) { try { w.pc.close(); } catch (e) { /* ignore */ } return null; }
+    return w;
+  }
+  // The host's side of the same idea: a connection standing by to answer the next offer, addresses already
+  // gathered, so answering is setRemoteDescription and a publish.
+  let spare = null;
+  function spareDown() { if (spare) { try { spare.pc.close(); } catch (e) { /* ignore */ } } spare = null; }
+  function spareUp() {
+    if (!NC.warmJoin || spare || role !== 'host' || typeof RTCPeerConnection === 'undefined') return;
+    const pc = new RTCPeerConnection(iceConfig());
+    spare = { pc, chans: {} };
+    pc.ondatachannel = (e) => { const sp = spare && spare.pc === pc ? spare : null; if (sp) sp.chans[e.channel.label] = e.channel; };
+  }
+  function takeSpare() { const sp = spare; spare = null; if (role === 'host') setTimeout(spareUp, 0); return sp; }
+
   function wireRtc(pid, pc, ctl, fast, onOpen, onData, onGone) {
     let opened = false, gone = false;
     const conn = { pid, via: 'direct', rtt: -1, pc,
@@ -6751,7 +6819,7 @@ const Net = (() => {
   // The one question a spinner never answers is which part is stuck. Every attempt moves through named stages
   // with a running clock, and every way it can end says which stage it died in and what would fix it.
   let stageText = '', stageT0 = 0, stageTick = 0, joinCode = '';
-  function stage(text) { stageText = text; if (!stageT0) stageT0 = performance.now(); paintStatus(); if (!stageTick) stageTick = setInterval(paintStatus, 500); }
+  function stage(text) { stageText = text; if (!stageT0) stageT0 = performance.now(); if (quiet) return; paintStatus(); if (!stageTick) stageTick = setInterval(paintStatus, 500); }
   function endStage() { stageText = ''; stageT0 = 0; if (stageTick) { clearInterval(stageTick); stageTick = 0; } }
   function paintStatus() { const el = panel && panel.querySelector('#netStatus'); if (el) el.innerHTML = statusLine(); }
   function statusLine() {
@@ -6761,12 +6829,26 @@ const Net = (() => {
     if (err) s += ' · <span style="color:var(--bad, #ff6b5a)">' + esc(String(err).slice(0, 260)) + '</span>';
     return s;
   }
-  function fail(msg) { if (role === 'none') return; const r = role; reset(); err = msg; role = 'none'; setStatus('error'); if (r === 'host') lobby.open = false; }
+  function fail(msg) {
+    if (role === 'none') return;
+    const r = role, wasQuiet = quiet;
+    reset(); role = 'none'; if (r === 'host') lobby.open = false;
+    if (wasQuiet) { err = ''; status = 'offline'; return; }   // nobody pressed anything yet: say nothing
+    err = msg; setStatus('error');
+  }
   const validGid = (id) => typeof id === 'string' && /^g[0-9a-f]{16}$/.test(id);
 
   // ---------- host: lobby ----------
+  // The code exists and its keys are derived while the panel is open, so Create is a subscribe, not a wait.
+  let readyCodeVal = '', readyCodeP = null;
+  function readyCode() {
+    if (readyCodeVal || readyCodeP || role !== 'none') return;
+    const c = genCode();
+    readyCodeP = sigLib().then(() => deriveFor(c)).then(() => { readyCodeVal = c; }).catch(() => { /* on the click instead */ }).then(() => { readyCodeP = null; });
+  }
   const pending = new Map();   // gid -> { pc, answer, oid, t }: offers answered, connection not open yet
-  const lobbyFull = () => guests.size + pending.size >= NC.maxPerTeam * 2 - 1;
+  // only players who have actually joined hold a seat; a silent connection must never turn a real one away
+  const lobbyFull = () => { let n = 0; for (const g of guests.values()) if (g.joined) n++; return n + pending.size >= NC.maxPerTeam * 2 - 1; };
   const MAX_PENDING = 4;       // offers being answered at once; a flood evicts its own oldest, not the lobby
   let lastNope = 0;
   async function hostCreateLobby() {
@@ -6775,14 +6857,15 @@ const Net = (() => {
     armConnect('the lobby never opened - nothing answered from the matchmaking relays', 15);
     try { await sigLib(); } catch (e) { if (attempt === my) fail(e.message); return; }
     if (attempt !== my) return;
-    const code = genCode(); await sigRoom(code);
+    const code = readyCodeVal || genCode(); readyCodeVal = '';
+    await sigRoom(code);
     if (attempt !== my) return;
     lobby.code = code; sig.onMsg = hostSignal; sigOpen();
     const n = await sigReady(6000);
     if (attempt !== my) return;
     if (!n) { fail('could not reach any of the ' + NC.nostrRelays.length + ' matchmaking relays from this network, so nobody could find the lobby. ' + (NC.relay ? '' : 'A relay of your own (CONFIG.net.relay) avoids them.')); return; }
     clearConnect(); endStage(); lobby.open = true; hostMember.team = 0;
-    relayHost(); iceReady();
+    relayHost(); iceReady(); spareUp();
     setStatus('lobby open');
   }
   async function hostSignal(m) {
@@ -6799,10 +6882,17 @@ const Net = (() => {
     pending.set(m.from, entry);
     await iceReady();
     if (role !== 'host' || pending.get(m.from) !== entry) return;
-    const pc = entry.pc = new RTCPeerConnection(iceConfig());
-    const chans = {};
+    const sp = takeSpare();                       // already built, already gathering
+    const pc = entry.pc = sp ? sp.pc : new RTCPeerConnection(iceConfig());
+    const chans = sp ? sp.chans : {};
     pc.ondatachannel = (e) => {
       chans[e.channel.label] = e.channel;
+      if (chans.ctl && chans.fast && !chans.wired) {
+        chans.wired = true;
+        wireRtc(m.from, pc, chans.ctl, chans.fast, (conn) => { if (pending.get(m.from) === entry) pending.delete(m.from); if (role === 'host') addGuest(conn); }, (d) => onGuestMessage(m.from, d), () => removeGuest(m.from));
+      }
+    };
+    const wireNow = () => {
       if (chans.ctl && chans.fast && !chans.wired) {
         chans.wired = true;
         wireRtc(m.from, pc, chans.ctl, chans.fast, (conn) => { if (pending.get(m.from) === entry) pending.delete(m.from); if (role === 'host') addGuest(conn); }, (d) => onGuestMessage(m.from, d), () => removeGuest(m.from));
@@ -6813,6 +6903,7 @@ const Net = (() => {
       await pc.setRemoteDescription({ type: 'offer', sdp: m.sdp });
       await pc.setLocalDescription(await pc.createAnswer());
       await gather(pc);
+      wireNow();
       entry.answer = { t: 'answer', to: m.from, oid: m.oid, sdp: pc.localDescription.sdp, relay: relayUp };
       if (pending.get(m.from) === entry) sigSend(entry.answer);
     } catch (e) { pending.delete(m.from); try { pc.close(); } catch (x) { /* ignore */ } }
@@ -6823,18 +6914,25 @@ const Net = (() => {
   function wrapRaw(pid) { return { pid, send(data) { const ch = typeof data === 'string' ? chRel : chFast; if (ch && ch.readyState === 'open') { try { ch.send(data); } catch (e) { /* closing */ } } }, close() { try { if (chRel) chRel.close(); if (chFast) chFast.close(); if (pc) pc.close(); } catch (e) { /* ignore */ } pc = chRel = chFast = null; } }; }
   function toBuffer(data, cb) { if (data instanceof ArrayBuffer) cb(data); else if (data && data.buffer instanceof ArrayBuffer) cb(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)); else if (data instanceof Blob) data.arrayBuffer().then(cb); }
 
-  function addGuest(conn) { if (guests.has(conn.pid)) return; guests.set(conn.pid, { conn, name: 'joining…', team: -1, playerId: -1, inGame: false, lastSeen: performance.now(), remote: { input: makeInput(), bits: 0, held: 0, seq: -1, rel: null } }); AudioSys.play('ui'); if (panel) renderPanel(panel); }
+  function addGuest(conn) { if (guests.has(conn.pid)) return; guests.set(conn.pid, { conn, name: 'joining…', joined: false, openedAt: performance.now(), team: -1, playerId: -1, inGame: false, lastSeen: performance.now(), remote: { input: makeInput(), bits: 0, held: 0, seq: -1, rel: null } }); }
   function removeGuestPark(pid) { if (parkPeople.has(pid)) { parkPeople.delete(pid); if (Main.inPark) Park.removeRemote(pid); hostPushRoster(); hostPushPads(); } }
   function removeGuest(pid) {
     removeGuestPark(pid);
     const gst = guests.get(pid); if (!gst) return; guests.delete(pid);
+    if (!gst.joined) return;   // never announced, never listed: nothing to tell anyone
     if (gst.playerId >= 0 && Game.g.running) { Game.setController(gst.playerId, null); Game.toast(gst.name.toUpperCase() + ' LEFT', 'CPU TAKES OVER'); }
     broadcastLobby();
   }
   function autoTeam() { const n = [0, 0]; for (const m of members()) if (m.team >= 0) n[m.team]++; if (n[0] <= n[1] && n[0] < cap()) return 0; if (n[1] < cap()) return 1; return -1; }
-  function members() { const arr = [{ pid: 'host', name: myName, team: hostMember.team, isHost: true }]; for (const [pid, gst] of guests) arr.push({ pid, name: gst.name, team: gst.team, isHost: false, via: gst.conn.via || 'direct' }); return arr; }
+  function members() { const arr = [{ pid: 'host', name: myName, team: hostMember.team, isHost: true }]; for (const [pid, gst] of guests) if (gst.joined) arr.push({ pid, name: gst.name, team: gst.team, isHost: false, via: gst.conn.via || 'direct' }); return arr; }
   function lobbyMsg() { return { t: 'lobby', code: lobby.code, mode: lobby.mode, members: members(), teams: [UI.pick[0], UI.pick[1]], quarterLen: Game.settings.quarterLen, transport, running: Game.g.running }; }
-  function broadcastLobby() { const m = lobbyMsg(); lobbyView = m; broadcast(JSON.stringify(m)); if (panel) renderPanel(panel); }
+  function broadcastLobby() { const m = lobbyMsg(); lobbyView = m; broadcast(JSON.stringify(m)); prebuild(m); if (panel) renderPanel(panel); }
+  // Both sides know which clubs are picked long before tip-off, so stand the arena up now: 35ms out of the
+  // transition, and an arena already built for these two is left alone.
+  function prebuild(view) {
+    if (!view || Game.g.running || Main.inPark) return;
+    const t = cleanTeams(view.teams); try { Render.prebuildArena(t[0], t[1]); } catch (e) { /* nothing lost */ }
+  }
   function broadcast(data, onlyInGame) { for (const gst of guests.values()) if (!onlyInGame || gst.inGame) gst.conn.send(data); }
   function setTeam(pid, team) {
     const m = pid === 'host' ? hostMember : guests.get(pid); if (!m) return;
@@ -6851,13 +6949,28 @@ const Net = (() => {
     if (typeof data === 'string') {
       let m; try { m = JSON.parse(data); } catch (e) { return; }
       if (m.t === 'ping') return;
-      if (m.t === 'join') { gst.name = cleanName(m.name); if (gst.team < 0 && !gst.named) gst.team = autoTeam(); gst.named = true; broadcastLobby(); }
+      if (m.t === 'join') { const first = !gst.joined; gst.name = cleanName(m.name); gst.joined = true; if (gst.team < 0 && !gst.named) gst.team = autoTeam(); gst.named = true; if (first) AudioSys.play('ui'); broadcastLobby(); }
       else if (m.t === 'team') setTeam(pid, m.team === 0 || m.team === 1 ? m.team : -1);
       else if (m.t === 'leave') { gst.conn.close(); removeGuest(pid); }
       else if (m.t === 'park') hostPark(pid, gst, m.d || {});
       return;
     }
     toBuffer(data, (buf) => decodeInput(buf, gst.remote));
+  }
+  // Sent the moment the host presses Start, before anything else: everyone begins the same transition at the
+  // same time and builds the same arena. The roster follows in 'start' a few hundred ms later.
+  function hostStarting(mode, a, b) {
+    if (role !== 'host') return;
+    // With the roster in this message a guest can take its own player the moment its game exists, instead of
+    // watching until the host has finished building its own. Player ids are laid out the same way every time -
+    // team 0 first, then team 1 - so this agrees with the roster that 'start' sends a moment later, and that
+    // one is still the authority if anything ever disagrees.
+    const per = mode === '5v5' ? 5 : mode === '3v3' ? 3 : 1, counts = [0, 0], roster = [];
+    for (const m of members()) {
+      const ok = m.team >= 0 && counts[m.team] < per;
+      roster.push({ pid: m.pid, team: ok ? m.team : -1, playerId: ok ? m.team * per + counts[m.team]++ : -1, name: m.name });
+    }
+    broadcast(JSON.stringify({ t: 'starting', mode, a, b, roster, quarterLen: Game.settings.quarterLen, makeItTakeIt: Game.settings.makeItTakeIt, difficulty: Game.settings.difficulty }));
   }
   // Start: humans fill each team's roster slots in join order, AI fills the rest.
   function hostStart(mode, a, b) {
@@ -6985,7 +7098,7 @@ const Net = (() => {
       if (!guests.size) return;
       if (Game.g.running) { snapAcc += dt; if (snapAcc >= 1 / NC.snapHz) { snapAcc = 0; broadcast(encodeSnap(), true); } }
       pingAcc += dt; if (pingAcc >= 2) { pingAcc = 0; broadcast('{"t":"ping"}'); }
-      liveAcc += dt; if (liveAcc >= 1) { liveAcc = 0; const now = performance.now(); for (const [pid, gst] of guests) if (now - gst.lastSeen > 9000) { gst.conn.close(); removeGuest(pid); } }
+      liveAcc += dt; if (liveAcc >= 1) { liveAcc = 0; const now = performance.now(); for (const [pid, gst] of guests) if (now - gst.lastSeen > 9000 || (!gst.joined && now - gst.openedAt > 30000)) { gst.conn.close(); removeGuest(pid); } }
     } else if (role === 'guest' && hostConn) {
       pingAcc += dt; if (pingAcc >= 2) { pingAcc = 0; hostConn.send('{"t":"ping"}'); }
       if (performance.now() - hostSeen > 12000) onHostLost();
@@ -7049,11 +7162,16 @@ const Net = (() => {
   // reachable, nobody answering that code, or an answer but no way through - the last being the one a relay
   // exists for, and the one the old version spun on forever.
   let guestPc = null, guestTimers = [];
+  let quiet = false;   // an attempt running ahead of the click: nothing on screen, host not told
+  const cleanCode = (c) => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LEN);
   let attempt = 0;   // bumped by every reset(): an await that resumes into a newer attempt stops there
   const later = (fn, s) => { guestTimers.push(setTimeout(fn, s * 1000)); };
-  async function joinLobby(code) {
-    code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (code.length !== CODE_LEN) { err = 'enter the ' + CODE_LEN + '-character code'; setStatus('error'); return; }
-    reset(); role = 'guest'; transport = 'p2p'; err = ''; joinCode = code; myPid = 'g' + rid(8);
+  async function joinLobby(code, opts) {
+    code = cleanCode(code); if (code.length !== CODE_LEN) { err = 'enter the ' + CODE_LEN + '-character code'; setStatus('error'); return; }
+    const hush = !!(opts && opts.quiet);
+    reset(); role = 'guest'; transport = 'p2p'; err = ''; joinCode = code; myPid = 'g' + rid(8); quiet = hush;
+    // show which lobby is being joined, for a code that arrived in a link rather than through the keyboard
+    const box = panel && panel.querySelector('#netCodeIn'); if (box && !box.value) box.value = code;
     stage('Looking for lobby ' + code); setStatus('connecting');
     const my = attempt;
     armConnect('gave up after ' + (NC.findTimeout + NC.connectTimeout + 6) + 's without a connection', NC.findTimeout + NC.connectTimeout + 6);
@@ -7063,11 +7181,14 @@ const Net = (() => {
     if (attempt !== my) return;
     sigOpen();
     // build the offer while the relays open
-    const pc = guestPc = new RTCPeerConnection(iceConfig());
-    const ctl = pc.createDataChannel('ctl', { ordered: true }), fast = pc.createDataChannel('fast', { ordered: false });
+    // the connection made while the panel was open, offer and addresses and all
+    const w = takeWarm();
+    const pc = guestPc = w ? w.pc : new RTCPeerConnection(iceConfig());
+    const ctl = w ? w.ctl : pc.createDataChannel('ctl', { ordered: true });
+    const fast = w ? w.fast : pc.createDataChannel('fast', { ordered: false });
     wireRtc('host', pc, ctl, fast, guestConnected, onHostMessage, () => onHostLost());
-    await pc.setLocalDescription(await pc.createOffer());
-    const found = await gather(pc);
+    let found = w && w.found;
+    if (!w) { await pc.setLocalDescription(await pc.createOffer()); found = await gather(pc); }
     if (attempt !== my || guestPc !== pc) return;
     // No UDP address and no relay: this network lets no UDP out - the policy a managed Chromebook gets looks
     // exactly like this. Chrome can still reach out over TCP, which works to a host on the same Wi-Fi and
@@ -7112,29 +7233,66 @@ const Net = (() => {
       fail('found lobby ' + code + ', but ' + (noUdp ? 'this network blocks UDP (a school or work network, most likely), so ' : '') + 'no direct connection could be made' + (hasTurn() ? ', even over TURN' : '') + '. ' + (noUdp ? '' : 'One of you is behind a network that blocks peer-to-peer (a school, or phone data). ') + 'The fix is a relay: see relay/README.md.');
     }
   }
+  // Called as the code is typed. A complete one starts the handshake at once and quietly: nothing changes on
+  // screen and the host is not told. Pressing Join then costs nothing, because it is already connected.
+  // Changing the code throws that attempt away.
+  function typed(raw) {
+    if (!NC.typeAhead) return;
+    const code = cleanCode(raw);
+    if (role === 'guest' && quiet) { if (code === joinCode) return; reset(); setStatus('offline'); }
+    if (role !== 'none' || code.length !== CODE_LEN) return;
+    joinLobby(code, { quiet: true });
+  }
+  // The Join button. Usually there is nothing left to do but say hello.
+  function joinNow(raw) {
+    // An invite link never filled the box in, so fall back to the code the running attempt is already using.
+    const code = cleanCode(raw) || (quiet ? joinCode : '');
+    if (role === 'guest' && quiet && joinCode === code) {
+      quiet = false;
+      if (hostConn) { setStatus('in lobby'); hostConn.send(JSON.stringify({ t: 'join', name: myName })); return; }
+      stage(stageText || ('Looking for lobby ' + code)); setStatus('connecting'); return;   // still in flight: show it
+    }
+    joinLobby(code);
+  }
+  function cancelQuiet() { if (role === 'guest' && quiet) { reset(); setStatus('offline'); } }
   function guestConnected(conn) {
     if (role !== 'guest' || hostConn) return;
     clearConnect(); for (const t of guestTimers) clearTimeout(t); guestTimers = []; endStage();
     sigLeave();   // matchmaking is over: nothing that arrives over nostr from here on concerns this session
     hostConn = conn; hostSeen = performance.now(); err = '';
+    // Quiet: connected, but the player has not pressed Join, so the host is not told there is anyone here.
+    if (quiet) { setStatus('ready'); return; }
     setStatus('in lobby');
     hostConn.send(JSON.stringify({ t: 'join', name: myName }));
   }
   function onHostMessage(data) {
     hostSeen = performance.now();
+    // A connection opened by typing a code is not a membership. Until the player presses Join, nothing the
+    // host says applies to them: a stranger whose code was typed must not be able to start a game on this
+    // screen, change its settings or close its menu. Pings still count, so the link stays alive.
+    if (quiet && typeof data === 'string' && data.indexOf('"ping"') < 0) return;
     if (typeof data !== 'string') { toBuffer(data, (buf) => { const sn = decodeSnap(buf); if (!sn || sn.seq <= lastSnapSeq) return; lastSnapSeq = sn.seq; snaps.push(sn); recvSnaps++; if (snaps.length > 6) snaps.shift(); }); return; }
     let m; try { m = JSON.parse(data); } catch (e) { return; }
     switch (m.t) {
       case 'ping': break;
       case 'nope': fail('the host turned the join down: ' + String(m.why || '').slice(0, 60)); return;
-      case 'lobby': if (Array.isArray(m.members)) for (const mm of m.members) mm.name = cleanName(mm.name); lobbyView = m; if (panel) renderPanel(panel); break;
+      case 'lobby': if (Array.isArray(m.members)) for (const mm of m.members) mm.name = cleanName(mm.name); lobbyView = m; prebuild(m); if (panel && !quiet) renderPanel(panel); break;
+      case 'starting': {
+        // The host has pressed Start. Begin the same game now and watch it until the roster says which player
+        // is yours - without this the guest would start an ordinary local game and control player 0 meanwhile.
+        // a finished game is not a live one: a rematch must start over on the guest, not be ignored
+        if ((inGame || Game.g.running) && Game.g.state !== Game.S.OVER) break;
+        applyStartSettings(m); pendingStart = Array.isArray(m.roster) ? m : null; awaitingRoster = !pendingStart; inGame = true;
+        Main.startGame(cleanMode(m.mode), cleanTeamIdx(m.a), cleanTeamIdx(m.b));
+        break;
+      }
       case 'start': {
         if (!Array.isArray(m.roster)) break;
-        pendingStart = m;
-        const ql = parseInt(m.quarterLen, 10); if (Number.isFinite(ql) && ql >= 30 && ql <= 900) Game.settings.quarterLen = ql;
-        Game.settings.makeItTakeIt = !!m.makeItTakeIt;
-        if (CONFIG.ai.difficulty[m.difficulty]) Game.settings.difficulty = m.difficulty;
-        Main.startGame(cleanMode(m.mode), cleanTeamIdx(m.a), cleanTeamIdx(m.b)); break;
+        pendingStart = m; applyStartSettings(m);
+        // already started from 'starting': take the roster in place rather than starting over
+        if (inGame && Game.g.running && Game.g.state !== Game.S.OVER) { awaitingRoster = false; enterGuest(); }
+        else Main.startGame(cleanMode(m.mode), cleanTeamIdx(m.a), cleanTeamIdx(m.b));
+        break;
       }
       case 'ctl': { const pid = parseInt(m.playerId, 10); if (!Number.isFinite(pid) || !PlayerSys.players[pid]) break; myPlayerId = pid; } Game.setHuman(myPlayerId, true); { const me = PlayerSys.players[myPlayerId]; if (me) { me.authX = me.x; me.authZ = me.z; } } break;
       case 'ev': if (m.name === 'bsfx') { if (typeof m.data === 'number' || m.data === 'rim' || m.data === 'board') BallSys.ball.events.push(m.data); } else Game.g.events.push({ name: String(m.name), data: m.data }); break;
@@ -7163,8 +7321,16 @@ const Net = (() => {
       case 'closed': leaveLobby('the host closed the lobby'); break;
     }
   }
+  function applyStartSettings(m) {
+    const ql = parseInt(m.quarterLen, 10); if (Number.isFinite(ql) && ql >= 30 && ql <= 900) Game.settings.quarterLen = ql;
+    Game.settings.makeItTakeIt = !!m.makeItTakeIt;
+    if (CONFIG.ai.difficulty[m.difficulty]) Game.settings.difficulty = m.difficulty;
+  }
   function enterGuest() {
-    const m = pendingStart; if (!m) return; const g = Game.g; g.locked = true; inGame = true;
+    const m = pendingStart;
+    // between 'starting' and the roster: the host's game, watched, with nobody under your hands yet
+    if (!m) { if (awaitingRoster) { Game.g.locked = true; myPlayerId = -1; Game.setHuman(-1, true); } return; }
+    const g = Game.g; g.locked = true; inGame = true; awaitingRoster = false;
     const mine = m.roster.find((r) => r.pid === myPid || (transport === 'direct' && r.pid === 'direct'));
     myPlayerId = mine ? mine.playerId : -1; g.humanTeam = mine ? mine.team : -1;
     for (const r of m.roster) if (r.playerId >= 0 && (!mine || r.pid !== mine.pid)) Game.setController(r.playerId, String(r.pid), cleanName(r.name));
@@ -7267,7 +7433,7 @@ const Net = (() => {
 
   // ---------- lifecycle ----------
   function reset() {
-    attempt++; clearConnect();
+    attempt++; quiet = false; clearConnect();
     for (const gst of guests.values()) gst.conn.close(); guests.clear();
     if (hostConn) hostConn.close(); hostConn = null;
     sigLeave(); endStage(); joinCode = '';
@@ -7275,9 +7441,10 @@ const Net = (() => {
     for (const t of guestTimers) clearTimeout(t); guestTimers = [];
     if (guestPc) { try { guestPc.close(); } catch (e) { /* ignore */ } } guestPc = null;
     if (relayWs) { try { relayWs.onclose = null; relayWs.close(); } catch (e) { /* ignore */ } } relayWs = null;
+    spareDown();
     relayUp = false; clearInterval(relayKa); relayKa = 0; relayBackoff = 1000;
     if (pc) { try { pc.close(); } catch (e) { /* ignore */ } } pc = chRel = chFast = null;
-    role = 'none'; lobby.open = false; lobby.code = ''; lobbyView = null; pendingStart = null; inGame = false; myPlayerId = -1; snaps.length = 0; lastSnapSeq = -1; directOffer = directAnswer = ''; directMode = '';
+    role = 'none'; lobby.open = false; lobby.code = ''; lobbyView = null; pendingStart = null; inGame = false; awaitingRoster = false; myPlayerId = -1; snaps.length = 0; lastSnapSeq = -1; directOffer = directAnswer = ''; directMode = '';
     if (Game.g) Game.g.locked = false;
   }
   function closeLobby() { if (role === 'host') broadcast(JSON.stringify({ t: 'closed' })); else if (role === 'guest') send(hostConn, JSON.stringify({ t: 'leave' })); reset(); setStatus('offline'); }
@@ -7293,6 +7460,7 @@ const Net = (() => {
   // signing library and the relays are already warm by the time they do.
   let check = null, checkAt = 0;
   function runCheck() {
+    warmUp(); readyCode();
     if (check && performance.now() - checkAt < 60000) return;
     checkAt = performance.now(); check = { p2p: 'checking', relays: -1, turn: false };
     sigLib().catch(() => { check.relays = 0; paintCheck(); }); sigOpen();
@@ -7319,12 +7487,12 @@ const Net = (() => {
   function paintCheck() { const el = panel && panel.querySelector('#netCheck'); if (el) el.innerHTML = checkLine(); }
   function renderPanel(cont) {
     panel = cont;
-    if (role === 'none') runCheck();
+    if (role === 'none' || quiet) runCheck();
     const view = role === 'host' ? lobbyMsg() : lobbyView;
     let html = '<div class="opt"><span>Your name</span><input class="field" id="netNameIn" maxlength="14" value="' + esc(myName) + '"></div>';
     html += '<div class="status" id="netStatus">' + statusLine() + '</div>';
     if (role === 'none') html += '<div class="note" id="netCheck">' + checkLine() + '</div>';
-    if (role === 'none') {
+    if (role === 'none' || quiet) {
       html += '<div class="note">One code per lobby. Up to ' + NC.maxPerTeam + ' humans per team, switch sides whenever you like, the CPU fills empty slots. Game traffic is peer-to-peer.</div>';
       html += '<div class="row"><button class="btn primary" id="netCreate">Create lobby</button><input class="field code" id="netCodeIn" placeholder="CODE" maxlength="8"><button class="btn" id="netJoin">Join lobby</button></div>';
       html += '<h2 class="sec">Direct connect, two players, no server</h2>';
@@ -7334,7 +7502,7 @@ const Net = (() => {
       else { html += '<h2 class="sec">1. Paste the host\'s offer</h2><textarea class="sig" id="netOfferIn" placeholder="paste offer here"></textarea><div class="row"><button class="btn primary" id="netMakeAnswer">Create answer</button><button class="btn" id="netCancel">Cancel</button></div>'; if (directAnswer) html += '<h2 class="sec">2. Send this answer back to the host</h2><textarea class="sig" id="netAnswer" readonly>' + directAnswer + '</textarea><div class="row"><button class="btn small" id="netCopyAnswer">Copy</button></div><div class="note">Waiting for the host to connect…</div>'; }
     } else if (view && (role !== 'host' || lobby.open)) {
       const teams = cleanTeams(view.teams); const mode = cleanMode(view.mode); const capN = mode === '5v5' ? 5 : mode === '3v3' ? 3 : 1; const me = role === 'host' ? 'host' : myPid;
-      html += '<div class="row" style="align-items:center"><span class="subtitle">Lobby code</span><span class="title" style="font-size:40px;letter-spacing:0.16em;background:var(--accent);color:var(--accent-ink);padding:4px 14px 0;transform:skewX(var(--skew))">' + esc(view.code) + '</span>' + (transport !== 'direct' ? '<button class="btn small" id="netCopyCode">Copy</button>' : '') + '</div>';
+      html += '<div class="row" style="align-items:center"><span class="subtitle">Lobby code</span><span class="title" style="font-size:40px;letter-spacing:0.16em;background:var(--accent);color:var(--accent-ink);padding:4px 14px 0;transform:skewX(var(--skew))">' + esc(view.code) + '</span>' + (transport !== 'direct' ? '<button class="btn small" id="netCopyCode">Copy</button><button class="btn small" id="netCopyLink">Copy invite link</button>' : '') + '</div>';
       if (role === 'host') { html += '<div class="row"><span class="subtitle" style="margin:0;align-self:center">Mode</span>'; for (const m of ['1v1', '3v3', '5v5']) html += '<button class="btn small' + (mode === m ? ' sel' : '') + '" data-netmode="' + m + '">' + m + '</button>'; html += '<span class="note" style="margin:0;align-self:center">Teams come from the Play screen, quarter length from Settings.</span></div>'; }
       else html += '<div class="note">Mode: ' + esc(mode) + ' · the host starts the game.</div>';
       if (role === 'host' && !NC.relay && check && check.p2p === 'blocked') html += '<div class="note" style="color:var(--bad, #ff6b5a)">This network blocks peer-to-peer, so guests will find the lobby but will not be able to connect to it. Host from another network, or set up a relay (relay/README.md).</div>';
@@ -7355,16 +7523,24 @@ const Net = (() => {
     cont.innerHTML = html;
     const $ = (id) => cont.querySelector('#' + id);
     const copy = (id) => { const ta = $(id); ta.select(); try { navigator.clipboard.writeText(ta.value); } catch (e) { document.execCommand('copy'); } AudioSys.play('ui'); };
-    $('netNameIn').onchange = (e) => { myName = cleanName(e.target.value); U.saveLS('hw_name', myName); if (role === 'host') broadcastLobby(); else if (hostConn) hostConn.send(JSON.stringify({ t: 'join', name: myName })); };
+    $('netNameIn').onchange = (e) => { myName = cleanName(e.target.value); U.saveLS('hw_name', myName); if (role === 'host') broadcastLobby(); else if (hostConn && !Net.quiet) hostConn.send(JSON.stringify({ t: 'join', name: myName })); };
     $('netNameIn').onkeydown = (e) => e.stopPropagation();
-    if ($('netCodeIn')) $('netCodeIn').onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') joinLobby($('netCodeIn').value); };
+    if ($('netCodeIn')) {
+      const box = $('netCodeIn');
+      box.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') joinNow(box.value); };
+      // the last character of a code starts the handshake; by the time they reach for Join it is done
+      box.oninput = () => typed(box.value);
+      if (joinCode && quiet) box.value = joinCode;
+    }
     if ($('netCreate')) $('netCreate').onclick = () => hostCreateLobby();
-    if ($('netJoin')) $('netJoin').onclick = () => joinLobby($('netCodeIn').value);
+    if ($('netJoin')) $('netJoin').onclick = () => joinNow($('netCodeIn').value);
     if ($('netDirectHost')) $('netDirectHost').onclick = () => directHost().catch((e) => { err = e.message; setStatus('error'); });
     if ($('netDirectJoin')) $('netDirectJoin').onclick = () => { reset(); role = 'guest'; transport = 'direct'; directMode = 'join'; setStatus('paste the offer'); };
     if ($('netCopyOffer')) $('netCopyOffer').onclick = () => copy('netOffer');
     if ($('netCopyAnswer')) $('netCopyAnswer').onclick = () => copy('netAnswer');
     if ($('netCopyCode')) $('netCopyCode').onclick = () => { try { navigator.clipboard.writeText(lobby.code || (lobbyView && lobbyView.code) || ''); } catch (e) { /* ignore */ } AudioSys.play('ui'); };
+    // A link that joins on open: the connection is made while their page loads, so there is nothing to wait for.
+    if ($('netCopyLink')) $('netCopyLink').onclick = () => { const c = lobby.code || (lobbyView && lobbyView.code) || ''; try { navigator.clipboard.writeText(location.origin + location.pathname + '?join=' + c); } catch (e) { /* ignore */ } AudioSys.play('ui'); };
     if ($('netConnect')) $('netConnect').onclick = () => { const v = $('netAnswerIn').value; if (v.trim()) directAccept(v).catch((e) => { err = e.message; setStatus('error'); }); };
     if ($('netMakeAnswer')) $('netMakeAnswer').onclick = () => { const v = $('netOfferIn').value; if (v.trim()) directJoin(v).catch((e) => { err = e.message; setStatus('error'); }); };
     if ($('netCancel')) $('netCancel').onclick = () => { closeLobby(); };
@@ -7380,9 +7556,9 @@ const Net = (() => {
     if (role === 'host') broadcast(JSON.stringify({ t: 'park', d: obj }));
     else if (hostConn) send(hostConn, JSON.stringify({ t: 'park', d: obj }));
   }
-  return { sendPark, parkJoin, parkLeave, hostStartPark, bindParkRoster, renderPanel, status: statusText, update, guestStep, hostApplyInputs, hostStart, enterGuest, forwardEvent, onQuit, reassign, hostCreateLobby, joinLobby, setTeam, setMode, closeLobby, directHost, directAccept, directJoin,
-    get myName() { return myName; }, get myPid() { return role === 'host' ? 'host' : myPid; }, get active() { return role !== 'none'; }, get isHost() { return role === 'host'; }, get isGuest() { return role === 'guest' && !!hostConn; }, get lobby() { return lobby; }, get guestCount() { return guests.size; }, get directOffer() { return directOffer; }, get directAnswer() { return directAnswer; },
-    get error() { return err; }, get route() { return role === 'guest' && hostConn ? hostConn.via : ''; } };
+  return { sendPark, parkJoin, parkLeave, hostStartPark, bindParkRoster, renderPanel, status: statusText, update, guestStep, hostApplyInputs, hostStart, hostStarting, enterGuest, forwardEvent, onQuit, reassign, hostCreateLobby, joinLobby, typed, joinNow, cancelQuiet, warmUp, setTeam, setMode, closeLobby, directHost, directAccept, directJoin,
+    get myName() { return myName; }, get myPid() { return role === 'host' ? 'host' : myPid; }, get active() { return role !== 'none'; }, get isHost() { return role === 'host'; }, get isGuest() { return role === 'guest' && !!hostConn; }, get lobby() { return lobby; }, get guestCount() { let n = 0; for (const g of guests.values()) if (g.joined) n++; return n; }, get directOffer() { return directOffer; }, get directAnswer() { return directAnswer; },
+    get error() { return err; }, get route() { return role === 'guest' && hostConn ? hostConn.via : ''; }, get quiet() { return quiet; } };
 })();
 // ==== END NET ====
 
@@ -7415,7 +7591,11 @@ const Main = (() => {
     // by actually playing count - the how-to card dismissed, the workout finished, a career made -
     // because a key merely created on load would switch onboarding off for a genuinely new player.
     if (Career.exists() || U.loadLS('hw_seen', false) || Tutorial.seen()) U.saveLS(ONBOARD_KEY, true);
-    if (!U.loadLS(ONBOARD_KEY, false)) UI.beginOnboarding();
+    // An invite link: start connecting now, during the rest of the boot, so the lobby is open by the time
+    // anyone has read the screen. It still needs a name and a click to actually join.
+    const invite = ((/[?&#]join=([A-Za-z0-9]{4,12})/.exec(location.search + location.hash) || [])[1] || '').toUpperCase();
+    if (invite) { U.saveLS(ONBOARD_KEY, true); UI.openNet(); Net.typed(invite); }   // they came for the lobby, not for a career
+    else if (!U.loadLS(ONBOARD_KEY, false)) UI.beginOnboarding();
     else if (Career.isFirstGame()) UI.openCareer();   // a first game left half-played goes back to it
     else UI.showMenu();
     last = performance.now(); requestAnimationFrame(frame);
@@ -7440,6 +7620,9 @@ const ONBOARD_KEY = 'hw_onboard';
   }
 function startGame(mode, a, b, opts) {
 	     lastMode = mode;
+	     // Guests hear at the click, not when the host's own wipe ends: that put every guest a third of a
+	     // second behind for nothing. Now both sides wipe at once and the roster lands during it.
+	     if (Net.isHost) Net.hostStarting(mode, a, b);
 	     UI.wipe(() => {
 	       const kits = kitsFor(a, b);
 	       Render.buildArena(kits[0], kits[1]); Game.start(mode, a, b, opts); Render.buildPlayers(Game.g.teams); Render.setShadows(Game.settings.shadows);
@@ -7452,7 +7635,7 @@ function startGame(mode, a, b, opts) {
       // the coach replaces the old keybind card, so a coached game must not open frozen behind it
       if (opts && opts.coach && !Net.active) U.saveLS('hw_seen', true);
       else if (!U.loadLS('hw_seen', false)) { pause(true); UI.showFirstRun(); }
-    });
+    }, Net.active);
   }
   // MyPark. The park is its own little world: the arena is hidden, the lobby is built once, and matches
   // that start on a court are handed to the same engine every other mode uses.
